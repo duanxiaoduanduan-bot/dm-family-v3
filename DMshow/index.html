@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DMshow · 作品集</title>
+<style>
+:root{
+  --bg:#07070c;--bg2:#101018;--card:#14141f;--line:rgba(255,255,255,.08);
+  --text:#ececf1;--muted:#8b8b9a;--dim:#5c5c6c;
+  --accent:#e17055;--accent2:#6c5ce7;--ok:#00b894;
+  --radius:16px;--shadow:0 20px 50px rgba(0,0,0,.45);
+  --nav-h:58px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:radial-gradient(1200px 600px at 10% -10%,rgba(108,92,231,.18),transparent 50%),
+             radial-gradient(900px 500px at 90% 0%,rgba(225,112,85,.14),transparent 45%),
+             var(--bg);
+  color:var(--text);min-height:100vh;line-height:1.55;
+}
+a{color:inherit;text-decoration:none}
+button,input,textarea{font:inherit}
+img,video{display:block;max-width:100%}
+.hidden{display:none!important}
+
+/* Nav */
+.nav{
+  position:sticky;top:0;z-index:40;height:var(--nav-h);
+  display:flex;align-items:center;gap:10px;padding:0 18px;
+  background:rgba(7,7,12,.78);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px}
+.brand-dot{
+  width:28px;height:28px;border-radius:9px;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));
+  display:grid;place-items:center;font-size:14px;
+}
+.nav-tabs{display:flex;gap:4px;margin-left:10px;overflow:auto}
+.nav-tab{
+  border:0;background:transparent;color:var(--muted);cursor:pointer;
+  padding:7px 12px;border-radius:999px;font-size:12px;white-space:nowrap;
+}
+.nav-tab:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.nav-tab.act{color:#fff;background:rgba(225,112,85,.14);box-shadow:inset 0 0 0 1px rgba(225,112,85,.28)}
+.nav-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.btn{
+  border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--text);
+  border-radius:10px;padding:7px 12px;font-size:12px;cursor:pointer;transition:.2s;
+}
+.btn:hover{border-color:rgba(225,112,85,.4);color:#fff}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#d63031);border:0;font-weight:600}
+.btn.ghost{background:transparent}
+
+/* Layout */
+.wrap{width:min(1120px,calc(100% - 28px));margin:0 auto;padding:22px 0 80px}
+.hero{
+  display:grid;grid-template-columns:160px 1fr;gap:28px;align-items:center;
+  padding:28px;border:1px solid var(--line);border-radius:24px;
+  background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015));
+  box-shadow:var(--shadow);margin-bottom:28px;
+}
+.avatar-wrap{position:relative;width:140px;height:140px;margin:0 auto}
+.avatar{
+  width:140px;height:140px;border-radius:28px;object-fit:cover;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));
+  display:grid;place-items:center;font-size:56px;
+  border:3px solid rgba(255,255,255,.12);box-shadow:0 12px 30px rgba(0,0,0,.35);
+}
+.avatar img{width:100%;height:100%;object-fit:cover;border-radius:25px}
+.hero h1{font-size:clamp(28px,4vw,38px);line-height:1.15;margin-bottom:6px}
+.hero .title{color:var(--accent);font-size:14px;font-weight:600;margin-bottom:10px}
+.hero .bio{color:var(--muted);font-size:14px;max-width:62ch}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{
+  font-size:11px;color:var(--muted);padding:5px 10px;border-radius:999px;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+}
+.chip.hot{color:#ffd8a8;border-color:rgba(225,112,85,.35);background:rgba(225,112,85,.08)}
+.stats{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px}
+.stat{min-width:72px}
+.stat b{display:block;font-size:22px;color:#fff}
+.stat span{font-size:11px;color:var(--dim)}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.link-pill{
+  font-size:12px;padding:7px 12px;border-radius:10px;border:1px solid var(--line);
+  background:rgba(255,255,255,.03);color:var(--muted);transition:.2s;
+}
+.link-pill:hover{color:var(--accent);border-color:rgba(225,112,85,.4)}
+
+/* Sections */
+.section{margin-bottom:34px}
+.section-head{
+  display:flex;align-items:end;justify-content:space-between;gap:12px;
+  margin-bottom:14px;padding:0 2px;
+}
+.section-head h2{font-size:18px;font-weight:700}
+.section-head p{font-size:12px;color:var(--dim)}
+.about-box{
+  border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;
+  background:rgba(255,255,255,.02);color:var(--muted);font-size:14px;white-space:pre-wrap;
+}
+.about-box.collapsed{max-height:140px;overflow:hidden;position:relative}
+.about-box.collapsed::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:56px;
+  background:linear-gradient(transparent,rgba(7,7,12,.95));
+}
+.about-actions{margin-top:10px}
+
+/* Cards grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{
+  border:1px solid var(--line);border-radius:18px;overflow:hidden;cursor:pointer;
+  background:var(--card);transition:transform .2s,border-color .2s,box-shadow .2s;
+}
+.card:hover{transform:translateY(-3px);border-color:rgba(225,112,85,.35);box-shadow:0 16px 36px rgba(0,0,0,.35)}
+.card-cover{
+  aspect-ratio:16/11;background:#0d0d14;position:relative;overflow:hidden;
+}
+.card-cover img,.card-cover video{width:100%;height:100%;object-fit:cover}
+.card-cover .ph{
+  width:100%;height:100%;display:grid;place-items:center;color:var(--dim);font-size:34px;
+  background:linear-gradient(135deg,rgba(108,92,231,.2),rgba(225,112,85,.15));
+}
+.card-badge{
+  position:absolute;left:10px;top:10px;font-size:10px;padding:3px 8px;border-radius:999px;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(6px);color:#fff;border:1px solid rgba(255,255,255,.08);
+}
+.card-count{
+  position:absolute;right:10px;bottom:10px;font-size:10px;padding:3px 8px;border-radius:8px;
+  background:rgba(0,0,0,.6);color:#fff;
+}
+.card-play{
+  position:absolute;inset:0;display:grid;place-items:center;font-size:36px;
+  color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.6);pointer-events:none;
+}
+.card-body{padding:12px 14px 14px}
+.card-body h3{font-size:15px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-body p{font-size:12px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.8em}
+.card-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.card-tags span{font-size:10px;color:var(--dim);padding:2px 7px;border-radius:999px;border:1px solid var(--line)}
+
+/* Gallery mosaic */
+.mosaic{
+  columns:4 180px;column-gap:10px;
+}
+.mosaic-item{
+  break-inside:avoid;margin:0 0 10px;border-radius:14px;overflow:hidden;cursor:pointer;
+  border:1px solid var(--line);background:#0d0d14;position:relative;
+}
+.mosaic-item img,.mosaic-item video{width:100%;height:auto;display:block}
+.mosaic-item .play{
+  position:absolute;inset:0;display:grid;place-items:center;font-size:28px;color:#fff;
+  background:rgba(0,0,0,.15);pointer-events:none;
+}
+
+.empty{
+  border:1px dashed rgba(255,255,255,.12);border-radius:18px;padding:34px 18px;
+  text-align:center;color:var(--dim);font-size:13px;line-height:1.8;
+}
+.empty code{color:var(--accent);font-family:ui-monospace,Consolas,monospace}
+
+/* Side panel: how-to / sources */
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);z-index:60;
+  background:rgba(14,14,22,.98);border-left:1px solid var(--line);
+  transform:translateX(100%);transition:transform .28s ease;display:flex;flex-direction:column;
+}
+.drawer.open{transform:translateX(0)}
+.drawer-head{display:flex;align-items:center;gap:10px;padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.drawer-head h3{flex:1;font-size:15px}
+.drawer-body{flex:1;overflow:auto;padding:14px}
+.howto{font-size:12px;color:var(--muted);line-height:1.75}
+.howto h4{color:#fff;margin:14px 0 6px;font-size:13px}
+.howto pre{
+  background:#0a0a12;border:1px solid var(--line);border-radius:10px;padding:10px;
+  overflow:auto;color:#cfd0ff;font-size:11px;line-height:1.55;
+}
+.src-item{
+  display:flex;gap:10px;padding:10px 12px;border-radius:12px;cursor:pointer;
+  border:1px solid transparent;margin-bottom:6px;color:var(--muted);
+}
+.src-item:hover{background:rgba(255,255,255,.04);color:#fff}
+.src-item.act{border-color:rgba(225,112,85,.35);background:rgba(225,112,85,.08);color:var(--accent)}
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;opacity:0;pointer-events:none;transition:.2s}
+.backdrop.show{opacity:1;pointer-events:auto}
+
+/* Edit modal */
+.modal{
+  position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.55);padding:18px;
+}
+.modal.open{display:flex}
+.modal-card{
+  width:min(480px,100%);background:#12121c;border:1px solid var(--line);border-radius:18px;
+  padding:18px;max-height:90vh;overflow:auto;
+}
+.modal-card h3{margin-bottom:10px}
+.field{margin-bottom:10px}
+.field label{display:block;font-size:11px;color:var(--dim);margin-bottom:4px}
+.field input,.field textarea{
+  width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line);
+  background:rgba(255,255,255,.03);color:var(--text);
+}
+.field textarea{min-height:90px;resize:vertical}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+
+/* Lightbox / slideshow */
+.lb{
+  position:fixed;inset:0;z-index:100;background:rgba(4,4,8,.94);
+  display:none;flex-direction:column;
+}
+.lb.open{display:flex}
+.lb-top{
+  height:54px;display:flex;align-items:center;gap:10px;padding:0 14px;
+  border-bottom:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.25);
+}
+.lb-title{flex:1;font-size:13px;color:#ddd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-counter{font-size:12px;color:var(--dim);min-width:64px;text-align:right}
+.lb-stage{
+  flex:1;position:relative;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;user-select:none;
+}
+.lb-media-wrap{
+  max-width:min(96vw,1400px);max-height:calc(100vh - 140px);
+  display:flex;align-items:center;justify-content:center;
+}
+.lb-media-wrap img,.lb-media-wrap video{
+  max-width:100%;max-height:calc(100vh - 140px);border-radius:8px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);background:#000;
+}
+.lb-nav{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,.12);
+  background:rgba(0,0,0,.35);color:#fff;font-size:22px;cursor:pointer;
+  display:grid;place-items:center;
+}
+.lb-nav:hover{background:rgba(225,112,85,.35)}
+.lb-prev{left:14px}
+.lb-next{right:14px}
+.lb-caption{
+  min-height:56px;padding:10px 18px 14px;border-top:1px solid rgba(255,255,255,.06);
+  color:var(--muted);font-size:12px;text-align:center;
+}
+.lb-progress{
+  position:absolute;left:0;top:0;height:2px;background:var(--accent);width:0%;
+  transition:width .1s linear;
+}
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+  background:rgba(20,20,30,.95);border:1px solid var(--line);color:#fff;
+  padding:10px 16px;border-radius:12px;font-size:12px;opacity:0;pointer-events:none;
+  transition:.25s;z-index:200;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media(max-width:780px){
+  .hero{grid-template-columns:1fr;text-align:center}
+  .avatar-wrap{margin:0 auto}
+  .meta-row,.stats,.links{justify-content:center}
+  .nav-tabs{display:none}
+  .mosaic{columns:2 140px}
+  .lb-nav{width:38px;height:38px;font-size:18px}
+  .lb-prev{left:6px}.lb-next{right:6px}
+}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="brand"><div class="brand-dot">✦</div><span id="brandName">DMshow</span></div>
+  <div class="nav-tabs" id="navTabs">
+    <button class="nav-tab act" data-go="top">主页</button>
+    <button class="nav-tab" data-go="sec-about">简介</button>
+    <button class="nav-tab" data-go="sec-works">作品</button>
+    <button class="nav-tab" data-go="sec-albums">图集</button>
+    <button class="nav-tab" data-go="sec-videos">视频</button>
+    <button class="nav-tab" data-go="sec-gallery">画廊</button>
+  </div>
+  <div class="nav-actions">
+    <button class="btn ghost" id="btnAuto" title="全站精选自动轮播">▶ 轮播</button>
+    <button class="btn" id="btnEdit">编辑资料</button>
+    <button class="btn" id="btnHelp">素材库</button>
+    <button class="btn" id="btnReload" title="重新扫描 library">↻</button>
+  </div>
+</nav>
+
+<main class="wrap" id="app">
+  <section class="hero" id="top">
+    <div class="avatar-wrap">
+      <div class="avatar" id="avatar">👤</div>
+    </div>
+    <div>
+      <h1 id="name">加载中…</h1>
+      <div class="title" id="title"></div>
+      <p class="bio" id="bio"></p>
+      <div class="meta-row" id="tags"></div>
+      <div class="stats" id="stats"></div>
+      <div class="links" id="links"></div>
+    </div>
+  </section>
+
+  <section class="section" id="sec-about">
+    <div class="section-head">
+      <div>
+        <h2>文本摘要</h2>
+        <p>来自 library/about.md 或 profile 简介</p>
+      </div>
+    </div>
+    <div class="about-box collapsed" id="aboutBox">暂无长文简介。在 <code>library/about.md</code> 写入即可自动出现。</div>
+    <div class="about-actions">
+      <button class="btn ghost" id="btnAboutMore">展开全文</button>
+    </div>
+  </section>
+
+  <section class="section" id="sec-works">
+    <div class="section-head">
+      <div><h2>作品集</h2><p>library/works/ 下每个文件夹 = 一个作品</p></div>
+      <span class="chip" id="worksCount">0</span>
+    </div>
+    <div class="grid" id="worksGrid"></div>
+  </section>
+
+  <section class="section" id="sec-albums">
+    <div class="section-head">
+      <div><h2>图集</h2><p>library/albums/ · 点击进入幻灯片</p></div>
+      <span class="chip" id="albumsCount">0</span>
+    </div>
+    <div class="grid" id="albumsGrid"></div>
+  </section>
+
+  <section class="section" id="sec-videos">
+    <div class="section-head">
+      <div><h2>视频集合</h2><p>library/videos/</p></div>
+      <span class="chip" id="videosCount">0</span>
+    </div>
+    <div class="grid" id="videosGrid"></div>
+  </section>
+
+  <section class="section" id="sec-gallery">
+    <div class="section-head">
+      <div><h2>画廊</h2><p>library/gallery/ 散图 · 点击放大 · 可自动轮播</p></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" id="btnGalleryPlay">▶ 自动轮播</button>
+        <span class="chip" id="galleryCount">0</span>
+      </div>
+    </div>
+    <div class="mosaic" id="galleryMosaic"></div>
+  </section>
+</main>
+
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h3>素材库说明</h3>
+    <button class="btn ghost" id="btnCloseDrawer">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div class="howto">
+      <p>把文件丢进对应目录，刷新或点 ↻，主页自动完善。</p>
+      <h4>目录约定</h4>
+<pre>DMshow/library/
+  profile.json     # 名字/标签/链接
+  about.md         # 长文简介
+  avatar.jpg       # 头像（可选）
+  works/项目名/    # 作品集
+    cover.jpg
+    README.md      # 摘要
+    *.jpg *.mp4
+  albums/相册名/   # 图集
+    desc.md
+    *.jpg
+  videos/          # 视频
+    *.mp4 或 系列文件夹/
+  gallery/         # 散图画廊
+    *.jpg</pre>
+      <h4>可选 meta.json</h4>
+<pre>{
+  "title": "作品标题",
+  "summary": "一句话摘要",
+  "tags": ["旅行","纪实"],
+  "date": "2026-01",
+  "cover": "cover.jpg"
+}</pre>
+      <h4>当前可用来源（外置）</h4>
+      <div id="srcList" style="margin-top:8px"></div>
+    </div>
+  </div>
+</aside>
+
+<div class="modal" id="editModal">
+  <div class="modal-card">
+    <h3>编辑个人资料</h3>
+    <div class="field"><label>名字</label><input id="efName"></div>
+    <div class="field"><label>头衔 / 一句话</label><input id="efTitle"></div>
+    <div class="field"><label>短简介</label><textarea id="efBio"></textarea></div>
+    <div class="field"><label>长文摘要（写入 about.md）</label><textarea id="efAbout" style="min-height:120px"></textarea></div>
+    <div class="field"><label>标签（逗号分隔）</label><input id="efTags"></div>
+    <div class="field"><label>链接（每行：名称|URL）</label><textarea id="efLinks"></textarea></div>
+    <div class="field"><label>头像 Emoji（无图片时）</label><input id="efAvatar"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="efCancel">取消</button>
+      <button class="btn primary" id="efSave">保存到 library</button>
+    </div>
+  </div>
+</div>
+
+<div class="lb" id="lightbox">
+  <div class="lb-progress" id="lbProgress"></div>
+  <div class="lb-top">
+    <button class="btn ghost" id="lbClose">✕</button>
+    <div class="lb-title" id="lbTitle">—</div>
+    <button class="btn ghost" id="lbAuto">▶ 自动</button>
+    <div class="lb-counter" id="lbCounter">0 / 0</div>
+  </div>
+  <div class="lb-stage" id="lbStage">
+    <button class="lb-nav lb-prev" id="lbPrev">‹</button>
+    <div class="lb-media-wrap" id="lbMedia"></div>
+    <button class="lb-nav lb-next" id="lbNext">›</button>
+  </div>
+  <div class="lb-caption" id="lbCaption"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    portfolio: null,
+    playlist: [],
+    index: 0,
+    auto: false,
+    timer: null,
+    speed: 3200,
+    progressRaf: null,
+    tickStart: 0,
+  };
+
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function mediaUrl(item) {
+    return item && item.url ? item.url : '';
+  }
+
+  async function loadPortfolio() {
+    const res = await fetch('/api/portfolio', { cache: 'no-store' });
+    if (!res.ok) throw new Error('portfolio ' + res.status);
+    return res.json();
+  }
+
+  function renderAvatar(p) {
+    const box = $('avatar');
+    if (p.avatarUrl) {
+      box.innerHTML = '<img src="' + esc(p.avatarUrl) + '" alt="avatar" onerror="this.remove()">';
+      if (!box.querySelector('img')) box.textContent = p.avatar || '👤';
+    } else {
+      box.textContent = p.avatar || '👤';
+    }
+  }
+
+  function renderProfile(p, stats) {
+    document.title = (p.name || 'DMshow') + ' · 作品集';
+    $('brandName').textContent = p.name || 'DMshow';
+    renderAvatar(p);
+    $('name').textContent = p.name || '未命名';
+    $('title').textContent = p.title || '';
+    $('bio').textContent = p.bio || '';
+    $('tags').innerHTML = (p.tags || []).map(t => '<span class="chip hot">' + esc(t) + '</span>').join('');
+    if (p.location) $('tags').innerHTML += '<span class="chip">📍 ' + esc(p.location) + '</span>';
+    if (p.email) $('tags').innerHTML += '<span class="chip">✉️ ' + esc(p.email) + '</span>';
+
+    $('stats').innerHTML = [
+      ['作品', stats.works],
+      ['图集', stats.albums],
+      ['图片', stats.images],
+      ['视频', stats.videos],
+    ].map(([l, n]) => '<div class="stat"><b>' + n + '</b><span>' + l + '</span></div>').join('');
+
+    $('links').innerHTML = (p.links || []).map(l =>
+      '<a class="link-pill" href="' + esc(l.url || '#') + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + '</a>'
+    ).join('');
+
+    const about = (p.about || p.bio || '').trim();
+    const box = $('aboutBox');
+    box.textContent = about || '暂无长文简介。在 library/about.md 写入即可自动出现。';
+    box.classList.add('collapsed');
+    $('btnAboutMore').textContent = '展开全文';
+    $('btnAboutMore').style.display = about.length > 120 ? '' : 'none';
+  }
+
+  function coverHtml(col) {
+    if (col.cover) {
+      const isVid = /\.(mp4|webm|mkv|mov|avi)(\?|$)/i.test(col.cover);
+      if (isVid) {
+        return '<video src="' + esc(col.cover) + '#t=0.1" muted preload="metadata"></video><div class="card-play">▶</div>';
+      }
+      return '<img src="' + esc(col.cover) + '" loading="lazy" alt="">';
+    }
+    const first = (col.items || [])[0];
+    if (first && first.type === 'video') {
+      return '<video src="' + esc(first.url) + '#t=0.1" muted preload="metadata"></video><div class="card-play">▶</div>';
+    }
+    if (first && first.type === 'image') {
+      return '<img src="' + esc(first.url) + '" loading="lazy" alt="">';
+    }
+    return '<div class="ph">🖼</div>';
+  }
+
+  function cardHtml(col, badge) {
+    const count = col.counts ? (col.counts.total + ' 项') : '';
+    const tags = (col.tags || []).slice(0, 4).map(t => '<span>' + esc(t) + '</span>').join('');
+    return (
+      '<article class="card" data-kind="' + esc(col.kind || '') + '" data-id="' + esc(col.id) + '">' +
+        '<div class="card-cover">' +
+          coverHtml(col) +
+          (badge ? '<div class="card-badge">' + esc(badge) + '</div>' : '') +
+          (count ? '<div class="card-count">' + esc(count) + '</div>' : '') +
+        '</div>' +
+        '<div class="card-body">' +
+          '<h3>' + esc(col.title) + '</h3>' +
+          '<p>' + esc(col.summary || '点击进入幻灯片浏览') + '</p>' +
+          (tags ? '<div class="card-tags">' + tags + '</div>' : '') +
+        '</div>' +
+      '</article>'
+    );
+  }
+
+  function emptyHtml(pathHint) {
+    return '<div class="empty">还没有内容。<br>把文件放入 <code>' + esc(pathHint) + '</code> 后点右上角 ↻</div>';
+  }
+
+  function renderCollections(list, gridId, countId, badge, emptyPath) {
+    const grid = $(gridId);
+    $(countId).textContent = String(list.length);
+    if (!list.length) {
+      grid.innerHTML = emptyHtml(emptyPath);
+      return;
+    }
+    grid.innerHTML = list.map(c => cardHtml(c, badge)).join('');
+    grid.querySelectorAll('.card').forEach((el, i) => {
+      el.addEventListener('click', () => openCollection(list[i]));
+    });
+  }
+
+  function renderGallery(items) {
+    const box = $('galleryMosaic');
+    $('galleryCount').textContent = String(items.length);
+    if (!items.length) {
+      box.innerHTML = emptyHtml('library/gallery/');
+      return;
+    }
+    box.innerHTML = items.map((it, i) => {
+      if (it.type === 'video') {
+        return '<div class="mosaic-item" data-i="' + i + '"><video src="' + esc(it.url) + '#t=0.1" muted preload="metadata"></video><div class="play">▶</div></div>';
+      }
+      return '<div class="mosaic-item" data-i="' + i + '"><img src="' + esc(it.url) + '" loading="lazy" alt="' + esc(it.name) + '"></div>';
+    }).join('');
+    box.querySelectorAll('.mosaic-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const i = Number(el.getAttribute('data-i')) || 0;
+        openLightbox(items, i, '画廊');
+      });
+    });
+  }
+
+  function openCollection(col) {
+    const items = col.items || [];
+    if (!items.length) {
+      toast('这个合集还没有媒体文件');
+      return;
+    }
+    const caption = col.summary || firstLine(col.text) || '';
+    openLightbox(items, 0, col.title, caption);
+  }
+
+  function firstLine(t) {
+    if (!t) return '';
+    return String(t).split(/\n/).map(s => s.trim()).filter(Boolean)[0] || '';
+  }
+
+  // ---- Lightbox ----
+  function stopAuto() {
+    state.auto = false;
+    clearTimeout(state.timer);
+    state.timer = null;
+    cancelAnimationFrame(state.progressRaf);
+    $('lbProgress').style.width = '0%';
+    $('lbAuto').textContent = '▶ 自动';
+    $('btnAuto').textContent = '▶ 轮播';
+  }
+
+  function startAuto() {
+    if (state.playlist.length < 2) {
+      toast('至少 2 项才能轮播');
+      return;
+    }
+    state.auto = true;
+    $('lbAuto').textContent = '⏸ 暂停';
+    $('btnAuto').textContent = '⏸ 轮播中';
+    scheduleNext();
+  }
+
+  function scheduleNext() {
+    clearTimeout(state.timer);
+    cancelAnimationFrame(state.progressRaf);
+    state.tickStart = performance.now();
+    const tick = (now) => {
+      if (!state.auto) return;
+      const p = Math.min(1, (now - state.tickStart) / state.speed);
+      $('lbProgress').style.width = (p * 100) + '%';
+      if (p < 1) state.progressRaf = requestAnimationFrame(tick);
+    };
+    state.progressRaf = requestAnimationFrame(tick);
+    state.timer = setTimeout(() => {
+      if (!state.auto) return;
+      showIndex((state.index + 1) % state.playlist.length);
+      scheduleNext();
+    }, state.speed);
+  }
+
+  function openLightbox(items, index, title, sharedCaption) {
+    state.playlist = items.slice();
+    state.index = index || 0;
+    state.sharedCaption = sharedCaption || '';
+    state.collectionTitle = title || '';
+    $('lightbox').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    showIndex(state.index);
+  }
+
+  function closeLightbox() {
+    stopAuto();
+    const wrap = $('lbMedia');
+    const v = wrap.querySelector('video');
+    if (v) { try { v.pause(); } catch (_) {} }
+    wrap.innerHTML = '';
+    $('lightbox').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function showIndex(i) {
+    if (!state.playlist.length) return;
+    state.index = (i + state.playlist.length) % state.playlist.length;
+    const item = state.playlist[state.index];
+    const wrap = $('lbMedia');
+    const prevVideo = wrap.querySelector('video');
+    if (prevVideo) { try { prevVideo.pause(); } catch (_) {} }
+
+    if (item.type === 'video') {
+      wrap.innerHTML = '<video src="' + esc(item.url) + '" controls autoplay playsinline></video>';
+      const v = wrap.querySelector('video');
+      v.addEventListener('ended', () => {
+        if (state.auto) {
+          showIndex(state.index + 1);
+          scheduleNext();
+        }
+      });
+    } else {
+      wrap.innerHTML = '<img src="' + esc(item.url) + '" alt="' + esc(item.name) + '">';
+    }
+
+    $('lbTitle').textContent = state.collectionTitle
+      ? (state.collectionTitle + ' · ' + (item.name || ''))
+      : (item.name || '媒体');
+    $('lbCounter').textContent = (state.index + 1) + ' / ' + state.playlist.length;
+    $('lbCaption').textContent = state.sharedCaption || item.name || '';
+    $('lbProgress').style.width = '0%';
+  }
+
+  function allFeaturedMedia(p) {
+    const list = [];
+    const pushCol = (cols) => {
+      (cols || []).forEach(c => (c.items || []).forEach(it => list.push(it)));
+    };
+    pushCol(p.works);
+    pushCol(p.albums);
+    pushCol(p.videos);
+    (p.gallery || []).forEach(it => list.push(it));
+    // de-dupe by url
+    const seen = new Set();
+    return list.filter(it => {
+      if (!it || !it.url || seen.has(it.url)) return false;
+      seen.add(it.url);
+      return true;
+    });
+  }
+
+  async function refresh() {
+    try {
+      const data = await loadPortfolio();
+      state.portfolio = data;
+      renderProfile(data.profile, data.stats);
+      renderCollections(data.works, 'worksGrid', 'worksCount', '作品', 'library/works/项目名/');
+      renderCollections(data.albums, 'albumsGrid', 'albumsCount', '图集', 'library/albums/相册名/');
+      renderCollections(data.videos, 'videosGrid', 'videosCount', '视频', 'library/videos/');
+      renderGallery(data.gallery || []);
+      toast('已扫描 library · ' + data.stats.media + ' 个媒体');
+    } catch (e) {
+      console.error(e);
+      toast('加载失败: ' + e.message);
+    }
+  }
+
+  async function loadSources() {
+    try {
+      const res = await fetch('/api/sources');
+      const list = await res.json();
+      $('srcList').innerHTML = list.map(s =>
+        '<div class="src-item"><div>📁</div><div><div style="color:#ddd;font-size:12px">' + esc(s.name) +
+        '</div><div style="font-size:10px;color:#666;word-break:break-all">' + esc(s.path) + '</div></div></div>'
+      ).join('') || '<div style="color:#666;font-size:12px">无</div>';
+    } catch (_) {
+      $('srcList').innerHTML = '<div style="color:#666">无法加载来源</div>';
+    }
+  }
+
+  // ---- Edit profile ----
+  function openEdit() {
+    const p = (state.portfolio && state.portfolio.profile) || {};
+    $('efName').value = p.name || '';
+    $('efTitle').value = p.title || '';
+    $('efBio').value = p.bio || '';
+    $('efAbout').value = p.about || '';
+    $('efTags').value = (p.tags || []).join(', ');
+    $('efLinks').value = (p.links || []).map(l => (l.label || '') + '|' + (l.url || '')).join('\n');
+    $('efAvatar').value = p.avatar || '👤';
+    $('editModal').classList.add('open');
+  }
+
+  async function saveEdit() {
+    const body = {
+      name: $('efName').value.trim(),
+      title: $('efTitle').value.trim(),
+      bio: $('efBio').value.trim(),
+      about: $('efAbout').value,
+      avatar: $('efAvatar').value.trim() || '👤',
+      tags: $('efTags').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+      links: $('efLinks').value.split('\n').map(line => {
+        const p = line.split('|');
+        return { label: (p[0] || '').trim(), url: (p[1] || '').trim() };
+      }).filter(l => l.label && l.url),
+    };
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'save failed');
+      $('editModal').classList.remove('open');
+      await refresh();
+      toast('资料已写入 library');
+    } catch (e) {
+      toast('保存失败: ' + e.message);
+    }
+  }
+
+  // ---- Events ----
+  $('btnReload').addEventListener('click', refresh);
+  $('btnHelp').addEventListener('click', () => {
+    $('drawer').classList.add('open');
+    $('backdrop').classList.add('show');
+    loadSources();
+  });
+  $('btnCloseDrawer').addEventListener('click', closeDrawer);
+  $('backdrop').addEventListener('click', closeDrawer);
+  function closeDrawer() {
+    $('drawer').classList.remove('open');
+    $('backdrop').classList.remove('show');
+  }
+
+  $('btnEdit').addEventListener('click', openEdit);
+  $('efCancel').addEventListener('click', () => $('editModal').classList.remove('open'));
+  $('efSave').addEventListener('click', saveEdit);
+  $('editModal').addEventListener('click', (e) => {
+    if (e.target === $('editModal')) $('editModal').classList.remove('open');
+  });
+
+  $('btnAboutMore').addEventListener('click', () => {
+    const box = $('aboutBox');
+    const open = box.classList.toggle('collapsed') === false;
+    // classList.toggle returns new state of class... actually returns whether class is now present
+    // If collapsed present → collapsed. We want: if has collapsed, button = 展开
+    $('btnAboutMore').textContent = box.classList.contains('collapsed') ? '展开全文' : '收起';
+  });
+
+  $('lbClose').addEventListener('click', closeLightbox);
+  $('lbPrev').addEventListener('click', () => {
+    showIndex(state.index - 1);
+    if (state.auto) scheduleNext();
+  });
+  $('lbNext').addEventListener('click', () => {
+    showIndex(state.index + 1);
+    if (state.auto) scheduleNext();
+  });
+  $('lbAuto').addEventListener('click', () => {
+    if (state.auto) stopAuto();
+    else startAuto();
+  });
+
+  $('btnGalleryPlay').addEventListener('click', () => {
+    const items = (state.portfolio && state.portfolio.gallery) || [];
+    if (!items.length) return toast('画廊为空');
+    openLightbox(items, 0, '画廊');
+    startAuto();
+  });
+
+  $('btnAuto').addEventListener('click', () => {
+    if ($('lightbox').classList.contains('open') && state.auto) {
+      stopAuto();
+      return;
+    }
+    const items = allFeaturedMedia(state.portfolio || {});
+    if (!items.length) return toast('还没有可轮播的媒体');
+    openLightbox(items, 0, '精选轮播');
+    startAuto();
+  });
+
+  // keyboard
+  document.addEventListener('keydown', (e) => {
+    if (!$('lightbox').classList.contains('open')) {
+      if (e.key === 'Escape') closeDrawer();
+      return;
+    }
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') { showIndex(state.index - 1); if (state.auto) scheduleNext(); }
+    if (e.key === 'ArrowRight') { showIndex(state.index + 1); if (state.auto) scheduleNext(); }
+    if (e.key === ' ') { e.preventDefault(); state.auto ? stopAuto() : startAuto(); }
+  });
+
+  // swipe
+  let touchX = 0;
+  $('lbStage').addEventListener('touchstart', (e) => {
+    touchX = e.changedTouches[0].clientX;
+  }, { passive: true });
+  $('lbStage').addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) < 40) return;
+    if (dx > 0) showIndex(state.index - 1);
+    else showIndex(state.index + 1);
+    if (state.auto) scheduleNext();
+  }, { passive: true });
+
+  // nav scroll
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('act'));
+      btn.classList.add('act');
+      const id = btn.getAttribute('data-go');
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  refresh();
+})();
+</script>
+</body>
+</html>

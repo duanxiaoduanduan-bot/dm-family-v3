@@ -1,2 +1,25 @@
-# Auto detect text files and perform LF normalization
+# 行尾约定：Windows 上开发、Ubuntu 上运行。
+# shell/python/conf 必须 LF——CRLF 会让 bash 报 '\r: command not found'。
 * text=auto
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.py    text eol=lf
+*.js    text eol=lf
+*.cjs   text eol=lf
+*.conf  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# 二进制明确声明，防止被行尾转换损坏
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.mp4   binary
+*.mkv   binary
+*.zip   binary
+*.ico   binary

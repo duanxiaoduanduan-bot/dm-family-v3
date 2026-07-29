@@ -1,0 +1,10 @@
+{
+  "name": "DMgeo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DMgeo 地理统计（地图轨迹/大数据屏/行政区划/图层 + PostGIS）",
+  "dependencies": {
+    "pg": "^8.22.0",
+    "exif-reader": "^2.0.3"
+  }
+}

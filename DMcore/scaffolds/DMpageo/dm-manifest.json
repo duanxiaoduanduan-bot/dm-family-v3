@@ -1,0 +1,9 @@
+{
+  "name": "DMpageo",
+  "display": "DMpageo 页面服务",
+  "type": "web",
+  "port": 8091,
+  "command": "python3 app.py",
+  "description": "DM 家族的页面 / 前端展示服务示例。",
+  "env": {}
+}

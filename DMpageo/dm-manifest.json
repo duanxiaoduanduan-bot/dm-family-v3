@@ -1,0 +1,9 @@
+{
+  "name": "DMpageo",
+  "display": "DMpageo 合并门户",
+  "type": "web",
+  "port": 8085,
+  "command": "node portal.js",
+  "description": "合并门户：iframe 聚合 DMmedia(:8081) 与 DMgeo(:8084) 于同一界面",
+  "env": {}
+}

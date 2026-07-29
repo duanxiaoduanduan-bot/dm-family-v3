@@ -1,0 +1,341 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🗄️ PostGIS 数据管理</title>
+<style>
+:root{--bg:#0d0d14;--pn:#12121e;--bd:rgba(255,255,255,.05);--tx:#c8c8d0;--di:#6a6a78;--ac:#00cec9;--a2:#6c5ce7;--wn:#f39c12;--dg:#e74c3c;--sc:#2ecc71}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:12px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.top{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--pn);border-bottom:1px solid var(--bd);flex-shrink:0}
+.top h1{font-size:14px;color:#fff}.top a{color:var(--di);font-size:10px;text-decoration:none;margin-left:auto}.top a:hover{color:var(--ac)}
+.top .badge{font-size:9px;background:rgba(108,92,231,.15);color:var(--a2);padding:2px 8px;border-radius:10px}
+.layout{flex:1;display:flex;overflow:hidden}
+.side{width:230px;flex-shrink:0;background:var(--pn);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+.side-hd{padding:6px 8px;border-bottom:1px solid var(--bd)}
+.side-hd input{width:100%;padding:4px 8px;border-radius:4px;border:1px solid var(--bd);background:rgba(255,255,255,.02);color:var(--tx);font-size:10px;outline:none}
+.side-hd input:focus{border-color:var(--ac)}
+.tree{flex:1;overflow-y:auto;padding:4px;font-size:10px}
+.tree::-webkit-scrollbar{width:3px}
+.tree::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:2px}
+.tree .item{padding:4px 8px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:5px;color:var(--di);white-space:nowrap}
+.tree .item:hover{background:rgba(255,255,255,.03);color:var(--tx)}
+.tree .item.sel{background:rgba(0,206,201,.08);color:var(--ac);border-left:2px solid var(--ac)}
+.tree .item .ic{width:16px;text-align:center;flex-shrink:0}
+.tree .item .nm{flex:1;overflow:hidden;text-overflow:ellipsis}
+.tree .cat{font-size:9px;font-weight:600;padding:6px 8px 2px;color:var(--a2)}
+.tree .cat2{font-size:9px;font-weight:600;padding:6px 8px 2px;color:var(--ac)}
+.tree .sep{padding:2px 8px;font-size:8px;color:#333}
+.side-ft{padding:4px 8px;border-top:1px solid var(--bd);font-size:9px;color:var(--di);display:flex;gap:4px}
+.side-ft button{flex:1;padding:3px;border-radius:4px;border:1px solid var(--bd);background:rgba(255,255,255,.02);color:var(--di);font-size:9px;cursor:pointer}
+.side-ft button:hover{color:#fff}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.toolbar{display:flex;align-items:center;gap:5px;padding:5px 10px;border-bottom:1px solid var(--bd);flex-shrink:0;flex-wrap:wrap}
+.toolbar button{padding:4px 9px;border-radius:4px;border:1px solid var(--bd);background:rgba(255,255,255,.02);color:var(--di);font-size:10px;cursor:pointer}
+.toolbar button:hover{color:#fff}
+.toolbar button.ac{color:var(--ac);border-color:rgba(0,206,201,.2)}
+.toolbar button.wn{color:var(--wn)}
+.toolbar button.dg{color:var(--dg)}
+.toolbar .sp{width:1px;height:14px;background:var(--bd);margin:0 2px}
+.toolbar .info{font-size:9px;color:var(--di);margin-left:auto}
+.data{flex:1;overflow:auto}
+.data::-webkit-scrollbar{width:5px;height:5px}
+.data::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:2px}
+table{width:100%;border-collapse:collapse;font-size:10px}
+th{position:sticky;top:0;z-index:2;padding:5px 8px;text-align:left;background:var(--pn);border-bottom:1px solid var(--bd);color:var(--di);font-weight:500;white-space:nowrap}
+td{padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.015);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+tr:hover{background:rgba(255,255,255,.015)}
+td.nu{color:#3a3a4a;font-style:italic}
+td.gm{color:var(--a2);font-family:monospace;font-size:9px}
+td .ed,td .dl{color:var(--di);cursor:pointer;margin:0 2px;opacity:.4}
+tr:hover .ed,tr:hover .dl,tr.sel .ed,tr.sel .dl{opacity:1}
+td .dl:hover{color:var(--dg)}td .ed:hover{color:var(--ac)}
+tr.sel{background:rgba(0,206,201,.04)}tr.sel td{color:#fff}
+.chk{accent-color:var(--ac);cursor:pointer;width:13px;height:13px}
+.pg{display:flex;align-items:center;gap:6px;padding:5px 10px;border-top:1px solid var(--bd);flex-shrink:0;font-size:10px;color:var(--di)}
+.pg button{padding:3px 8px;border-radius:3px;border:1px solid var(--bd);background:rgba(255,255,255,.02);color:var(--di);font-size:10px;cursor:pointer}
+.pg button:hover{color:#fff}.pg button:disabled{opacity:.25}
+.sql{display:flex;gap:5px;padding:5px 10px;border-bottom:1px solid var(--bd);flex-shrink:0;background:rgba(0,0,0,.15)}
+.sql textarea{flex:1;padding:4px 8px;border-radius:4px;border:1px solid var(--bd);background:rgba(255,255,255,.02);color:var(--tx);font:11px monospace;resize:none;height:26px;outline:none}
+.sql textarea:focus{border-color:var(--ac)}
+.sql button{padding:4px 12px;border-radius:4px;border:none;background:var(--ac);color:#000;font-size:10px;font-weight:600;cursor:pointer}
+.emp{text-align:center;color:#2a2a3a;padding:80px 20px;font-size:13px}
+.emp .ic{font-size:40px;margin-bottom:10px;opacity:.2}
+.tabs{display:flex;border-bottom:1px solid var(--bd);flex-shrink:0}
+.tab{padding:6px 14px;font-size:10px;cursor:pointer;color:var(--di);border-bottom:2px solid transparent}
+.tab:hover{color:var(--tx)}.tab.act{color:var(--ac);border-bottom-color:var(--ac)}
+/* modal */
+.mo{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:.2s}
+.mo.sh{opacity:1;pointer-events:auto}
+.mc{background:#181824;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px;width:480px;max-width:90vw;max-height:80vh;overflow-y:auto}
+.mc h3{margin-bottom:12px;font-size:14px;color:#fff}
+.mc .fd{margin-bottom:10px}.mc .fd label{display:block;font-size:10px;color:var(--di);margin-bottom:4px}
+.mc .fd input,.mc .fd select,.mc .fd textarea{width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--tx);font-size:11px;outline:none;font-family:inherit}
+.mc .fd textarea{resize:vertical;min-height:60px;font-family:monospace}
+.mc .fd input:focus,.mc .fd textarea:focus{border-color:var(--ac)}
+.mc .bt{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.mc .bt button{padding:7px 16px;border-radius:6px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--tx);font-size:11px;cursor:pointer}
+.mc .bt .ok{background:var(--ac);border-color:var(--ac);color:#000;font-weight:600}
+.mc .bt .dg{background:var(--dg);border-color:var(--dg);color:#fff}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.9);color:#fff;padding:8px 20px;border-radius:20px;font-size:12px;z-index:999;pointer-events:none;opacity:0;transition:.3s}
+.toast.sh{opacity:1}
+</style></head><body>
+<div class="top">
+  <h1>🗄️ PostGIS 数据管理</h1><span class="badge" id="dbBadge"></span>
+  <button onclick="showNewDb()" style="margin-left:8px;padding:3px 10px;font-size:10px;border-radius:5px;border:1px solid var(--bd);background:rgba(0,206,201,.1);color:var(--ac);cursor:pointer">＋建库</button>
+  <select id="dbSel" onchange="pickDb(this.value)" style="padding:3px 6px;border-radius:5px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--tx);font-size:10px;outline:none"></select>
+  <button onclick="showRenameDb()" style="padding:3px 8px;font-size:9px" title="重命名">✏️</button>
+  <button onclick="showDropDb()" class="dg" style="padding:3px 8px;font-size:9px" title="删除">🗑</button>
+  <a href="/admin-regions.html">📍 区划</a><a href="/index.html">← DMgeo</a>
+</div>
+<div class="layout">
+  <div class="side"><div class="side-hd"><input id="treeQ" placeholder="🔍 搜索..." oninput="doTree()"></div><div class="tree" id="tree"></div>
+    <div class="side-ft"><button onclick="showNewFC()">＋ 要素类</button><button onclick="showImport()">📤 导入</button><span id="cnt"></span></div>
+  </div>
+  <div class="main">
+    <div class="sql"><textarea id="sqlIn" placeholder="SELECT * FROM features LIMIT 5;" rows="1"></textarea><button onclick="runSql()">▶ 运行</button></div>
+    <div class="tabs"><div class="tab act" onclick="tab='browse';doTab()">📋 浏览</div><div class="tab" onclick="tab='struct';doTab()">🗂 结构</div><div class="tab" onclick="tab='query';doTab()">📝 结果</div></div>
+    <div class="toolbar" id="tb"></div><div class="data" id="da"><div class="emp"><div class="ic">🗄️</div>选择表或运行 SQL</div></div>
+    <div class="pg" id="pg"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="mo" id="mo"><div class="mc" id="mc"></div></div>
+<script>
+var T=function(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('sh');setTimeout(function(){t.classList.remove('sh')},2500)};
+var E=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')};
+var dbs=[],tabs=[],cur={db:localStorage.getItem('pgm_db')||'trip',tbl:'',typ:'',page:1,data:null,sch:null,sel:[],order:'id'},tab='browse',qry=null;
+var FC=[{id:'marker',ic:'📍',nm:'标记点'},{id:'path',ic:'🛤️',nm:'路径轨迹'},{id:'polygon',ic:'🔲',nm:'区域面'},{id:'photo',ic:'📷',nm:'照片点'}];
+var BD=['provinces','cities','countries','districts'];
+var MT=['spatial_ref_sys','geography_columns','geometry_columns'];
+
+async function api(u,o){o=o||{};o.headers=Object.assign({'Content-Type':'application/json;charset=utf-8'},o.headers||{});if(u.indexOf('?')>=0)u+='&db='+encodeURIComponent(cur.db);else u+='?db='+encodeURIComponent(cur.db);var r=await fetch(u,o);var ct=r.headers.get('Content-Type')||'';if(ct.indexOf('json')>=0){var d=await r.json();return Array.isArray(d)?d:(d.error?[]:d)}return r.text()}
+
+// ===== 初始化 =====
+(async function(){
+  try{dbs=await api('/api/pg/databases');if(!dbs.length)dbs=['dmpageo']}catch(e){dbs=['dmpageo']}
+  var s=document.getElementById('dbSel'); s.innerHTML=''; dbs.forEach(function(d){s.innerHTML+='<option value="'+d+'"'+(d===cur.db?' selected':'')+'>🗄️ '+d+'</option>'});
+  document.getElementById('dbBadge').textContent=cur.db+'@localhost';
+  await loadTabs(); doTree();
+})();
+
+async function loadTabs(){try{tabs=await api('/api/pg/tables')}catch(e){tabs=[]}}
+
+function pickDb(d){cur.db=d;localStorage.setItem('pgm_db',d);cur.tbl='';cur.typ='';cur.sch=null;document.getElementById('dbBadge').textContent=d+'@localhost'; loadTabs(); doTree(); document.getElementById('da').innerHTML='<div class="emp"><div class="ic">🔄</div>已切换到 '+E(d)+'</div>'; document.getElementById('tb').innerHTML=''; document.getElementById('pg').innerHTML=''}
+
+// ===== 树 =====
+function doTree(){
+  var q=(document.getElementById('treeQ').value||'').toLowerCase();
+  var ft=tabs.filter(function(n){return !q||n.toLowerCase().indexOf(q)>=0});
+  var bt=ft.filter(function(n){return BD.indexOf(n)>=0});
+  var ot=ft.filter(function(n){return BD.indexOf(n)<0&&MT.indexOf(n)<0&&n!=='features'});
+  var mt=ft.filter(function(n){return MT.indexOf(n)>=0});
+
+  function I(ic,nm,clk,sel,indent){return'<div class="item'+(sel?' sel':'')+'" style="padding-left:'+(indent||8)+'px" onclick="'+clk+'"><span class="ic">'+ic+'</span><span class="nm">'+E(nm)+'</span></div>'}
+
+  var h='<div class="item" style="color:#fff;font-weight:700;padding-left:4px;cursor:default"><span class="ic">📁</span><span class="nm">DM 家族</span></div>';
+
+  dbs.forEach(function(db){
+    var isCur=db===cur.db;
+    h+='<div class="item'+(isCur?' sel':'')+'" style="padding-left:16px;font-weight:'+(isCur?'600':'400')+'" onclick="pickDb(\''+db+'\')"><span class="ic">🗄️</span><span class="nm">'+E(db)+'</span></div>';
+    if(!isCur)return;
+
+    h+='<div class="cat">📍 要素类</div>';
+    FC.forEach(function(fc){ h+=I(fc.ic,fc.nm,"openTbl('features','"+fc.id+"')",cur.tbl==='features'&&cur.typ===fc.id,28); });
+    h+=I('📋','全部要素',"openTbl('features','')",cur.tbl==='features'&&!cur.typ,28);
+
+    if(bt.length){h+='<div class="cat2">🗺️ 区划</div>'; var icm={countries:'🌍',provinces:'🇨🇳',cities:'🏙️',districts:'🏘️'};
+      bt.forEach(function(n){h+=I(icm[n]||'📄',n,"openTbl('"+n+"','')",cur.tbl===n,28);});}
+    if(ot.length){h+='<div class="cat">📋 其他</div>'; ot.forEach(function(n){h+=I('📄',n,"openTbl('"+n+"','')",cur.tbl===n,28)});}
+    if(mt.length){h+='<div class="cat">⚙️ 系统</div>'; mt.forEach(function(n){h+=I('🔧',n,"openTbl('"+n+"','')",cur.tbl===n,28)});}
+  });
+  document.getElementById('tree').innerHTML=h||'<div style="color:var(--di);padding:16px;text-align:center;font-size:10px">无数据</div>';
+  document.getElementById('cnt').textContent=dbs.length+'库·'+tabs.length+'表';
+}
+
+// ===== 打开表 =====
+async function openTbl(tbl,typ){
+  cur.tbl=tbl;cur.typ=typ||'';cur.sel=[];tab='browse'; doTree(); doTab();
+  try{
+    cur.sch=await api('/api/pg/tables/'+encodeURIComponent(tbl)+'/schema');
+    if(!Array.isArray(cur.sch)){T('加载结构失败');return}
+    await loadPage(1); doTb(); doData();
+  }catch(e){T(e.message); document.getElementById('da').innerHTML='<div class="emp"><div class="ic">⚠️</div>'+E(e.message)+'</div>'}
+}
+
+async function loadPage(p){cur.page=p;
+  var lim=parseInt((document.querySelector('#psz')||{}).value||50);
+  var q=(document.querySelector('#rq')||{}).value||'';
+  var u='/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows?page='+p+'&limit='+lim+'&order='+encodeURIComponent(cur.order);
+  if(q)u+='&q='+encodeURIComponent(q); if(cur.typ)u+='&type='+encodeURIComponent(cur.typ);
+  cur.data=await api(u);
+}
+
+function doTab(){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('act',t.textContent.indexOf(tab==='browse'?'浏览':tab==='struct'?'结构':'结果')>=0)});
+  if(tab==='browse'){doTb(); doData()}
+  else if(tab==='struct'){doStruct()}
+  else if(tab==='query'&&qry){doQryR(qry)}
+}
+
+// ===== 工具栏 =====
+function doTb(){
+  var nm=cur.typ?(FC.find(function(f){return f.id===cur.typ})||{}).nm+' · features':cur.tbl;
+  var sc=cur.sel.length;
+  var h='<b style="color:#fff;margin-right:8px">📋 '+E(nm)+'</b>'+
+    '<button onclick="showAdd()">＋新增</button><button class="ac" onclick="showRenameTbl()">✎重命名</button><button onclick="showImport()">📤导入</button>'+
+    '<button onclick="down(\'geojson\')">⬇GeoJSON</button><button onclick="down(\'csv\')">⬇CSV</button>'+
+    '<span class="sp"></span><button onclick="showCopyDb()">📋迁移</button>'+
+    '<button class="dg" onclick="delSel()">🗑删除'+(sc?'('+sc+')':'')+'</button>'+
+    '<span class="sp"></span><button class="wn" onclick="doTrunc()">✕清空</button><button class="dg" onclick="var n=prompt(\"输入 \"+cur.tbl+\" 确认删除\");if(n===cur.tbl){fetch(\"/api/pg/tables/\"+encodeURIComponent(cur.tbl)+\"?db=\"+encodeURIComponent(cur.db),{method:\"DELETE\"}).then(function(r){return r.json()}).then(function(d){if(d.ok){T(\"✅ 已删除\");cur.tbl=\"\";loadTabs();doTree();document.getElementById(\"da\").innerHTML=\"<div class=emp><div class=ic>🗑</div>已删除</div>\"}else{T(d.error)}}).catch(function(e){T(e.message)})}else if(n!==null)T(\"不匹配\")">🗑删表</button>'+
+    '<span class="info">'+(cur.data?cur.data.total+' 行':'')+'</span>';
+  document.getElementById('tb').innerHTML=h;
+}
+
+// ===== 数据表格 =====
+function doData(){
+  if(!cur.sch){return}
+  var data=cur.data,sch=cur.sch;
+  var gm=sch.filter(function(c){return c.udt_name==='geometry'}).map(function(c){return c.column_name});
+  var cn=sch.map(function(c){return c.column_name});
+  if(!data){document.getElementById('da').innerHTML='<div style="text-align:center;color:var(--di);padding:40px">加载中...</div>';return}
+
+  var h='<div style="padding:4px 10px;display:flex;gap:6px;border-bottom:1px solid var(--bd)"><input id="rq" placeholder="🔍 搜索..." onkeydown="if(event.key===\'Enter\'){loadPage(1);doData();doTb()}" style="padding:3px 8px;border-radius:4px;border:1px solid var(--bd);background:rgba(255,255,255,.02);color:var(--tx);font-size:10px;width:180px;outline:none"><button onclick="loadPage(1);doData();doTb()" style="padding:3px 8px;border-radius:3px;border:1px solid var(--bd);background:rgba(255,255,255,.02);color:var(--di);cursor:pointer;font-size:10px">搜索</button></div>';
+  h+='<div class="data"><table><thead><tr><th style="width:22px"><input type="checkbox" class="chk" onclick="allCb(this)" title="全选"></th><th style="width:28px">#</th>';
+  cn.forEach(function(c){h+='<th style="cursor:pointer" onclick="cur.order=\''+c+'\';loadPage(1);doData();doTb()">'+E(c)+(gm.indexOf(c)>=0?' <span style="color:var(--a2);font-size:8px">🗺</span>':'')+'</th>'});
+  h+='<th style="width:50px"></th></tr></thead><tbody>';
+
+  var rows=data.rows||[], sids=cur.sel||[];
+  if(!rows.length){h+='<tr><td colspan="'+(cn.length+3)+'" style="text-align:center;color:var(--di);padding:40px">表为空</td></tr>'}
+  else rows.forEach(function(r,i){
+    var rid=r.id,is=sids.indexOf(rid)>=0;
+    h+='<tr class="'+(is?'sel':'')+'"><td><input type="checkbox" class="chk" '+(is?'checked':'')+' onchange="tbCb('+rid+',this)"></td>';
+    h+='<td style="color:var(--di)">'+(((cur.page-1)*(data.limit||50))+i+1)+'</td>';
+    cn.forEach(function(c){
+      if(gm.indexOf(c)>=0){var g=r[c+'_geojson']||'';h+='<td class="gm">'+(g?'🗺 '+g.substring(0,30):'<span class="nu">NULL</span>')+'</td>'}
+      else{var v=r[c];h+='<td title="'+E(String(v||''))+'">'+(v===null?'<span class="nu">NULL</span>':E(String(v).substring(0,50)))+'</td>'}
+    });
+    h+='<td><span class="ed" onclick="showEdit('+i+')">✎</span><span class="dl" onclick="delOne('+i+')">✕</span></td></tr>';
+  });
+  h+='</tbody></table></div>';
+
+  var pg='';
+  if(data.total>0){var tp=Math.ceil(data.total/(data.limit||50));
+    pg='<span>'+data.total+'行 · '+tp+'页</span>'+
+      '<button '+(data.page<=1?'disabled':'')+' onclick="loadPage(1);doData();doTb()">⏮</button>'+
+      '<button '+(data.page<=1?'disabled':'')+' onclick="loadPage('+(data.page-1)+');doData();doTb()">◀</button>'+
+      '<span>'+data.page+'/'+tp+'</span>'+
+      '<button '+(data.page>=tp?'disabled':'')+' onclick="loadPage('+(data.page+1)+');doData();doTb()">▶</button>'+
+      '<button '+(data.page>=tp?'disabled':'')+' onclick="loadPage('+tp+');doData();doTb()">⏭</button>'+
+      '<select id="psz" onchange="loadPage(1);doData();doTb()"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select>/页';}
+
+  document.getElementById('da').innerHTML=h; document.getElementById('pg').innerHTML=pg;
+}
+
+function doStruct(){
+  if(!cur.sch){document.getElementById('da').innerHTML='<div class="emp">选表先</div>';return}
+  var h='<div class="data"><table><thead><tr><th>列</th><th>类型</th><th>可空</th><th>默认值</th></tr></thead><tbody>';
+  cur.sch.forEach(function(c){h+='<tr><td><b>'+E(c.column_name)+'</b></td><td style="color:'+(c.udt_name==='geometry'?'var(--a2)':'var(--tx)')+'">'+E(c.data_type)+'</td><td>'+(c.is_nullable==='YES'?'✓':'')+'</td><td style="color:var(--di)">'+E(c.column_default||'—')+'</td></tr>'});
+  h+='</tbody></table></div>'; document.getElementById('da').innerHTML=h; document.getElementById('pg').innerHTML='';
+}
+
+// ===== SQL =====
+async function runSql(){
+  var s=document.getElementById('sqlIn').value.trim();if(!s){T('输入SQL');return}
+  try{var r=await fetch('/api/pg/query?db='+encodeURIComponent(cur.db),{method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},body:JSON.stringify({sql:s})});qry=await r.json(); tab='query'; doTab()}catch(e){T(e.message)}
+}
+function doQryR(d){if(!d||!d.columns){document.getElementById('da').innerHTML='<div class="emp">无结果</div>';return}
+  var h='<div class="data"><table><thead><tr><th>#</th>'; d.columns.forEach(function(c){h+='<th>'+E(c)+'</th>'}); h+='</tr></thead><tbody>';
+  (d.rows||[]).forEach(function(r,i){h+='<tr><td style="color:var(--di)">'+(i+1)+'</td>';d.columns.forEach(function(c){h+='<td>'+E(String(r[c]||''))+'</td>'});h+='</tr>'});
+  h+='</tbody></table></div>'; document.getElementById('da').innerHTML=h; document.getElementById('pg').innerHTML='<span>'+(d.rows||[]).length+' 行</span>';
+  document.getElementById('tb').innerHTML='<b style="color:var(--ac)">📝 查询结果</b>';
+}
+
+// ===== 复选框 =====
+function tbCb(id,cb){if(cb.checked)cur.sel.push(id);else{var i=cur.sel.indexOf(id);if(i>=0)cur.sel.splice(i,1)}doData();doTb()}
+function allCb(cb){cur.sel=[];if(cb.checked&&cur.data&&cur.data.rows)cur.data.rows.forEach(function(r){cur.sel.push(r.id)});doData();doTb()}
+function delSel(){if(!cur.sel.length){T('勾选行');return}if(confirm('⚠️ 删除选中 '+cur.sel.length+' 行？'))delExec(cur.sel)}
+function delOne(i){var r=cur.data.rows[i];if(confirm('⚠️ 删除 ID='+r.id+' ？'))delExec([r.id])}
+async function delExec(ids){var ok=0;for(var i=0;i<ids.length;i++){try{await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows/'+ids[i],{method:'DELETE'});ok++}catch(e){}}T('✅ '+ok+'行');cur.sel=[];loadPage(1);doData();doTb()}
+
+// ===== 行 CRUD =====
+function showAdd(){
+  if(!Array.isArray(cur.sch)){T('先选表');return}
+  var f='';cur.sch.forEach(function(c){if(c.udt_name!=='geometry'&&c.column_name!=='id')f+='<div class="fd"><label>'+E(c.column_name)+'</label><input id="f_'+E(c.column_name)+'"></div>'});
+  mo('＋ 新增 — '+E(cur.tbl),f,addRow,'ok')
+}
+async function addRow(){var d={};cur.sch.forEach(function(c){if(c.udt_name!=='geometry'&&c.column_name!=='id'){var v=(document.getElementById('f_'+c.column_name)||{}).value;if(v)d[c.column_name]=v}});
+  try{var r=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows',{method:'POST',body:JSON.stringify({data:d})});if(r.ok){T('✅');closeMo();loadPage(1);doData()}else T(r.error)}catch(e){T(e.message)}}
+
+function showEdit(i){
+  var r=cur.data.rows[i],f='';cur.sch.forEach(function(c){if(c.udt_name!=='geometry'&&c.column_name!=='id'){var v=r[c]!==null&&r[c]!==undefined?E(String(r[c])):'';f+='<div class="fd"><label>'+E(c.column_name)+'</label><input id="f_'+E(c.column_name)+'" value="'+v+'"></div>'}});
+  mo('✎ 编辑 — '+E(cur.tbl),f,function(){saveEdit(r.id)},'ok')
+}
+async function saveEdit(id){var d={};cur.sch.forEach(function(c){if(c.udt_name!=='geometry'&&c.column_name!=='id'){var el=document.getElementById('f_'+c.column_name);if(el)d[c.column_name]=el.value}});
+  try{var r=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows/'+id,{method:'PUT',body:JSON.stringify({data:d})});if(r.ok){T('✅');closeMo();loadPage(cur.page);doData()}else T(r.error)}catch(e){T(e.message)}}
+
+// ===== 表操作 =====
+function showNewFC(){
+  mo('＋ 新建要素类','<div class="fd"><label>表名</label><input id="f_nm"></div><div class="fd"><label>几何类型</label><select id="f_gt"><option value="Point,4326">📍 点</option><option value="LineString,4326">🛤️ 线</option><option value="Polygon,4326">🔲 面</option><option value="MultiPolygon,4326">🔲 多面</option><option value="Geometry,4326">🗺️ 通用</option><option value="">无</option></select></div><div class="fd"><label>额外列(可选,每行:名 类型)</label><textarea id="f_ec" rows="2"></textarea></div><p style="color:var(--di);font-size:9px">自动加 id SERIAL PRIMARY KEY + geom + 空间索引</p>',createFC,'ok')
+}
+async function createFC(){
+  var nm=(document.getElementById('f_nm').value||'').trim();if(!nm){T('输入表名');return}
+  var gt=document.getElementById('f_gt').value;
+  var cols=[{name:'id',type:'SERIAL PRIMARY KEY'}]; if(gt)cols.push({name:'geom',type:'geometry('+gt+')'}); cols.push({name:'name',type:'TEXT'},{name:'properties',type:"JSONB DEFAULT '{}'"});
+  var ec=(document.getElementById('f_ec').value||'').trim();if(ec)ec.split('\n').filter(function(l){return l.trim()}).forEach(function(l){var p=l.trim().split(/\s+/);cols.push({name:p[0],type:p.slice(1).join(' ')})});
+  try{var r=await api('/api/pg/tables',{method:'POST',body:JSON.stringify({name:nm,columns:cols})});if(r.ok){T('✅');closeMo();loadTabs();doTree()}else T(r.error)}catch(e){T(e.message)}
+}
+
+function showRenameTbl(){mo('✎ 重命名表','<div class="fd"><label>新表名</label><input id="f_rn" value="'+cur.tbl+'"></div>',doRenameTbl,'ok')}
+async function doRenameTbl(){var n=(document.getElementById('f_rn').value||'').trim();if(!n||n===cur.tbl){T('输入新名');return}
+  try{var r=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl),{method:'PUT',body:JSON.stringify({newName:n})});if(r.ok){T('✅');closeMo();cur.tbl=n;loadTabs();doTree();openTbl(n)}else T(r.error)}catch(e){T(e.message)}}
+
+function doDrop(){var n=prompt('⚠️ 输入表名确认删除: '+cur.tbl);if(n===cur.tbl)doDropExec();else if(n!==null)T('表名不匹配');}
+async function doDropExec(){
+  try{var r=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl),{method:'DELETE'});if(r.ok){T('✅');closeMo();cur.tbl='';loadTabs();doTree();document.getElementById('da').innerHTML='<div class="emp"><div class="ic">🗑</div>已删除</div>'}else T(r.error)}catch(e){T(e.message)}}
+
+function doTrunc(){if(confirm('⚠️ 清空表 '+cur.tbl+'？'))doTruncExec()}
+async function doTruncExec(){try{var r=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows/all',{method:'DELETE'});if(r.ok){T('✅');closeMo();loadPage(1);doData()}else T(r.error)}catch(e){T(e.message)}}
+
+// ===== 数据库操作 =====
+function showNewDb(){mo('＋ 建库','<div class="fd"><label>库名</label><input id="f_dn"></div><p style="color:var(--di);font-size:9px">自动启用 PostGIS</p>',doNewDb,'ok')}
+async function doNewDb(){var n=(document.getElementById('f_dn').value||'').trim();if(!n){T('输入名');return}
+  try{var r=await api('/api/pg/databases',{method:'POST',body:JSON.stringify({name:n})});if(r.ok){T('✅');closeMo();cur.db=n;dbs.push(n);loadTabs();doTree()}else T(r.error)}catch(e){T(e.message)}}
+
+function showRenameDb(){mo('✏️ 重命名库','<div class="fd"><label>当前:'+E(cur.db)+'</label><input id="f_drn"></div>',doRenameDb,'ok')}
+async function doRenameDb(){var n=(document.getElementById('f_drn').value||'').trim();if(!n||n===cur.db){T('输入新名');return}
+  try{var r=await api('/api/pg/databases/'+encodeURIComponent(cur.db),{method:'PUT',body:JSON.stringify({newName:n})});if(r.ok){T('✅');closeMo();cur.db=n;location.reload()}else T(r.error)}catch(e){T(e.message)}}
+
+function showDropDb(){if(cur.db==='trip'){T('不能删 trip');return}var n=prompt('⚠️ 输入库名确认删除: '+cur.db);if(n===cur.db)doDropDb();else if(n!==null)T('不匹配')}
+async function doDropDb(){
+  try{var r=await api('/api/pg/databases/'+encodeURIComponent(cur.db),{method:'DELETE'});if(r.ok){T('✅');closeMo();cur.db='dmpageo';dbs=dbs.filter(function(d){return d!==cur.db});loadTabs();doTree()}else T(r.error)}catch(e){T(e.message)}}
+
+// ===== 跨库迁移 =====
+function showCopyDb(){if(!cur.tbl){T('先选表');return}
+  var opts=dbs.filter(function(d){return d!==cur.db}).map(function(d){return'<option>'+d+'</option>'}).join('');
+  mo('📋 迁移: '+E(cur.tbl),'<div class="fd"><label>目标库</label><select id="f_tdb">'+opts+'</select></div><div class="fd"><label>新表名(留空同名)</label><input id="f_tnm" value="'+cur.tbl+'"></div><p style="color:var(--di);font-size:9px">自动建表结构+批量导数据</p>',doCopyDb,'ok')
+}
+async function doCopyDb(){
+  var tdb=document.getElementById('f_tdb').value,tnm=document.getElementById('f_tnm').value.trim()||cur.tbl;if(!tdb){T('选目标库');return}
+  T('⏳迁移中...');
+  try{
+    var all=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows?limit=500'),total=all.total,ok=0,p=1;
+    try{var tmpApi=api;tmpApi.toString();await fetch('/api/pg/tables?db='+tdb,{method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},body:JSON.stringify({name:tnm,columns:cur.sch.map(function(c){return{name:c.column_name,type:(c.udt_name==='geometry'?'geometry(Geometry,4326)':c.data_type)}})})})}catch(e){}
+    while(true){var data=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows?limit=200&page='+p);
+      if(!data||!data.rows||!data.rows.length)break;
+      var fts=data.rows.map(function(r){var pr={};for(var k in r){if(!k.endsWith('_geojson')&&k!=='id')pr[k]=r[k]}var geom=null;for(var j=0;j<cur.sch.length;j++){var c=cur.sch[j];if(c.udt_name==='geometry'&&r[c.column_name+'_geojson']){try{geom=JSON.parse(r[c.column_name+'_geojson'])}catch(e){}}}return{type:'Feature',geometry:geom,properties:pr}});
+      var rr=await fetch('/api/pg/tables/'+encodeURIComponent(tnm)+'/upload?db='+tdb,{method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},body:JSON.stringify({features:fts})});
+      var rd=await rr.json();ok+=rd.inserted||0;if(data.rows.length<200)break;p++}
+    T('✅ '+ok+'/'+total+' 行 → '+tdb+'.'+tnm);closeMo()}catch(e){T(e.message)}
+}
+
+// ===== 导入导出 =====
+function showImport(){if(!cur.tbl){T('先选表');return}mo('📤 导入 GeoJSON → '+E(cur.tbl),'<div class="fd"><textarea id="f_im" rows="10" placeholder="粘贴 GeoJSON..."></textarea></div>',doImport,'ok')}
+async function doImport(){var t=(document.getElementById('f_im').value||'').trim();if(!t){T('粘贴数据');return}
+  try{var g=JSON.parse(t);var r=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/upload',{method:'POST',body:JSON.stringify(g)});T('✅ '+r.inserted+'条');closeMo();loadPage(1);doData()}catch(e){T(e.message)}}
+
+function down(fmt){if(!cur.tbl)return;var a=document.createElement('a');a.href='/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/download?format='+fmt+'&db='+encodeURIComponent(cur.db);a.download=cur.tbl+'.'+(fmt==='geojson'?'geojson':'csv');a.click()}
+
+// ===== Modal =====
+function mo(title,body,cb,cls){var c=document.getElementById('mc');c.innerHTML='<h3>'+title+'</h3>'+body+'<div class="bt"><button onclick="closeMo()">取消</button><button class="'+(cls||'ok')+'" id="moOk">确认</button></div>';document.getElementById('mo').classList.add('sh');setTimeout(function(){ var b=document.getElementById('moOk'); if(b) b.onclick=cb; }, 50)}
+function closeMo(){document.getElementById('mo').classList.remove('sh')}
+document.getElementById('mo').addEventListener('click',function(e){if(e.target===this)closeMo()});
+</script></body></html>

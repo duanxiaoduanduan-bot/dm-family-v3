@@ -1,0 +1,10 @@
+{
+  "name": "DMshow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DMshow 作品集主页（library 素材库自动排版）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

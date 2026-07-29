@@ -1,0 +1,9 @@
+{
+  "name": "DMChat",
+  "display": "DMChat 实时对话服务",
+  "type": "web",
+  "port": 8083,
+  "command": "node server.js",
+  "description": "DM 家族的即时对话 / 消息服务（WebSocket，端口 8083）。",
+  "env": {}
+}

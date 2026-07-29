@@ -1,0 +1,49 @@
+{
+  "projects_root": "..",
+  "known": [
+    {
+      "name": "DMmedia",
+      "display": "DMmedia 媒体与网盘",
+      "type": "web",
+      "port": 8081,
+      "description": "媒体播放（电视剧/MV/音乐/写真馆/有声书/阅读）+ 存储管理 + 网盘（:8082）。",
+      "source": {
+        "type": "scaffold",
+        "origin": "scaffolds/DMmedia"
+      }
+    },
+    {
+      "name": "DMgeo",
+      "display": "DMgeo 地理统计",
+      "type": "web",
+      "port": 8084,
+      "description": "地图轨迹/大数据展示屏/行政区划管理/图层管理 + PostGIS 空间数据库（依赖 dmpageo-pg:5432）。",
+      "source": {
+        "type": "scaffold",
+        "origin": "scaffolds/DMgeo"
+      }
+    },
+    {
+      "name": "DMpageo",
+      "display": "DMpageo 合并门户",
+      "type": "web",
+      "port": 8085,
+      "description": "合并门户：iframe 聚合 DMmedia(:8081) 与 DMgeo(:8084) 于同一界面。",
+      "source": {
+        "type": "scaffold",
+        "origin": "scaffolds/DMpageo"
+      }
+    },
+    {
+      "name": "DMChat",
+      "display": "DMChat 实时对话服务",
+      "type": "web",
+      "port": 8083,
+      "description": "DM 家族的即时对话 / 消息服务（WebSocket，端口 8083）。",
+      "source": {
+        "type": "scaffold",
+        "origin": "scaffolds/DMChat"
+      }
+    }
+  ]
+}

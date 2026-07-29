@@ -1,0 +1,9 @@
+{
+  "name": "DMchat",
+  "display": "DMchat 对话服务",
+  "type": "web",
+  "port": 8092,
+  "command": "python3 app.py",
+  "description": "DM 家族的即时对话 / 消息服务示例。",
+  "env": {}
+}

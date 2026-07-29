@@ -1,0 +1,9 @@
+{
+  "name": "DMmedia",
+  "display": "DMmedia 媒体与网盘",
+  "type": "web",
+  "port": 8081,
+  "command": "bash dmcore-start.sh",
+  "description": "媒体播放（电视剧/MV/音乐/写真馆/有声书/阅读）+ 存储管理 + 网盘（:8087）",
+  "env": {}
+}

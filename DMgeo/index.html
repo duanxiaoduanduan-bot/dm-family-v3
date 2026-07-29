@@ -1,0 +1,353 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMgeo 地理统计</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#0a0a0f;color:#e0e0ee;min-height:100vh;overflow-x:hidden}
+
+/* 粒子背景 */
+#particles{position:fixed;inset:0;pointer-events:none;z-index:0}
+.p{position:absolute;width:2px;height:2px;background:#6c5ce7;border-radius:50%;opacity:.12;animation:fl linear infinite}
+@keyframes fl{0%{transform:translateY(100vh);opacity:0}10%{opacity:.12}90%{opacity:.12}100%{transform:translateY(-10vh);opacity:0}}
+
+/* 顶栏 */
+.header{position:relative;z-index:1;padding:18px 32px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(255,255,255,.05);background:rgba(10,10,15,.8);backdrop-filter:blur(20px)}
+.header .logo{font-size:22px;font-weight:700;background:linear-gradient(135deg,#6c5ce7,#00cec9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:flex;align-items:center;gap:8px}
+.header .logo .sub{font-size:11px;color:#555;background:rgba(255,255,255,.05);padding:2px 8px;border-radius:4px;-webkit-text-fill-color:#555;font-weight:400}
+.header .actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.header .actions .stat{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);font-size:12px;color:#888}
+.header .actions .stat .dot{width:6px;height:6px;border-radius:50%;background:#00cec9;animation:pus 2s infinite}
+@keyframes pus{0%,100%{opacity:1}50%{opacity:.3}}
+.header .actions .btn{padding:7px 18px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#aaa;font-size:12px;cursor:pointer;text-decoration:none;transition:all .2s}
+.header .actions .btn:hover{background:rgba(255,255,255,.08);color:#fff;border-color:rgba(108,92,231,.3)}
+
+/* 主横幅 */
+.hero{position:relative;z-index:1;text-align:center;padding:48px 20px 36px}
+.hero .icon{font-size:48px;margin-bottom:12px}
+.hero h1{font-size:32px;font-weight:700;margin-bottom:6px;background:linear-gradient(135deg,#e0e0ee,#8888aa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{color:#666;font-size:14px;max-width:500px;margin:0 auto;line-height:1.6}
+
+/* 模块网格 */
+.grid{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 20px 40px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px}
+
+.card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:28px 24px;cursor:pointer;transition:all .3s;position:relative;overflow:hidden;text-decoration:none;color:inherit;display:block}
+.card:hover{transform:translateY(-4px);border-color:rgba(108,92,231,.3);box-shadow:0 8px 40px rgba(108,92,231,.08)}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;opacity:0;transition:opacity .3s}
+.card:hover::before{opacity:1}
+.card .card-icon{font-size:36px;margin-bottom:14px;width:52px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.card h3{font-size:16px;font-weight:600;margin-bottom:6px}
+.card p{font-size:13px;color:#777;line-height:1.5;margin-bottom:10px}
+.card .tags{display:flex;gap:6px;flex-wrap:wrap}
+.card .tags span{padding:3px 10px;border-radius:12px;font-size:10px;background:rgba(255,255,255,.04);color:#666;border:1px solid rgba(255,255,255,.06)}
+.card .arrow{position:absolute;top:24px;right:24px;font-size:14px;color:#444;transition:all .3s}
+.card:hover .arrow{color:#6c5ce7;transform:translateX(4px)}
+
+/* 各模块主题色 */
+.card-tv .card-icon{background:linear-gradient(135deg,#c0392b40,#e74c3c40);color:#e74c3c}
+.card-tv::before{background:linear-gradient(90deg,#c0392b,#e74c3c)}
+.card-tv:hover{border-color:rgba(231,76,60,.3)}
+.card-music .card-icon{background:linear-gradient(135deg,#6c5ce740,#00cec940);color:#00cec9}
+.card-music::before{background:linear-gradient(90deg,#6c5ce7,#00cec9)}
+.card-music:hover{border-color:rgba(108,92,231,.3)}
+.card-book .card-icon{background:linear-gradient(135deg,#c49a2a40,#8b691440);color:#c49a2a}
+.card-book::before{background:linear-gradient(90deg,#c49a2a,#8b6914)}
+.card-book:hover{border-color:rgba(196,154,42,.3)}
+.card-mv .card-icon{background:linear-gradient(135deg,#e1705540,#fdcb6e40);color:#fdcb6e}
+.card-mv::before{background:linear-gradient(90deg,#e17055,#fdcb6e)}
+.card-mv:hover{border-color:rgba(253,203,110,.3)}
+.card-album .card-icon{background:linear-gradient(135deg,#fd79a840,#e1705540);color:#e17055}
+.card-album::before{background:linear-gradient(90deg,#fd79a8,#e17055)}
+.card-album:hover{border-color:rgba(225,112,85,.3)}
+.card-map .card-icon{background:linear-gradient(135deg,#00b89440,#00cec940);color:#00cec9}
+.card-map::before{background:linear-gradient(90deg,#00b894,#00cec9)}
+.card-map:hover{border-color:rgba(0,206,201,.3)}
+
+/* 底部统计 */
+.footer{position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.05);padding:20px 32px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#444}
+.footer .powered{display:flex;align-items:center;gap:8px}
+.footer .powered span{color:#666}
+
+/* 文件列表 */
+.file-list{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 20px 30px;display:none}
+.file-list.open{display:block}
+.file-list h3{font-size:13px;color:#666;margin-bottom:10px;display:flex;align-items:center;gap:8px;cursor:pointer}
+.file-list h3:hover{color:#aaa}
+.file-list .files{display:flex;flex-wrap:wrap;gap:6px}
+.file-list .files a{padding:5px 12px;border-radius:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);color:#666;text-decoration:none;font-size:12px;transition:all .2s}
+.file-list .files a:hover{background:rgba(255,255,255,.06);color:#aaa;border-color:rgba(108,92,231,.2)}
+
+/* 后台状态 */
+.status-bar{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 20px 30px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.status-item{padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);display:flex;align-items:center;gap:10px}
+.status-item .s-dot{width:8px;height:8px;border-radius:50%;background:#333;flex-shrink:0}
+.status-item .s-dot.on{background:#00cec9;box-shadow:0 0 8px rgba(0,206,201,.2)}
+.status-item .s-dot.off{background:#e74c3c}
+.status-item .s-info{font-size:12px}
+.status-item .s-info .s-name{color:#888}
+.status-item .s-info .s-count{color:#444;font-size:11px}
+
+/* 右下角地址悬浮 */
+.addr-float{position:fixed;bottom:20px;right:20px;z-index:99;display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:22px;background:rgba(10,10,15,.85);border:1px solid rgba(108,92,231,.2);backdrop-filter:blur(12px);font-size:12px;color:#888;cursor:pointer;transition:all .25s;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.addr-float:hover{border-color:rgba(108,92,231,.5);color:#fff;box-shadow:0 4px 28px rgba(108,92,231,.15)}
+.addr-float .addr-dot{width:7px;height:7px;border-radius:50%;background:#00cec9;flex-shrink:0;animation:pus 2s infinite}
+.addr-float .addr-text{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px}
+.addr-float .addr-copy{font-size:11px;color:#6c5ce7;white-space:nowrap;opacity:0;transition:opacity .2s}
+.addr-float:hover .addr-copy{opacity:1}
+.addr-float.copied .addr-copy{color:#00cec9}
+.addr-float.copied{border-color:rgba(0,206,201,.4)}
+
+@media(max-width:640px){
+.header{padding:14px 16px;flex-wrap:wrap;gap:10px}
+.header .logo{font-size:18px}
+.hero{padding:32px 16px 24px}
+.hero h1{font-size:24px}
+.grid{grid-template-columns:1fr;gap:14px;padding:0 16px 24px}
+.card{padding:20px}
+.footer{flex-direction:column;gap:8px;padding:14px 16px;text-align:center}
+}
+</style>
+</head>
+<body>
+<div id="particles"></div>
+
+<div class="header">
+<div class="logo">✦ DMgeo 地理统计 <span class="sub">v2.0</span></div>
+<div class="actions">
+<div class="stat" id="ipStat" style="cursor:pointer" title="点击复制IP" onclick="copyIP()"><span id="ipText" style="font-family:monospace;color:#00cec9">加载中...</span></div>
+<div class="stat"><div class="dot"></div><span id="statusText">运行中</span></div>
+<a class="btn" onclick="toggleFileList()">📂 目录</a>
+<a class="btn" onclick="location.reload()">🔄 刷新</a>
+</div>
+</div>
+
+<div class="hero">
+<div class="icon">🎬</div>
+<h1>DMgeo 地理统计</h1>
+<p>地图轨迹 · 大数据展示屏 · 行政区划管理 · 图层管理 · PostGIS 空间数据</p>
+</div>
+
+<!-- 状态栏 -->
+<div class="status-bar" id="statusBar"></div>
+
+<!-- 模块网格 -->
+<div class="grid">
+<a class="card card-map" href="map-player.html" target="_blank">
+<div class="arrow">→</div>
+<div class="card-icon">🗺️</div>
+<h3>地图轨迹</h3>
+<p>标记管理 · 路径绘制 · 照片联动 · GeoJSON/GIS导出 · 脚注表格</p>
+<div class="tags"><span>geodata/</span><span>geojson</span><span>gpx</span><span>GIS</span></div>
+</a>
+
+<a class="card card-map" href="dashboard.html" target="_blank" style="--accent:#6c5ce7">
+<div class="arrow">→</div>
+<div class="card-icon" style="background:linear-gradient(135deg,#6c5ce740,#00cec940);color:#6c5ce7">📊</div>
+<h3>大数据展示屏</h3>
+<p>全模块统计数据一览 · 标记/路径/媒体分布 · 实时刷新</p>
+<div class="tags"><span>dashboard</span><span>统计</span><span>数据</span></div>
+</a>
+
+<a class="card card-map" href="db-manager.html" target="_blank" style="--accent:#6c5ce7">
+<div class="arrow">→</div>
+<div class="card-icon" style="background:linear-gradient(135deg,#6c5ce740,#a29bfe40);color:#6c5ce7">🗄️</div>
+<div class="card-text">
+<div class="card-title">PostGIS 数据库</div>
+<div class="card-desc">库·要素类管理 / SQL 查询 / 跨库迁移</div>
+</div>
+</a>
+
+<a class="card card-map" href="admin-regions.html" target="_blank" style="--accent:#f39c12">
+<div class="arrow">→</div>
+<div class="card-icon" style="background:linear-gradient(135deg,#f39c1240,#e67e2240);color:#f39c12">📍</div>
+<h3>行政区划管理</h3>
+<p>省/市/区坐标数据管理 · 反向地理编码数据集 · 增删改查</p>
+<div class="tags"><span>admin</span><span>GIS</span><span>区划</span></div>
+</a>
+
+<a class="card card-map" href="layer-manager.html" target="_blank" style="--accent:#a29bfe">
+<div class="arrow">→</div>
+<div class="card-icon" style="background:linear-gradient(135deg,#a29bfe40,#6c5ce740);color:#a29bfe">📑</div>
+<h3>图层管理</h3>
+<p>底图切换 · 数据图层显隐 · 透明度控制 · 图层叠加管理</p>
+<div class="tags"><span>图层</span><span>底图</span><span>控制</span></div>
+</a>
+
+</div>
+
+<!-- 文件列表 -->
+<div class="file-list" id="fileList">
+<h3 onclick="toggleFileList()">📂 目录结构 ▾</h3>
+<div class="files" id="fileItems"></div>
+</div>
+
+<div class="footer">
+<div class="powered"><span>✦</span> DMgeo 地理统计 <span>v2.0</span></div>
+<div>🗺️ 地图轨迹 · 📊 大数据屏 · 📍 行政区划 · 📑 图层管理</div>
+</div>
+
+<!-- 右下角局域网地址 -->
+<div class="addr-float" id="addrFloat" onclick="copyAddr()" title="点击复制局域网地址">
+<div class="addr-dot"></div>
+<span class="addr-text" id="addrText">检测中...</span>
+<span class="addr-copy" id="addrCopy">📋 复制</span>
+</div>
+
+<script>
+// ===== 粒子 =====
+(function(){var c=document.getElementById('particles');for(var i=0;i<25;i++){var p=document.createElement('div');p.className='p';p.style.left=Math.random()*100+'%';p.style.animationDuration=(Math.random()*20+15)+'s';p.style.animationDelay=(Math.random()*20)+'s';c.appendChild(p)}})();
+
+// ===== 加载站点名称 =====
+async function loadSiteName(){
+  try{
+    var r=await fetch('/api/config');
+    var d=await r.json();
+    if(d.siteName){
+      document.title=d.siteName;
+      document.querySelector('.hero h1').textContent=d.siteName;
+      document.querySelector('.header .logo').innerHTML='✦ '+escHtml(d.siteName)+' <span class="sub">v2.0</span>';
+      document.querySelector('.footer .powered').innerHTML='<span>✦</span> '+escHtml(d.siteName)+' <span>v2.0</span>';
+    }
+  }catch(e){}
+}
+function escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+loadSiteName();
+
+// ===== 目录列表（从 JSON 端点汇总） =====
+async function scanFiles() {
+  var container = document.getElementById('fileItems');
+  container.innerHTML = '';
+  var endpoints = [
+    { name: '🗺️ 地图', json: 'geodata-list.json', key: null, fileKey: null },
+  ];
+  for (var i = 0; i < endpoints.length; i++) {
+    var ep = endpoints[i];
+    var a = document.createElement('a');
+    a.textContent = ep.name;
+    a.style.cursor = 'default';
+    container.appendChild(a);
+  }
+}
+
+// ===== 扫描各模块状态 =====
+async function scanStatus() {
+  // 通过 JSON 列表端点检测模块状态（比直接访问目录更可靠）
+  var modules = [
+    { name: '地图轨迹', json: 'geodata-list.json', icon: '🗺️' },
+  ];
+  
+  var bar = document.getElementById('statusBar');
+  bar.innerHTML = '';
+  
+  for (var i = 0; i < modules.length; i++) {
+    var m = modules[i];
+    var item = document.createElement('div');
+    item.className = 'status-item';
+    
+    try {
+      var r = await fetch(m.json);
+      if (r.ok) {
+        var data = await r.json();
+        var count = '';
+        if (m.json === 'tvdrama-list.json') {
+          count = (data.series ? data.series.length : 0) + ' 部剧';
+        } else {
+          count = (Array.isArray(data) ? data.length : 0) + ' 文件';
+        }
+        item.innerHTML = '<div class="s-dot on"></div><div class="s-info"><div class="s-name">' + m.icon + ' ' + m.name + '</div><div class="s-count">' + count + '</div></div>';
+      } else {
+        item.innerHTML = '<div class="s-dot off"></div><div class="s-info"><div class="s-name">' + m.icon + ' ' + m.name + '</div><div class="s-count">离线</div></div>';
+      }
+    } catch(e) {
+      item.innerHTML = '<div class="s-dot off"></div><div class="s-info"><div class="s-name">' + m.icon + ' ' + m.name + '</div><div class="s-count">未挂载</div></div>';
+    }
+    bar.appendChild(item);
+  }
+}
+
+function toggleFileList() {
+  document.getElementById('fileList').classList.toggle('open');
+}
+
+scanFiles();
+scanStatus();
+detectAddr();
+
+// ===== 局域网地址检测 =====
+function detectAddr(){
+  var host=location.hostname;
+  var port=location.port;
+  var addrText=document.getElementById('addrText');
+  var addrFloat=document.getElementById('addrFloat');
+  
+  // 如果是 IP 访问就直接用当前地址
+  if(/^\d+\.\d+\.\d+\.\d+$/.test(host)){
+    var url='http://'+host+(port?':'+port:'');
+    addrText.textContent=url;
+    addrFloat.title='点击复制地址';
+    return;
+  }
+  // 如果是 localhost 或 sandbox 代理，尝试获取局域网 IP（通过 WebRTC）
+  // 优先用 location.host 如果已经是 IP
+  var currentUrl=location.protocol+'//'+host+(port?':'+port:'');
+  addrText.textContent=currentUrl;
+  
+  // 尝试通过 RTCPeerConnection 获取本机局域网 IP
+  try{
+    var pc=new RTCPeerConnection({iceServers:[]});
+    pc.createDataChannel('');
+    pc.createOffer().then(function(o){pc.setLocalDescription(o)});
+    pc.onicecandidate=function(e){
+      if(!e.candidate)return;
+      var ip=e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+      if(ip && ip[1] && !ip[1].startsWith('127.') && ip[1].startsWith('192.')){
+        var lanUrl='http://'+ip[1]+':'+(port||'80');
+        addrText.textContent=lanUrl;
+        addrFloat.title='点击复制局域网地址';
+      }
+    };
+  }catch(e){}
+}
+
+function copyAddr(){
+  var text=document.getElementById('addrText').textContent;
+  var addrFloat=document.getElementById('addrFloat');
+  var addrCopy=document.getElementById('addrCopy');
+  
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(function(){
+      addrCopy.textContent='✅ 已复制';
+      addrFloat.classList.add('copied');
+      setTimeout(function(){addrCopy.textContent='📋 复制';addrFloat.classList.remove('copied')},2000);
+    });
+  }else{
+    // 降级方案
+    var ta=document.createElement('textarea');
+    ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+    addrCopy.textContent='✅ 已复制';
+    addrFloat.classList.add('copied');
+    setTimeout(function(){addrCopy.textContent='📋 复制';addrFloat.classList.remove('copied')},2000);
+  }
+}
+// ===== 加载本机 IP =====
+async function loadIP(){
+  try{
+    var r=await fetch('/api/ip');
+    var d=await r.json();
+    var ip=d.ips.length>0?d.ips[0].ip:'未知';
+    $('ipText').textContent='🌐 '+ip+':'+d.port;
+    $('ipStat').title='点击复制: '+ip+':'+d.port;
+    window._serverIP=ip+':'+d.port;
+  }catch(e){$('ipText').textContent='🌐 未获取';}
+}
+function copyIP(){
+  var ip=window._serverIP||$('ipText').textContent.replace('🌐 ','');
+  if(navigator.clipboard){navigator.clipboard.writeText(ip).then(function(){$('ipText').textContent='✅ 已复制';setTimeout(function(){loadIP()},1500)})}
+}
+loadIP();
+</script>
+</body>
+</html>

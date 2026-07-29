@@ -1,0 +1,57 @@
+# ── dm-family .gitignore ──
+# 原则: 仓库只装代码与文档; 数据/运行时产物/构建产物一律不进库。
+# clone 后: ./install.sh 装依赖, 数据由导入脚本或日常使用重新生成。
+
+# ── 构建产物 ──
+node_modules/
+*/node_modules/
+__pycache__/
+*.pyc
+
+# ── AI 助手工作区(不随仓库分发) ──
+.workbuddy/
+
+# ── 安装/运行标记 ──
+.dm-install/
+ports.json
+
+# ── supervisor 运行时(安装时按本机路径重新生成) ──
+DMcore/supervisor/supervisord.conf
+DMcore/supervisor/programs/*.conf
+DMcore/supervisor/logs/
+DMcore/supervisor/*.sock
+DMcore/supervisor/*.pid
+
+# ── 日志与临时 ──
+*.log
+nohup.out
+tmp/
+.DS_Store
+Thumbs.db
+
+# ── 用户数据: 媒体(体积大, 不进库) ──
+DMmedia/album/
+DMmedia/music/
+DMmedia/video/
+DMmedia/tvdrama/
+DMmedia/file-shortcuts.json
+
+# ── 用户数据: 地图(269M+, 由 import-datav.js / import-world.js 重建) ──
+DMgeo/geodata/
+DMgeo/map-boundaries/
+DMgeo/geodata-list.json
+DMgeo/_*.png
+DMgeo/_*.jpg
+
+# ── 用户数据: 聊天上传 ──
+DMChat/files/
+DMChat/mdfiles/
+DMChat/videos/
+
+# ── 用户数据: 作品集素材(保留目录约定文档) ──
+DMshow/library/*
+!DMshow/library/README.md
+
+# ── 本地配置(含本机端口/路径偏好, 首装会重新生成) ──
+# config.json 提交模板值; 若你本机改过端口不想同步, 取消下一行注释:
+# config.json

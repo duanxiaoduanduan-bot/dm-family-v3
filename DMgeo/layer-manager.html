@@ -1,0 +1,218 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📑 图层管理</title>
+<link rel="stylesheet" href="leaflet.css" />
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#0a0a0f;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.header{padding:10px 16px;background:rgba(0,0,0,.5);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:12px;flex-shrink:0}
+.header h1{font-size:16px;font-weight:600}
+.header .actions{margin-left:auto;display:flex;gap:5px}
+.header .actions a{padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#aaa;font-size:10px;cursor:pointer;text-decoration:none}
+.header .actions a:hover{background:rgba(255,255,255,.08);color:#fff}
+.main{flex:1;display:flex;overflow:hidden}
+#map{flex:1;min-width:0;background:#1a1a2e}
+.sidebar{width:340px;flex-shrink:0;background:rgba(12,12,22,.95);border-left:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-section{padding:12px;border-bottom:1px solid rgba(255,255,255,.04)}
+.sidebar-section h3{font-size:12px;color:#888;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.layer-item{padding:8px 10px;border-radius:6px;display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:2px;transition:all .1s}
+.layer-item:hover{background:rgba(255,255,255,.03)}
+.layer-item .toggle{width:36px;height:20px;border-radius:10px;background:#333;position:relative;cursor:pointer;flex-shrink:0;transition:background .2s}
+.layer-item .toggle.on{background:#00cec9}
+.layer-item .toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s}
+.layer-item .toggle.on::after{left:18px}
+.layer-item .l-info{flex:1;min-width:0}
+.layer-item .l-name{font-size:11px;color:#ccc}
+.layer-item .l-count{font-size:9px;color:#555}
+.layer-item .l-opacity{width:60px;flex-shrink:0}
+.layer-item .l-opacity input{width:100%;height:3px;-webkit-appearance:none;appearance:none;background:#333;border-radius:2px;outline:none}
+.layer-item .l-opacity input::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#00cec9;cursor:pointer}
+.layer-item .l-color{width:16px;height:16px;border-radius:3px;flex-shrink:0;border:1px solid rgba(255,255,255,.1)}
+.sidebar-list{flex:1;overflow-y:auto;padding:4px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;padding:8px 20px;border-radius:20px;font-size:12px;z-index:999;pointer-events:none;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+.leaflet-container{background:#1a1a2e!important}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📑 图层管理</h1>
+  <div class="actions">
+    <a href="/">← 首页</a>
+    <a href="map-player.html">🗺️ 地图轨迹</a>
+    <a href="admin-regions.html">📍 行政区划</a>
+  </div>
+</div>
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar" id="sidebar"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="leaflet.js"></script>
+<script>
+var $=function(i){return document.getElementById(i)};
+var toast=$('toast');
+function showToast(msg){toast.textContent=msg;toast.classList.add('show');setTimeout(function(){toast.classList.remove('show')},2000)}
+
+var map=L.map('map',{center:[30,105],zoom:4,zoomControl:true});
+L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
+  attribution:'&copy; 高德',maxZoom:18,subdomains:'1234'
+}).addTo(map);
+
+// ===== 图层定义 =====
+var layers={};
+var layerDefs=[
+  {id:'markers',name:'标记点',icon:'📍',color:'#e17055',api:'/api/geo',type:'point'},
+  {id:'paths',name:'路径/轨迹',icon:'📏',color:'#0984e3',api:'/api/geo',type:'line'},
+  {id:'polygons',name:'面要素',icon:'🔷',color:'#2ecc71',api:'/api/geo',type:'polygon'},
+  {id:'photos',name:'照片覆盖层',icon:'📷',color:'#fdcb6e',api:'/api/geo',type:'photo'},
+  {id:'countries',name:'世界国家边界',icon:'🌍',color:'#6c5ce7',api:'/api/geo/boundaries?type=countries',type:'boundary'},
+  {id:'provinces',name:'中国省份边界',icon:'🇨🇳',color:'#00cec9',api:'/api/geo/boundaries?type=provinces',type:'boundary'},
+  {id:'cities',name:'中国城市边界',icon:'🏙️',color:'#fd79a8',api:'/api/geo/boundaries?type=cities',type:'boundary'},
+];
+
+// 底图切换
+var baseMaps={
+  '高德地图':'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+  '卫星影像':'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',
+  'OpenStreetMap':'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+};
+var currentBase='高德地图';
+
+// ===== 初始化 =====
+function buildSidebar(){
+  var html='';
+  // 底图选择
+  html+='<div class="sidebar-section"><h3>🗺️ 底图</h3>';
+  html+='<select id="baseSelect" onchange="switchBase(this.value)" style="width:100%;padding:6px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#ddd;font-size:10px">';
+  for(var k in baseMaps){html+='<option value="'+k+'"'+(k===currentBase?' selected':'')+'>'+k+'</option>'}
+  html+='</select></div>';
+
+  // 数据图层
+  html+='<div class="sidebar-section"><h3>📊 数据图层</h3>';
+  layerDefs.forEach(function(ld){
+    html+='<div class="layer-item"><span>'+ld.icon+'</span><span class="l-color" style="background:'+ld.color+'"></span>'+
+      '<span class="l-info"><span class="l-name">'+ld.name+'</span><span class="l-count" id="cnt_'+ld.id+'">—</span></span>'+
+      '<span class="l-opacity"><input type="range" min="0" max="100" value="100" oninput="setOpacity(\''+ld.id+'\',this.value)" /></span>'+
+      '<span class="toggle on" id="tgl_'+ld.id+'" onclick="toggleLayer(\''+ld.id+'\')"></span></div>';
+  });
+  html+='</div>';
+
+  // 全部开关
+  html+='<div class="sidebar-section" style="display:flex;gap:8px">'+
+    '<button onclick="toggleAll(true)" style="flex:1;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(0,206,201,.1);color:#00cec9;font-size:10px;cursor:pointer">✅ 全部显示</button>'+
+    '<button onclick="toggleAll(false)" style="flex:1;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#aaa;font-size:10px;cursor:pointer">❌ 全部隐藏</button>'+
+    '</div>';
+
+  $('sidebar').innerHTML=html;
+}
+
+function switchBase(name){
+  currentBase=name;
+  map.eachLayer(function(l){if(l._url)map.removeLayer(l)});
+  L.tileLayer(baseMaps[name],{attribution:'&copy;',maxZoom:18,subdomains:'1234'}).addTo(map);
+  // 重新加载图层（底图移除时会清掉数据层）
+  Object.keys(layers).forEach(function(k){layers[k]=null});
+  loadAllLayers();
+}
+
+function toggleLayer(id){
+  var tgl=$('tgl_'+id);
+  var ld=layerDefs.find(function(d){return d.id===id});
+  if(!ld)return;
+  tgl.classList.toggle('on');
+  if(tgl.classList.contains('on')){
+    loadLayer(ld);
+  }else{
+    if(layers[id]){map.removeLayer(layers[id]);layers[id]=null}
+  }
+}
+
+function setOpacity(id,val){
+  var ld=layerDefs.find(function(d){return d.id===id});
+  if(!ld||!layers[id])return;
+  var op=val/100;
+  if(layers[id].setStyle){
+    layers[id].setStyle({fillOpacity:Math.max(0.02,op*0.3),opacity:Math.max(0.1,op*0.8)});
+  }else if(layers[id].setOpacity){
+    layers[id].setOpacity(op);
+  }
+}
+
+function toggleAll(show){
+  layerDefs.forEach(function(ld){
+    var tgl=$('tgl_'+ld.id);
+    if(show&&!tgl.classList.contains('on')){tgl.classList.add('on');loadLayer(ld)}
+    else if(!show&&tgl.classList.contains('on')){tgl.classList.remove('on');if(layers[ld.id]){map.removeLayer(layers[ld.id]);layers[ld.id]=null}}
+  });
+}
+
+async function loadLayer(ld){
+  if(layers[ld.id]){map.removeLayer(layers[ld.id]);layers[ld.id]=null}
+  try{
+    var r=await fetch(ld.api);
+    var data=await r.json();
+    var count=0;
+    if(ld.type==='boundary'){
+      // 边界图层
+      var colors=['#6c5ce7','#00cec9','#e17055','#fdcb6e','#fd79a8','#0984e3','#00b894','#a29bfe',
+        '#e74c3c','#c49a2a','#74b9ff','#55efc4','#fab1a0','#ffeaa7','#636e72','#8e44ad',
+        '#2ecc71','#1abc9c','#3498db','#e67e22','#f39c12','#d35400','#c0392b','#16a085'];
+      layers[ld.id]=L.geoJSON(data,{
+        style:function(f){var i=data.features.indexOf(f);return{color:colors[i%colors.length],weight:1,fillColor:colors[i%colors.length],fillOpacity:0.08,opacity:0.5}},
+        onEachFeature:function(f,layer){layer.bindTooltip(f.properties.name,{direction:'center',opacity:0.8})}
+      }).addTo(map);
+      count=data.features.length;
+    }else{
+      // 要素图层
+      var markers=[],paths=[],polygons=[],photos=[];
+      (data.features||[]).forEach(function(f){
+        if(!f.geometry)return;
+        if(f.geometry.type==='Point'){
+          var props=f.properties||{};
+          if(ld.id==='photos'&&props.type==='photo'){
+            var pm=L.marker([f.geometry.coordinates[1],f.geometry.coordinates[0]],{
+              icon:L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50%;background:rgba(253,203,110,.8);border:2px solid #fdcb6e;display:flex;align-items:center;justify-content:center;font-size:12px">📷</div>',iconSize:[24,24],iconAnchor:[12,12]})
+            });
+            if(props.name)pm.bindTooltip(props.name);
+            photos.push(pm);count++;
+          }else if(ld.id==='markers'&&(!props.type||props.type!=='photo')){
+            var mk=L.circleMarker([f.geometry.coordinates[1],f.geometry.coordinates[0]],{radius:5,color:'#e17055',fillColor:'#e17055',fillOpacity:0.6,weight:2});
+            if(props.name)mk.bindTooltip(props.name);
+            markers.push(mk);count++;
+          }
+        }else if((f.geometry.type==='LineString'||f.geometry.type==='MultiLineString')&&ld.id==='paths'){
+          var line=L.geoJSON(f,{style:{color:'#0984e3',weight:2}});
+          paths.push(line);count++;
+        }else if((f.geometry.type==='Polygon'||f.geometry.type==='MultiPolygon')&&ld.id==='polygons'){
+          var poly=L.geoJSON(f,{style:{color:'#2ecc71',weight:2,fillColor:'#2ecc71',fillOpacity:0.15}});
+          polygons.push(poly);count++;
+        }
+      });
+      var all=[];
+      if(markers.length){var mg=L.layerGroup(markers);all.push(mg);mg._count=markers.length}
+      if(paths.length){var pg=L.layerGroup(paths);all.push(pg);pg._count=paths.length}
+      if(polygons.length){var plg=L.layerGroup(polygons);all.push(plg);plg._count=polygons.length}
+      if(photos.length){var phg=L.layerGroup(photos);all.push(phg);phg._count=photos.length}
+      if(all.length>0){
+        layers[ld.id]=L.layerGroup(all).addTo(map);
+      }
+    }
+    $('cnt_'+ld.id).textContent=count+' 项';
+  }catch(e){console.error(ld.id,e);$('cnt_'+ld.id).textContent='加载失败'}
+}
+
+async function loadAllLayers(){
+  for(var i=0;i<layerDefs.length;i++){
+    var ld=layerDefs[i];
+    var tgl=$('tgl_'+ld.id);
+    if(tgl&&tgl.classList.contains('on'))await loadLayer(ld);
+  }
+}
+
+buildSidebar();
+loadAllLayers();
+</script>
+</body>
+</html>

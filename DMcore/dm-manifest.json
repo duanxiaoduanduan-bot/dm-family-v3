@@ -1,0 +1,12 @@
+{
+  "name": "DMcore",
+  "display": "DMcore 运维控制台 + 统一入口",
+  "type": "web",
+  "port": 8088,
+  "command": "python3 app.py",
+  "description": "DM 家族控制台(8088)，统一入口代理(8080)由 proxy.js 提供",
+  "env": {
+    "DMCORE_PORT": "8088",
+    "DMCORE_HOST": "0.0.0.0"
+  }
+}

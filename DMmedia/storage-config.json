@@ -1,0 +1,78 @@
+{
+  "paths": {
+    "music": {
+      "dir": "./music",
+      "scanType": "flatWithSubdirs",
+      "exts": [
+        ".mp3",
+        ".wav",
+        ".flac",
+        ".ogg",
+        ".aac",
+        ".m4a"
+      ]
+    },
+    "video": {
+      "dir": "./video",
+      "scanType": "flatWithSubdirs",
+      "exts": [
+        ".mp4",
+        ".webm",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".flv",
+        ".wmv"
+      ]
+    },
+    "tvdrama": {
+      "dir": "./tvdrama",
+      "scanType": "series",
+      "exts": [
+        ".mp4",
+        ".webm",
+        ".mkv",
+        ".mov",
+        ".avi"
+      ]
+    },
+    "album": {
+      "dir": "./album",
+      "scanType": "album",
+      "exts": []
+    },
+    "book": {
+      "dir": "./book",
+      "scanType": "flatWithSubdirs",
+      "exts": [
+        ".txt",
+        ".epub"
+      ]
+    },
+    "pdf": {
+      "dir": "./pdf",
+      "scanType": "flat",
+      "exts": [
+        ".pdf"
+      ]
+    },
+    "audio": {
+      "dir": "./Audio",
+      "scanType": "flatWithSubdirs",
+      "exts": [
+        ".mp3",
+        ".wav",
+        ".flac",
+        ".ogg",
+        ".aac",
+        ".m4a"
+      ]
+    },
+    "geodata": {
+      "dir": "./geodata",
+      "scanType": "geodata",
+      "exts": []
+    }
+  },
+  "siteName": "断断资料合集"
+}

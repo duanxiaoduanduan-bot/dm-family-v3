@@ -1,0 +1,24 @@
+{
+  "_comment": "dm-family 端口集中配置。改这里一处，各服务启动时自动应用。留空或删键则使用默认值。",
+  "DMmedia": {
+    "_comment": "媒体服务 + 网盘",
+    "media": 8081,
+    "files": 8087
+  },
+  "DMgeo": {
+    "_comment": "地理统计服务",
+    "port": 8084
+  },
+  "DMpageo": {
+    "_comment": "合并门户(聚合 media+geo)",
+    "port": 8085
+  },
+  "DMChat": {
+    "_comment": "实时对话服务",
+    "port": 8083
+  },
+  "DMshow": {
+    "_comment": "作品集主页",
+    "port": 8086
+  }
+}

@@ -1,0 +1,1689 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📊 大数据展示屏</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#08080f;color:#e0e0ee;min-height:100vh;overflow-x:hidden}
+
+/* 粒子背景 */
+#particles{position:fixed;inset:0;pointer-events:none;z-index:0}
+.p{position:absolute;width:2px;height:2px;background:#6c5ce7;border-radius:50%;opacity:.1;animation:fl linear infinite}
+@keyframes fl{0%{transform:translateY(100vh);opacity:0}10%{opacity:.1}90%{opacity:.1}100%{transform:translateY(-10vh);opacity:0}}
+
+.header{position:relative;z-index:1;padding:18px 32px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(255,255,255,.05);background:rgba(8,8,15,.9);backdrop-filter:blur(20px)}
+.header .logo{font-size:20px;font-weight:700;background:linear-gradient(135deg,#6c5ce7,#00cec9);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header .actions{margin-left:auto;display:flex;gap:8px}
+.header .actions a{padding:7px 18px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#aaa;font-size:12px;cursor:pointer;text-decoration:none;transition:all .2s}
+.header .actions a:hover{background:rgba(255,255,255,.08);color:#fff;border-color:rgba(108,92,231,.3)}
+
+.main{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:24px 20px 40px;display:grid;gap:20px}
+
+/* 统计卡片 */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.stat-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:22px 20px;transition:all .3s;position:relative;overflow:hidden}
+.stat-card:hover{transform:translateY(-2px);border-color:rgba(108,92,231,.2);box-shadow:0 6px 30px rgba(108,92,231,.08)}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.stat-card .sc-icon{font-size:32px;margin-bottom:8px}
+.stat-card .sc-value{font-size:36px;font-weight:700;margin-bottom:4px}
+.stat-card .sc-label{font-size:12px;color:#666}
+
+.stat-markers::before{background:linear-gradient(90deg,#e17055,#fdcb6e)}
+.stat-markers .sc-value{color:#e17055}
+.stat-paths::before{background:linear-gradient(90deg,#00cec9,#0984e3)}
+.stat-paths .sc-value{color:#00cec9}
+.stat-polygons::before{background:linear-gradient(90deg,#f39c12,#e67e22)}
+.stat-polygons .sc-value{color:#f39c12}
+.stat-timepath::before{background:linear-gradient(90deg,#9b59b6,#8e44ad)}
+.stat-timepath .sc-value{color:#9b59b6}
+.stat-photos::before{background:linear-gradient(90deg,#fd79a8,#e17055)}
+.stat-photos .sc-value{color:#fd79a8}
+.stat-videos::before{background:linear-gradient(90deg,#a29bfe,#6c5ce7)}
+.stat-videos .sc-value{color:#a29bfe}
+.stat-media::before{background:linear-gradient(90deg,#fdcb6e,#e17055)}
+.stat-media .sc-value{color:#fdcb6e}
+.stat-total::before{background:linear-gradient(90deg,#6c5ce7,#00cec9)}
+.stat-total .sc-value{background:linear-gradient(135deg,#6c5ce7,#00cec9);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-region-prov::before{background:linear-gradient(90deg,#00b894,#55efc4)}
+.stat-region-prov .sc-value{color:#00b894}
+.stat-region-city::before{background:linear-gradient(90deg,#0984e3,#74b9ff)}
+.stat-region-city .sc-value{color:#0984e3}
+.stat-region-dist::before{background:linear-gradient(90deg,#a29bfe,#dfe6e9)}
+.stat-region-dist .sc-value{color:#a29bfe}
+
+/* 区域统计卡片网格 */
+.region-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.region-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:14px 16px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.region-card:hover{background:rgba(255,255,255,.06);border-color:rgba(108,92,231,.25);transform:translateY(-2px);box-shadow:0 4px 20px rgba(108,92,231,.1)}
+.region-card .rc-name{font-size:14px;font-weight:600;color:#ccc;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.region-card .rc-stats{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#777}
+.region-card .rc-stats span{background:rgba(255,255,255,.04);padding:2px 8px;border-radius:6px}
+.region-card .rc-bar{height:3px;background:rgba(255,255,255,.04);border-radius:2px;margin-top:8px;overflow:hidden}
+.region-card .rc-bar-fill{height:100%;border-radius:2px;transition:width .5s ease}
+.region-card .rc-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:14px;color:#444;transition:all .2s}
+.region-card:hover .rc-arrow{color:#6c5ce7;right:8px}
+
+/* 面包屑 */
+.breadcrumb{display:flex;align-items:center;gap:4px;font-size:11px;margin-bottom:12px;flex-wrap:wrap}
+.breadcrumb a{color:#6c5ce7;cursor:pointer;text-decoration:none;transition:color .2s}
+.breadcrumb a:hover{color:#a29bfe}
+.breadcrumb span{color:#555}
+
+/* 热力图标签 */
+.region-heatmap{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px}
+.region-heatmap .rh-item{padding:3px 8px;border-radius:6px;font-size:11px;color:#ccc;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);cursor:pointer;transition:all .2s}
+.region-heatmap .rh-item:hover{background:rgba(108,92,231,.15);border-color:rgba(108,92,231,.3)}
+.region-heatmap .rh-item .rh-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;vertical-align:middle}
+
+/* 搜索框 */
+.region-search{margin-bottom:10px}
+.region-search input{width:100%;max-width:300px;padding:6px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#ccc;font-size:12px;outline:none}
+.region-search input:focus{border-color:rgba(108,92,231,.3)}
+.region-search input::placeholder{color:#555}
+
+/* 汇总条 */
+.region-summary{margin-top:14px;padding:10px 14px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.04);font-size:11px;color:#555;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.region-summary b{font-weight:600}
+
+/* 面板网格 */
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
+
+.panel-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;overflow:hidden}
+.panel-card .pc-head{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.04);font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.panel-card .pc-body{padding:16px 18px;max-height:400px;overflow-y:auto}
+.panel-card .pc-body::-webkit-scrollbar{width:4px}
+.panel-card .pc-body::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+
+/* 表格 */
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{text-align:left;padding:8px 12px;color:#666;font-weight:500;border-bottom:1px solid rgba(255,255,255,.05);position:sticky;top:0;background:rgba(8,8,15,.95)}
+.data-table td{padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.03);color:#aaa}
+.data-table tr:hover td{background:rgba(255,255,255,.02)}
+.data-table .badge{padding:2px 8px;border-radius:10px;font-size:10px}
+.badge-point{background:rgba(225,112,85,.15);color:#e17055}
+.badge-path{background:rgba(0,206,201,.15);color:#00cec9}
+.badge-photo{background:rgba(253,121,168,.15);color:#fd79a8}
+.badge-video{background:rgba(162,155,254,.15);color:#a29bfe}
+
+/* 进度条 */
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bar-label{width:80px;font-size:12px;color:#888;text-align:right;flex-shrink:0}
+.bar-track{flex:1;height:8px;background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .8s ease}
+.bar-val{width:50px;font-size:11px;color:#aaa;flex-shrink:0;text-align:right}
+
+/* 媒体分布饼图（纯CSS模拟） */
+.pie-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.pie-legend .pl-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#888}
+.pie-legend .pl-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+
+/* 时间线 */
+.timeline{position:relative;padding-left:24px}
+.timeline::before{content:'';position:absolute;left:8px;top:0;bottom:0;width:2px;background:rgba(255,255,255,.06)}
+.timeline .tl-item{position:relative;padding:8px 0 12px 20px}
+.timeline .tl-item::before{content:'';position:absolute;left:-20px;top:12px;width:8px;height:8px;border-radius:50%;background:#6c5ce7;border:2px solid rgba(108,92,231,.3)}
+.timeline .tl-item .tl-date{font-size:10px;color:#555}
+.timeline .tl-item .tl-text{font-size:12px;color:#aaa;margin-top:2px}
+
+.empty{text-align:center;padding:30px;color:#555;font-size:13px}
+
+.footer{position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.05);padding:20px 32px;text-align:center;font-size:12px;color:#444}
+
+.refresh-indicator{position:fixed;top:4px;right:8px;z-index:99;font-size:9px;color:#333;opacity:.4}
+.refresh-indicator .dot{display:none}
+@keyframes pus{0%,100%{opacity:1}50%{opacity:.3}}
+
+@media(max-width:768px){
+  .header{padding:12px 16px}
+  .stats{grid-template-columns:repeat(2,1fr);gap:8px}
+  .stat-card{padding:14px}
+  .stat-card .sc-value{font-size:24px}
+  .panels{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="particles"></div>
+
+<div class="header">
+<div class="logo">📊 大数据展示屏</div>
+<div class="actions">
+<a href="index.html">← 返回首页</a>
+<a href="map-player.html" target="_blank">🗺️ 地图</a>
+<a href="admin-regions.html" target="_blank">📍 区划</a>
+<a href="#" onclick="refreshAll()">🔄 刷新</a>
+<select id="dbSel" onchange="switchDb(this.value)" style="padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.3);color:#aaa;font-size:10px;margin-left:6px">
+  
+  
+  🗄 
+</select>
+</div>
+</div>
+
+<div class="refresh-indicator"><span class="dot"></span><span id="refreshTime">实时</span></div>
+
+<div class="main">
+  <!-- 统计卡片 -->
+  <div class="stats" id="statsRow">
+    <div class="stat-card stat-markers"><div class="sc-icon">📍</div><div class="sc-value" id="cntPoints">—</div><div class="sc-label">点要素</div></div>
+    <div class="stat-card stat-paths"><div class="sc-icon">📏</div><div class="sc-value" id="cntLines">—</div><div class="sc-label">线要素</div></div>
+    <div class="stat-card stat-polygons"><div class="sc-icon">⬡</div><div class="sc-value" id="cntPolygons">—</div><div class="sc-label">面要素</div></div>
+    <div class="stat-card stat-timepath"><div class="sc-icon">🕐</div><div class="sc-value" id="cntTimePaths">—</div><div class="sc-label">时间路径</div></div>
+    <div class="stat-card stat-photos"><div class="sc-icon">🖼️</div><div class="sc-value" id="cntPhotos">—</div><div class="sc-label">地理照片</div></div>
+    <div class="stat-card stat-videos"><div class="sc-icon">🎬</div><div class="sc-value" id="cntVideos">—</div><div class="sc-label">地理视频</div></div>
+    <div class="stat-card stat-media"><div class="sc-icon">📀</div><div class="sc-value" id="cntMedia">—</div><div class="sc-label">媒体总数</div></div>
+    <div class="stat-card stat-total"><div class="sc-icon">📦</div><div class="sc-value" id="cntTotal">—</div><div class="sc-label">全部要素</div></div>
+    <div class="stat-card stat-region-prov"><div class="sc-icon">🗺️</div><div class="sc-value" id="cntProv">—</div><div class="sc-label">覆盖省份/国家</div></div>
+    <div class="stat-card stat-region-city"><div class="sc-icon">🏙️</div><div class="sc-value" id="cntCity">—</div><div class="sc-label">覆盖城市</div></div>
+    <div class="stat-card stat-region-dist"><div class="sc-icon">📍</div><div class="sc-value" id="cntDist">—</div><div class="sc-label">覆盖区/县</div></div>
+  </div>
+
+  <!-- 面板 -->
+  <div class="panels">
+    <!-- 矢量地图 + 区域统计（合并面板） -->
+    <div class="panel-card" style="grid-column:1/-1">
+      <div class="pc-head">
+        📈 全球区域分布
+        <span style="font-weight:400;font-size:10px;color:#555;margin-left:8px" id="mapHint">滚轮缩放 · 拖拽平移 · 点击下钻</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <a onclick="resetMapView()" style="font-size:11px;color:#6c5ce7;cursor:pointer">↺ 复位</a>
+          <a id="mapBackBtn" onclick="goRegionLevel(0)" style="font-size:11px;color:#6c5ce7;cursor:pointer;display:none">← 返回全球</a>
+        </span>
+      </div>
+      <div class="pc-body" style="display:flex;gap:0;padding:0;max-height:none">
+        <!-- 左侧：矢量地图 -->
+        <div style="flex:1;min-width:0;position:relative">
+          <canvas id="regionChart" style="width:100%;height:520px;display:block;cursor:grab" oncontextmenu="return false"></canvas>
+        </div>
+        <!-- 右侧：统计面板 -->
+        <div style="width:280px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.05);padding:12px 14px;overflow-y:auto;max-height:520px;font-size:12px" id="regionSidebar">
+          <div id="regionBreadcrumb" style="font-size:11px;color:#555;margin-bottom:8px"></div>
+          <div id="regionChartLegend" style="font-size:11px;color:#888;margin-bottom:10px"></div>
+          <div id="regionStatsInline" style="font-size:11px;color:#888"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 媒体分布 -->
+    <div class="panel-card">
+      <div class="pc-head">📊 媒体类型分布</div>
+      <div class="pc-body" id="mediaDist"></div>
+    </div>
+
+    <!-- 标记列表 -->
+    <div class="panel-card">
+      <div class="pc-head">📍 最新标记</div>
+      <div class="pc-body" id="latestMarkers">
+        <div class="empty">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 路径列表 -->
+    <div class="panel-card">
+      <div class="pc-head">📐 路径总览</div>
+      <div class="pc-body" id="pathsOverview">
+        <div class="empty">暂无路径 — 在「地图轨迹」中用「画线」或「画面」创建</div>
+      </div>
+    </div>
+
+    <!-- 时间线 -->
+    <div class="panel-card">
+      <div class="pc-head">📅 活动时间线</div>
+      <div class="pc-body" id="timeline">
+        <div class="empty">加载中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">大数据展示屏 · 基于 DMpage 底层数据</div>
+
+<script>
+var $=function(i){return document.getElementById(i)};
+
+// 粒子背景
+(function(){
+  var c=$('particles');
+  for(var i=0;i<40;i++){
+    var d=document.createElement('div');d.className='p';
+    d.style.left=Math.random()*100+'%';
+    d.style.animationDuration=(10+Math.random()*25)+'s';
+    d.style.animationDelay=Math.random()*15+'s';
+    c.appendChild(d);
+  }
+})();
+
+// 加载 geodata 统计数据
+async function loadGeodataStats(){
+  try{
+    var r=await fetch('geodata-list.json?_='+Date.now());
+    if(!r.ok)throw Error('empty');
+    var data=await r.json();
+    if(!data||!data.length)return;
+
+    var photoCount=0,videoCount=0;
+    for(var i=0;i<data.length;i++){
+      var d=data[i];
+      if(d.type==='photo_group'&&d.photos){
+        for(var j=0;j<d.photos.length;j++){
+          if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(d.photos[j].file))videoCount++;
+          else photoCount++;
+        }
+      }
+      if(d.type==='photo'){
+        if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(d.file))videoCount++;
+        else photoCount++;
+      }
+    }
+    return {photoCount:photoCount,videoCount:videoCount,groupCount:data.filter(function(d){return d.type==='photo_group'}).length};
+  }catch(e){return null}
+}
+
+// 加载要素数据（从 PostGIS API）
+async function loadMapData(){
+  try{
+    var r=await fetch(dbUrl('api/geo?_='+Date.now()));
+    if(!r.ok)return null;
+    return await r.json();
+  }catch(e){return null}
+}
+
+// 加载区域统计数据
+async function loadRegionalStats(){
+  try{
+    var r=await fetch(dbUrl('api/geo/regional-stats?_='+Date.now()));
+    if(!r.ok)return null;
+    return await r.json();
+  }catch(e){return null}
+}
+
+// 加载所有媒体统计
+async function loadMediaStats(){
+  var modules=[
+    {name:'电视剧',json:'tvdrama-list.json',icon:'📺'},
+    {name:'音乐',json:'music-list.json',icon:'🎵'},
+    {name:'MV',json:'video-list.json',icon:'🎬'},
+    {name:'写真馆',json:'album-list.json',icon:'📷'},
+    {name:'书籍',json:'book-list.json',icon:'📖'},
+    {name:'有声书',json:'audio-list.json',icon:'🎧'},
+  ];
+  var results=[];
+  for(var i=0;i<modules.length;i++){
+    var m=modules[i];
+    try{
+      var r=await fetch(m.json);
+      if(!r.ok)continue;
+      var data=await r.json();
+      var count=0;
+      if(m.json==='tvdrama-list.json')count=data.series?data.series.length:0;
+      else if(m.json==='album-list.json')count=data.length||0;
+      else count=Array.isArray(data)?data.length:0;
+      if(count>0)results.push({name:m.name,icon:m.icon,count:count});
+    }catch(e){}
+  }
+  return results;
+}
+
+// 渲染主函数
+async function refreshAll(){
+  $('refreshTime').textContent='刷新中...';
+
+  var geostats=await loadGeodataStats();
+  var mapData=await loadMapData();
+  var mediaStats=await loadMediaStats();
+  var regionalStats=await loadRegionalStats();
+
+  var pointCount=0,lineCount=0,polygonCount=0,timePathCount=0;
+  if(mapData&&mapData.features){
+    for(var i=0;i<mapData.features.length;i++){
+      var f=mapData.features[i];
+      if(!f.geometry)continue;
+      var t=(f.properties&&f.properties.type)||'point';
+      if(f.geometry.type==='Point'||f.geometry.type==='MultiPoint')pointCount++;
+      else if(t==='timePath')timePathCount++;
+      else if(f.geometry.type==='LineString'||f.geometry.type==='MultiLineString')lineCount++;
+      else if(f.geometry.type==='Polygon'||f.geometry.type==='MultiPolygon')polygonCount++;
+    }
+  }
+
+  var photoCount=geostats?geostats.photoCount:0;
+  var videoCount=geostats?geostats.videoCount:0;
+  var mediaTotal=mediaStats.reduce(function(s,m){return s+m.count},0);
+  var totalAll=pointCount+lineCount+polygonCount+timePathCount+photoCount+videoCount+mediaTotal;
+
+  // 更新统计卡片
+  $('cntPoints').textContent=pointCount;
+  $('cntLines').textContent=lineCount;
+  $('cntPolygons').textContent=polygonCount;
+  $('cntTimePaths').textContent=timePathCount;
+  $('cntPhotos').textContent=photoCount;
+  $('cntVideos').textContent=videoCount;
+  $('cntMedia').textContent=mediaTotal;
+  $('cntTotal').textContent=totalAll;
+  // 区域覆盖卡片
+  if(regionalStats&&regionalStats.summary){
+    $('cntProv').textContent=regionalStats.summary.totalProvinces;
+    $('cntCity').textContent=regionalStats.summary.totalCities;
+    $('cntDist').textContent=regionalStats.summary.totalDistricts||0;
+  }else{
+    $('cntProv').textContent='—';
+    $('cntCity').textContent='—';
+    $('cntDist').textContent='—';
+  }
+
+  // 区域统计面板
+  renderRegionalStats(regionalStats);
+
+  // 媒体类型分布
+  renderMediaDist(mediaStats,photoCount,videoCount,pointCount,lineCount,polygonCount,timePathCount);
+
+  // 最新标记
+  renderLatestMarkers(mapData);
+
+  // 路径总览
+  renderPathsOverview(mapData);
+
+  // 时间线
+  renderTimeline(mapData,geostats);
+
+  $('refreshTime').textContent=new Date().toLocaleTimeString();
+}
+
+function renderMediaDist(mediaStats,photoCount,videoCount,pointCount,lineCount,polygonCount,timePathCount){
+  var total=mediaStats.reduce(function(s,m){return s+m.count},0)+photoCount+videoCount+pointCount+lineCount+polygonCount+timePathCount;
+  if(total===0){$('mediaDist').innerHTML='<div class="empty">暂无数据</div>';return}
+
+  var items=[];
+  for(var i=0;i<mediaStats.length;i++){
+    items.push({label:mediaStats[i].name,count:mediaStats[i].count,color:['#e74c3c','#00cec9','#fdcb6e','#fd79a8','#c49a2a','#00b894'][i%6]});
+  }
+  if(photoCount>0)items.push({label:'地理照片',count:photoCount,color:'#e17055'});
+  if(videoCount>0)items.push({label:'地理视频',count:videoCount,color:'#a29bfe'});
+  if(pointCount>0)items.push({label:'点要素',count:pointCount,color:'#e17055'});
+  if(lineCount>0)items.push({label:'线要素',count:lineCount,color:'#00cec9'});
+  if(polygonCount>0)items.push({label:'面要素',count:polygonCount,color:'#f39c12'});
+  if(timePathCount>0)items.push({label:'时间路径',count:timePathCount,color:'#9b59b6'});
+
+  var html='';
+  for(var j=0;j<items.length;j++){
+    var pct=total>0?(items[j].count/total*100).toFixed(1):0;
+    html+='<div class="bar-row"><span class="bar-label">'+items[j].label+'</span>'+
+      '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+items[j].color+'"></div></div>'+
+      '<span class="bar-val">'+items[j].count+' ('+pct+'%)</span></div>';
+  }
+  html+='<div class="pie-legend">';
+  for(var k=0;k<items.length;k++){
+    html+='<div class="pl-item"><div class="pl-dot" style="background:'+items[k].color+'"></div>'+items[k].label+'</div>';
+  }
+  html+='</div>';
+  $('mediaDist').innerHTML=html;
+}
+
+function renderLatestMarkers(mapData){
+  if(!mapData||!mapData.features||!mapData.features.length){
+    $('latestMarkers').innerHTML='<div class="empty">暂无标记数据</div>';return;
+  }
+  var markers=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='Point'||f.geometry.type==='MultiPoint')});
+  if(!markers.length){$('latestMarkers').innerHTML='<div class="empty">暂无点</div>';return}
+
+  var html='<table class="data-table"><thead><tr><th>名称</th><th>坐标</th><th>类型</th><th>媒体</th></tr></thead><tbody>';
+  var display=markers.slice(-10).reverse();
+  for(var i=0;i<display.length;i++){
+    var m=display[i],p=m.properties||{};
+    var coord=m.geometry.coordinates;
+    if(m.geometry.type==='MultiPoint'&&coord.length)coord=coord[0];
+    var typeBadge=p.mediaType==='video'?'<span class="badge badge-video">视频</span>':
+      p.media?'<span class="badge badge-photo">照片</span>':'<span class="badge badge-point">点</span>';
+    html+='<tr><td>'+esc(p.name||'未命名')+'</td><td style="font-family:monospace;font-size:11px">'+((coord[1]||0).toFixed(4))+', '+((coord[0]||0).toFixed(4))+'</td><td>'+typeBadge+'</td><td>'+(p.media?'✅':'—')+'</td></tr>';
+  }
+  html+='</tbody></table>';
+  $('latestMarkers').innerHTML=html;
+}
+
+function renderPathsOverview(mapData){
+  if(!mapData||!mapData.features){
+    $('pathsOverview').innerHTML='<div class="empty">暂无路径数据</div>';return;
+  }
+  var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='Polygon'||f.geometry.type==='MultiLineString'||f.geometry.type==='MultiPolygon')});
+  if(!paths.length){$('pathsOverview').innerHTML='<div class="empty">暂无路径</div>';return}
+
+  var html='<table class="data-table"><thead><tr><th>名称</th><th>类型</th><th>点数</th><th>长度/面积</th></tr></thead><tbody>';
+  for(var i=0;i<paths.length;i++){
+    var p=paths[i],props=p.properties||{};
+    var coords=p.geometry.type==='Polygon'?p.geometry.coordinates[0]:p.geometry.coordinates;
+    var len='';
+    if(p.geometry.type==='LineString'){
+      var d=0;
+      for(var j=1;j<coords.length;j++){
+        var lat1=coords[j-1][1],lon1=coords[j-1][0],lat2=coords[j][1],lon2=coords[j][0];
+        var dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
+        var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+        d+=6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+      }
+      len=d<1?(d*1000).toFixed(0)+'m':d.toFixed(2)+'km';
+    }else{
+      len=coords.length+' 顶点';
+    }
+    var typeBadge=p.geometry.type==='Polygon'?'<span class="badge badge-photo">区域</span>':'<span class="badge badge-path">路径</span>';
+    html+='<tr><td>'+esc(props.name||'未命名')+'</td><td>'+typeBadge+'</td><td>'+coords.length+'</td><td>'+len+'</td></tr>';
+  }
+  html+='</tbody></table>';
+  $('pathsOverview').innerHTML=html;
+}
+
+function renderTimeline(mapData,geostats){
+  var items=[];
+  if(geostats){
+    items.push({date:'当前',text:'地理数据: '+geostats.photoCount+'张照片 + '+geostats.videoCount+'个视频 · '+geostats.groupCount+'个分组'});
+  }
+  if(mapData&&mapData.features){
+    var markers=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='Point'||f.geometry.type==='MultiPoint')});
+    var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='Polygon'||f.geometry.type==='MultiLineString'||f.geometry.type==='MultiPolygon')});
+    if(markers.length)items.push({date:'已保存',text:markers.length+'个标记点'});
+    if(paths.length)items.push({date:'已保存',text:paths.length+'条路径/区域'});
+  }
+
+  if(!items.length){$('timeline').innerHTML='<div class="empty">暂无活动记录</div>';return}
+  var html='<div class="timeline">';
+  for(var i=0;i<items.length;i++){
+    html+='<div class="tl-item"><div class="tl-date">'+esc(items[i].date)+'</div><div class="tl-text">'+esc(items[i].text)+'</div></div>';
+  }
+  html+='</div>';
+  $('timeline').innerHTML=html;
+}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ====== 区域统计���分级别隔离显示 ======
+var _regionData=null;
+var currentDb=localStorage.getItem('pgm_db')||'trip';
+function switchDb(db){currentDb=db;localStorage.setItem('pgm_db',db);refreshAll()}
+function loadDatabases(){fetch('/api/pg/databases').then(r=>r.json()).then(dbs=>{var s=document.getElementById('dbSel');s.innerHTML='';dbs.forEach(function(d){s.innerHTML+='<option value="'+d+'"'+(d===currentDb?' selected':'')+'>🗄 '+d+'</option>'})})}
+function dbUrl(u){return u+(u.indexOf('?')>=0?'&':'?')+'db='+encodeURIComponent(currentDb)}
+var _regionView={level:0,countryName:null,provIdx:null,cityIdx:null};
+
+// 搜索过滤
+function filterRegionCards(query){
+  if(!_regionData)return;
+  var q=(query||'').toLowerCase().trim();
+  renderByLevel(_regionData,_regionView.level,_regionView,q);
+}
+
+// 面包屑导航
+function renderBreadcrumb(rv){
+  var countryDisplay=rv.countryName==='China'?'中国':rv.countryName;
+  var bc='<a onclick="goRegionLevel(0)">🌍 全球</a>';
+  if(rv.level>=1&&rv.countryName)bc+='<span> › </span><a onclick="goRegionLevel(1,\''+esc(rv.countryName)+'\')">'+esc(countryDisplay)+'</a>';
+  if(rv.level>=2&&rv.provIdx!=null){
+    var pname=_provName(rv);
+    if(pname)bc+='<span> › </span><a onclick="goRegionLevel(2,\''+esc(rv.countryName)+'\','+rv.provIdx+')">'+esc(pname)+'</a>';
+  }
+  if(rv.level>=3&&rv.cityIdx!=null){
+    var p2=_provObj(_provName(rv));
+    var c=p2&&p2.cities?p2.cities[rv.cityIdx]:null;
+    if(c)bc+='<span> › </span><span style="color:#ccc">'+esc(c.name)+'</span>';
+  }
+  $('regionBreadcrumb').innerHTML=bc;
+}
+
+function goRegionLevel(level,countryName,provIdx,cityIdx){
+  _regionView={level:level,countryName:countryName||null,provIdx:provIdx!=null?provIdx:null,cityIdx:cityIdx!=null?cityIdx:null};
+  _mapUserPanned=false; // 新层级进入，允许自动适配画布
+  // 回到世界时自动复位缩放
+  if(level===0){
+    _mapView={scale:1,offsetX:0,offsetY:0};
+    _mapHovered=null;
+  }
+  var q=document.querySelector('#regionSearchInput');
+  renderByLevel(_regionData,level,_regionView,q?q.value:'');
+  drawRegionChart(_regionData,level);
+}
+
+// 按省名稳健解析（兼容两种 provIdx 来源：侧边栏=要素维度 / 地图点击=34省几何维度）
+// 取得稳定的 34 省几何列表（几何维度，索引 0-33，与地图点击/侧边栏下钻一致）
+function _provGeomList(){
+  if(_provGeoCache&&_provGeoCache.features&&_provGeoCache.features.length===34) return _provGeoCache;
+  if(_mapGeoData&&_mapGeoData.features&&_mapGeoData.features.length===34) return _mapGeoData;
+  return null;
+}
+// 按省名取得其在 34 省几何列表中的索引（用于侧边栏/图例下钻，统一为几何维度）
+function _provGeomIndex(name){
+  var list=_provGeomList();
+  if(!list||!name)return -1;
+  for(var i=0;i<list.features.length;i++) if(list.features[i].properties.name===name) return i;
+  return -1;
+}
+// 按 rv.provIdx（统一为 34 省几何维度索引）稳健解析省名，避免与要素维度索引混淆
+function _provName(rv){
+  if(rv==null||rv.provIdx==null) return null;
+  var list=_provGeomList();
+  if(list&&list.features[rv.provIdx]) return list.features[rv.provIdx].properties.name;
+  return null;
+}
+function _provObj(name){
+  if(!name||!_regionData||!_regionData.provinces) return null;
+  for(var i=0;i<_regionData.provinces.length;i++) if(_regionData.provinces[i].name===name) return _regionData.provinces[i];
+  return null;
+}
+
+// 颜色方案
+var _colors=['#e17055','#00cec9','#6c5ce7','#fd79a8','#fdcb6e','#0984e3','#00b894','#a29bfe','#e74c3c','#c49a2a'];
+
+// 核心渲染函数：渲染到右侧栏
+function renderByLevel(data,level,rv,query){
+  _regionData=data;
+  if(!data||(!data.provinces||!data.provinces.length)&&(!data.countries||!data.countries.length)){
+    $('regionStatsInline').innerHTML='<div class="empty">暂无数据</div>';
+    $('regionBreadcrumb').innerHTML='';
+    return;
+  }
+  var provinces=data.provinces;
+  var q=(query||'').toLowerCase().trim();
+
+  if(level===0){
+    // 全球：优先用 countries 数组（来自 PostGIS），回落 provinces
+    var worldList=(data.countries&&data.countries.length)?data.countries:provinces;
+    if(q)worldList=worldList.filter(function(p){return p.name.toLowerCase().indexOf(q)>=0});
+    renderBreadcrumb(rv);
+    $('regionStatsInline').innerHTML=renderCompactCountryList(worldList)+renderSummary(data.summary||{totalFeatures:worldList.reduce(function(s,c){return s+(c.total||0)},0)});
+  }else if(level===1&&rv.countryName){
+    // 国家级：中国有34省，其他国家直接从 countries 数组读取统计
+    renderBreadcrumb(rv);
+    var countryProvs=[];
+    if(rv.countryName==='China'){
+      countryProvs=provinces;
+    }else{
+      for(var i=0;i<provinces.length;i++){
+        if(provinces[i].name===rv.countryName){countryProvs=[provinces[i]];break}
+      }
+      // provinces 里找不到 → 从 countries 数组读
+      if(!countryProvs.length&&data.countries){
+        var cn=data.countries.find(function(c){return c.name===rv.countryName});
+        if(cn)countryProvs=[cn];
+      }
+    }
+    if(q)countryProvs=countryProvs.filter(function(p){return p.name.toLowerCase().indexOf(q)>=0});
+    $('regionStatsInline').innerHTML=renderCompactProvList(countryProvs)+renderSummary({
+      totalProvinces:countryProvs.length,totalCities:countryProvs.reduce(function(s,p){return s+(p.cities?p.cities.length:0)},0),
+      totalDistricts:countryProvs.reduce(function(s,p){return s+(p.cities?p.cities.reduce(function(t,c){return t+(c.districts?c.districts.length:0)},0):0)},0),
+      totalFeatures:countryProvs.reduce(function(s,p){return s+(parseInt(p.total)||0)},0)
+    });
+  }else if(level===2&&rv.provIdx!=null){
+    // 省级：显示城市（省名按维度兼容解析）
+    var prov=_provObj(_provName(rv));
+    if(prov){
+      renderBreadcrumb(rv);
+      var cities=prov.cities||[];
+      if(q)cities=cities.filter(function(c){return c.name.toLowerCase().indexOf(q)>=0});
+      $('regionStatsInline').innerHTML=renderCompactCityList(cities,rv.provIdx)+renderSummary({
+        totalProvinces:1,totalCities:cities.length,totalDistricts:prov.cities.reduce(function(s,c){return s+(c.districts?c.districts.length:0)},0),
+        totalFeatures:prov.total
+      });
+    }
+  }else if(level===3&&rv.cityIdx!=null){
+    // 市级：显示区县（省名按维度兼容解析）
+    var prov2=_provObj(_provName(rv));
+    var city=prov2&&prov2.cities?prov2.cities[rv.cityIdx]:null;
+    if(city){
+      renderBreadcrumb(rv);
+      var dists=city.districts||[];
+      $('regionStatsInline').innerHTML=renderCompactDistList(dists,city)+renderSummary({
+        totalProvinces:1,totalCities:1,totalDistricts:dists.length,
+        totalFeatures:city.total
+      });
+    }
+  }
+}
+
+// 精简国家列表（level 0 侧栏）
+function renderCompactCountryList(countries){
+  var html='<div style="font-size:11px;color:#555;margin-bottom:6px">'+countries.length+' 个国家/地区</div>';
+  for(var i=0;i<Math.min(countries.length,30);i++){
+    var p=countries[i];
+    var color=_colors[i%_colors.length];
+    var isChina=isChinaProvince(p.name)?true:false;
+    html+='<div onclick="goRegionLevel(1,\''+esc(p.name)+'\')" style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;cursor:pointer;margin-bottom:2px" onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">'+
+      '<span style="width:6px;height:6px;border-radius:50%;background:'+color+';flex-shrink:0"></span>'+
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaa">'+esc(p.name)+(isChina?' 🇨🇳':'')+'</span>'+
+      '<span style="color:#ccc;font-weight:600;flex-shrink:0">'+p.total+'</span>'+
+      '<span style="color:#444;font-size:10px">→</span></div>';
+  }
+  if(countries.length>30)html+='<div style="color:#444;font-size:10px;padding:4px">...还有'+(countries.length-30)+'个</div>';
+  return html;
+}
+
+// 精简省份列表
+function renderCompactProvList(provinces){
+  var html='<div style="font-size:11px;color:#555;margin-bottom:6px">'+provinces.length+' 个省份</div>';
+  for(var i=0;i<Math.min(provinces.length,30);i++){
+    var p=provinces[i];
+    var color=_colors[i%_colors.length];
+    html+='<div onclick="goRegionLevel(2,\'China\','+_provGeomIndex(p.name)+')" style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;cursor:pointer;margin-bottom:2px" onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">'+
+      '<span style="width:6px;height:6px;border-radius:50%;background:'+color+';flex-shrink:0"></span>'+
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaa">'+esc(p.name)+'</span>'+
+      '<span style="color:#ccc;font-weight:600;flex-shrink:0">'+p.total+'</span>'+
+      '<span style="color:#444;font-size:10px">→</span></div>';
+  }
+  if(provinces.length>30)html+='<div style="color:#444;font-size:10px;padding:4px">...还有'+(provinces.length-30)+'个</div>';
+  return html;
+}
+
+// 精简城市列表
+function renderCompactCityList(cities,provIdx){
+  var html='<div style="font-size:11px;color:#555;margin-bottom:6px">'+cities.length+' 个城市</div>';
+  for(var i=0;i<Math.min(cities.length,30);i++){
+    var c=cities[i];
+    var color=_chartColors[i%_chartColors.length];
+    var hasDist=c.districts&&c.districts.length>0;
+    html+='<div '+(hasDist?'onclick="goRegionLevel(3,\'China\','+provIdx+','+i+')"':'')+' style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;'+(hasDist?'cursor:pointer;':'')+'margin-bottom:2px" onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">'+
+      '<span style="width:6px;height:6px;border-radius:2px;background:'+color+';flex-shrink:0"></span>'+
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaa">'+esc(c.name)+'</span>'+
+      '<span style="color:#ccc;font-weight:600;flex-shrink:0">'+c.total+'</span>'+
+      (hasDist?'<span style="color:#444;font-size:10px">→</span>':'')+'</div>';
+  }
+  return html;
+}
+
+// 精简区级列表
+function renderCompactDistList(dists,city){
+  if(dists.length===0){
+    var html='<div style="font-size:11px;color:#555;margin-bottom:6px">要素分布</div>';
+    if(city.points>0)html+='<div style="padding:3px 6px;color:#aaa">📍 点要素: <b>'+city.points+'</b></div>';
+    if(city.lines>0)html+='<div style="padding:3px 6px;color:#aaa">📏 线要素: <b>'+city.lines+'</b></div>';
+    if(city.polygons>0)html+='<div style="padding:3px 6px;color:#aaa">⬡ 面要素: <b>'+city.polygons+'</b></div>';
+    if(city.timePaths>0)html+='<div style="padding:3px 6px;color:#aaa">🕐 时间路径: <b>'+city.timePaths+'</b></div>';
+    if(city.photos>0)html+='<div style="padding:3px 6px;color:#aaa">🖼 照片: <b>'+city.photos+'</b></div>';
+    if(city.videos>0)html+='<div style="padding:3px 6px;color:#aaa">🎬 视频: <b>'+city.videos+'</b></div>';
+    return html;
+  }
+  var html='<div style="font-size:11px;color:#555;margin-bottom:6px">'+dists.length+' 个区/县</div>';
+  for(var i=0;i<dists.length;i++){
+    var d=dists[i];
+    var color=_chartColors[i%_chartColors.length];
+    html+='<div style="display:flex;align-items:center;gap:6px;padding:3px 6px;margin-bottom:1px">'+
+      '<span style="width:6px;height:6px;border-radius:2px;background:'+color+';flex-shrink:0"></span>'+
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaa">'+esc(d.name)+'</span>'+
+      '<span style="color:#ccc;font-weight:600;flex-shrink:0">'+d.total+'</span></div>';
+  }
+  return html;
+}
+
+function renderSummary(s){
+  return '<div style="margin-top:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,.04);font-size:10px;color:#555">'+
+    '<span>🗺️<b style="color:#00b894">'+s.totalProvinces+'</b>省 </span>'+
+    '<span>🏙️<b style="color:#0984e3">'+s.totalCities+'</b>市 </span>'+
+    '<span>📍<b style="color:#a29bfe">'+(s.totalDistricts||0)+'</b>区 </span>'+
+    '<span>📦<b style="color:#ccc">'+s.totalFeatures+'</b>要素</span></div>';
+}
+
+function renderRegionalStats(regionalStats){
+  _regionData=regionalStats;
+  // 关键修复：保留用户当前下钻层级。
+  // 旧逻辑每次刷新都强制把 _regionView 重置为 level 0，而 refreshAll 既在首屏
+  // 异步回调中执行、又每 30 秒执行一次，导致已进入的中国/省份/城市视图被
+  // "自动返回上一级（全球）"。这里改为沿用当前层级重绘，并保留缩放/平移。
+  var rv=_regionView;
+  // 刷新后校验下钻上下文是否仍然有效，无效则安全回落（避免越界/空白）
+  // 注：provIdx 可能是几何维度(0-33)或要素维度，统一按省名解析，避免误判踢回上级
+  if(rv.level>=2){
+    if(!_provName(rv)){
+      rv={level:1,countryName:'China',provIdx:null,cityIdx:null};
+    }
+  }
+  if(rv.level>=3){
+    var p=_provObj(_provName(rv));
+    var c=p&&p.cities&&p.cities[rv.cityIdx];
+    if(!c){rv={level:2,countryName:'China',provIdx:rv.provIdx,cityIdx:null};}
+  }
+  _regionView=rv;
+  var q=document.querySelector('#regionSearchInput');
+  renderByLevel(_regionData,rv.level,rv,q?q.value:'');
+  drawRegionChart(_regionData,rv.level);
+}
+
+// ====== 区域可视化图表 ======
+var _chartColors=[
+  '#6c5ce7','#00cec9','#e17055','#fd79a8','#fdcb6e','#0984e3','#00b894','#a29bfe',
+  '#e74c3c','#c49a2a','#74b9ff','#55efc4','#fab1a0','#ffeaa7','#dfe6e9','#636e72',
+  '#e056a0','#8e44ad','#2ecc71','#1abc9c','#3498db','#e67e22','#f39c12','#d35400'
+];
+
+function drawRegionChart(data,level){
+  var canvas=$('regionChart');
+  if(!canvas)return;
+  var rect=canvas.getBoundingClientRect();
+  canvas.width=rect.width*devicePixelRatio;
+  canvas.height=rect.height*devicePixelRatio;
+  var ctx=canvas.getContext('2d');
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  var W=rect.width,H=rect.height;
+  ctx.clearRect(0,0,W,H);
+
+  // 地图用边界数据(loadWorldGeo/loadProvGeo)独立于统计面板渲染,
+  // 因此只判断 data 是否加载(非 null), 不因 provinces/countries 为空就跳过绘图。
+  if(!data){
+    ctx.fillStyle='#555';ctx.font='14px sans-serif';ctx.textAlign='center';
+    ctx.fillText('暂无数据',W/2,H/2);
+    $('regionChartLegend').innerHTML='';
+    return;
+  }
+
+  var rv=_regionView;
+
+  if(level===0){
+    // 世界 → 世界国家矢量图
+    loadWorldGeo(function(worldGeo){
+      _mapGeoData=worldGeo;
+      _mapProvinceData=data;
+      drawWorldMap(ctx,W,H,worldGeo,data);
+      setupMapEvents(W,H);
+    });
+  }else if(level===1){
+    // 国家 → 如果是中国，加载省份矢量图；否则显示环形图
+    if(rv.countryName==='China'){
+      loadProvGeo(function(provGeo){
+        _mapGeoData=provGeo;
+        _mapProvinceData=data;
+        if(!_mapUserPanned)fitBoundsAll(provGeo,W,H);
+        drawCountryMap(ctx,W,H,provGeo,data);
+        setupMapEvents(W,H);
+      });
+    }else{
+      drawCountryRingView(ctx,W,H,data,rv.countryName);
+    }
+  }else if(level===2){
+    // 省份 → 加载市级矢量图（从 PostGIS API）
+    // 兼容两种 provIdx 来源：侧边栏(要素维度) / 地图点击(34省几何维度)，统一按省名解析，
+    // 使全部 34 省可下钻市级，且要素省保留按要素强度着色
+    var pname=_provName(rv);
+    if(pname){
+      var provObj=_provObj(pname)||{name:pname};
+      loadCityGeo(pname,function(geo){
+        if(geo&&geo.features&&geo.features.length){
+          _mapGeoData=geo;
+          if(!_mapUserPanned)fitBoundsAll(geo,W,H);
+          drawProvinceMap(ctx,W,H,geo,provObj);
+          setupMapEvents(W,H);
+        }else{
+          drawCityRingView(ctx,W,H,data);
+        }
+      });
+    }
+  }else if(level===3){
+    // 市 → 环形图
+    drawCityRingView(ctx,W,H,data);
+  }
+}
+
+// ====== 地图状态 ======
+var _mapView={scale:1,offsetX:0,offsetY:0};
+var _mapGeoData=null;
+var _mapProvinceData=null;
+var _mapDragging=false,_mapDragX=0,_mapDragY=0;
+var _mapHovered=null;
+
+// ====== 加载矢量边界（从 PostGIS API + 本地备用） ======
+var _worldGeoCache=null;
+var _provGeoCache=null;
+
+function loadWorldGeo(cb){
+  if(_worldGeoCache){cb(_worldGeoCache);return;}
+  // 优先从 PostGIS API 获取
+  fetch('api/geo/boundaries?type=countries').then(function(r){return r.json()}).then(function(d){
+    _worldGeoCache=d;cb(d);
+  }).catch(function(){
+    // 备用：本地文件
+    fetch('map-boundaries/world-countries.geojson').then(function(r){return r.json()}).then(function(d){
+      _worldGeoCache=d;cb(d);
+    }).catch(function(){
+      $('regionChartLegend').innerHTML='<span style="color:#e17055">加载世界地图失败</span>';
+    });
+  });
+}
+
+function loadProvGeo(cb){
+  if(_provGeoCache){cb(_provGeoCache);return;}
+  fetch('api/geo/boundaries?type=provinces').then(function(r){return r.json()}).then(function(d){
+    _provGeoCache=d;cb(d);
+  }).catch(function(){
+    fetch('map-boundaries/china-provinces.geojson').then(function(r){return r.json()}).then(function(d){
+      _provGeoCache=d;cb(d);
+    }).catch(function(){
+      $('regionChartLegend').innerHTML='<span style="color:#e17055">加载中国地图失败</span>';
+    });
+  });
+}
+
+// 加载市级边界（无缓存，按省份加载）
+function loadCityGeo(provinceName,cb){
+  fetch('api/geo/boundaries?type=cities&province='+encodeURIComponent(provinceName)).then(function(r){return r.json()}).then(function(d){
+    cb(d);
+  }).catch(function(e){
+    // 备用：尝试本地文件
+    var code=provCodeMap[provinceName];
+    if(code){
+      fetch('map-boundaries/cities/'+code+'.geojson').then(function(r){return r.json()}).then(function(d){cb(d)}).catch(function(){cb(null)});
+    }else{cb(null)}
+  });
+}
+
+// ====== 世界地图 (Level 0) — 只画世界国家 ======
+function drawWorldMap(ctx,W,H,worldGeo,data){
+  ctx.clearRect(0,0,W,H);
+  var scale=_mapView.scale,ox=_mapView.offsetX,oy=_mapView.offsetY;
+
+  // Build country name -> total map
+  var totalMap={};
+  var maxTotal=0;
+  // 用 provinces 聚合到国家(china provinces → China)
+  var srcList=data.provinces||[];
+  for(var i=0;i<srcList.length;i++){
+    var p=srcList[i];
+    var countryName=p.name;
+    if(isChinaProvince(p.name))countryName='China';
+    var t=parseInt(p.total)||0;
+    totalMap[countryName]=(totalMap[countryName]||0)+t;
+    if(totalMap[countryName]>maxTotal)maxTotal=totalMap[countryName];
+  }
+
+  // Draw world countries — Taiwan drawn as part of China
+  // First pass: draw glow for countries with data
+  for(var i=0;i<worldGeo.features.length;i++){
+    var f=worldGeo.features[i];
+    var name=f.properties.name;
+    // Treat Taiwan as China
+    var lookupName=(name==='Taiwan')?'China':name;
+    var total=totalMap[lookupName]||0;
+    if(total===0)continue;
+    var intensity=total/maxTotal;
+    ctx.lineWidth=2+intensity*4;
+    ctx.strokeStyle='rgba(140,210,255,'+(0.08+intensity*0.1)+')';
+    ctx.fillStyle='rgba(140,210,255,'+(0.12+intensity*0.15)+')';
+    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+  }
+  // Second pass: draw all countries normally
+  for(var i=0;i<worldGeo.features.length;i++){
+    var f=worldGeo.features[i];
+    var name=f.properties.name;
+    // Treat Taiwan as China
+    var lookupName=(name==='Taiwan')?'China':name;
+    var total=totalMap[lookupName]||0;
+    if(total>0){
+      var intensity=total/maxTotal;
+      ctx.lineWidth=0.8;
+      ctx.fillStyle='rgba(140,220,255,'+(0.6+intensity*0.35)+')';
+      ctx.strokeStyle='rgba(190,245,255,'+(0.9+intensity*0.1)+')';
+    } else {
+      ctx.lineWidth=0.7;
+      ctx.fillStyle='rgba(35,45,80,.65)';
+      ctx.strokeStyle='rgba(75,120,190,.75)';
+    }
+    ctx.globalAlpha=1;
+    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+  }
+
+  // Country labels (only those with data)
+  for(var i=0;i<worldGeo.features.length;i++){
+    var f=worldGeo.features[i];
+    var name=f.properties.name;
+    var total=totalMap[name]||0;
+    if(total===0)continue;
+    var centroid=getCentroid(f);
+    var pt=project(centroid[0],centroid[1],W,H,scale,ox,oy);
+    if(pt.x<0||pt.x>W||pt.y<0||pt.y>H)continue;
+    ctx.fillStyle='#aaa';ctx.font='6px sans-serif';ctx.textAlign='center';
+    ctx.fillText(name.substring(0,10),pt.x,pt.y);
+    ctx.fillText(total,pt.x,pt.y+8);
+  }
+
+  // Hover highlight
+  if(_mapHovered){
+    ctx.fillStyle='rgba(255,255,255,.12)';
+    ctx.strokeStyle='#6c5ce7';ctx.lineWidth=2;ctx.globalAlpha=1;
+    drawGeoFeature(ctx,_mapHovered,W,H,scale,ox,oy);
+  }
+
+  renderWorldLegend(data);
+  $('mapBackBtn').style.display='none';
+  $('mapHint').textContent='滚轮缩放 · 拖拽平移 · 点击国家进入';
+}
+
+function renderWorldLegend(data){
+  var list=(data.countries&&data.countries.length)?data.countries:data.provinces;
+  var html='<span style="color:#555">🌍 全球 </span>';
+  for(var i=0;i<Math.min(list.length,16);i++){
+    var p=list[i];
+    var color=_chartColors[i%_chartColors.length];
+    html+='<span onclick="goRegionLevel(1,\''+esc(p.name)+'\')" style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:2px 6px;border-radius:4px" onmouseover="this.style.background=\'rgba(255,255,255,.05)\'" onmouseout="this.style.background=\'transparent\'">'+
+      '<span style="width:8px;height:8px;border-radius:1px;background:'+color+'"></span>'+
+      esc(p.name.substring(0,8))+' <b>'+(parseInt(p.total)||0)+'</b></span>';
+  }
+  $('regionChartLegend').innerHTML=html;
+}
+
+// ====== 省份代码映射（复用） ======
+var provCodeMap={
+  '北京市':'110000','天津市':'120000','河北省':'130000','山西省':'140000',
+  '内蒙古自治区':'150000','辽宁省':'210000','吉林省':'220000','黑龙江省':'230000',
+  '上海市':'310000','江苏省':'320000','浙江省':'330000','安徽省':'340000',
+  '福建省':'350000','江西省':'360000','山东省':'370000','河南省':'410000',
+  '湖北省':'420000','湖南省':'430000','广东省':'440000','广西壮族自治区':'450000',
+  '海南省':'460000','重庆市':'500000','四川省':'510000','贵州省':'520000',
+  '云南省':'530000','西藏自治区':'540000','陕西省':'610000','甘肃省':'620000',
+  '青海省':'630000','宁夏回族自治区':'640000','新疆维吾尔自治区':'650000',
+  '台湾省':'710000','香港特别行政区':'810000','澳门特别行政区':'820000'
+};
+
+// 判断是否为中国省份（用于世界地图聚合）
+function isChinaProvince(name){
+  return !!provCodeMap[name];
+}
+
+// ====== 投影函数 ======
+function project(lng,lat,W,H,scale,ox,oy){
+  if(_regionView.level===0){
+    // 世界视图：等距投影，以 (0,0) 为中心，经度 -180~180 全显示
+    var s=scale*W/360.0;
+    var x=lng*s+W/2+ox;
+    var y=H/2-(lat/90.0)*H*0.5*scale+oy;
+    return {x:x,y:y};
+  }
+  // 中国/省/市视图：以中国为中心
+  var cx=104.0,cy=36.0;
+  var s=scale*W/55.0;
+  var x=(lng-cx)*Math.cos(cy*Math.PI/180)*s+W/2+ox;
+  var y=-(lat-cy)*s+H/2+oy;
+  return {x:x,y:y};
+}
+
+// ====== 自动缩放：FeatureCollection 投影自适应（二分法搜索最优 scale） ======
+var _mapUserPanned=false; // 标记用户是否手动平移/缩放过
+function fitBoundsAll(geoJson,W,H){
+  if(!geoJson||!geoJson.features||!geoJson.features.length)return;
+  // 采样每个 feature 外环坐标点（均匀采样避免性能问题）
+  var pts=[];
+  for(var fi=0;fi<geoJson.features.length;fi++){
+    var geom=geoJson.features[fi].geometry;
+    if(!geom)continue;
+    var rings=[];
+    if(geom.type==='Polygon')rings=geom.coordinates;
+    else if(geom.type==='MultiPolygon'){
+      for(var mi=0;mi<geom.coordinates.length;mi++)rings.push(geom.coordinates[mi][0]);
+    }
+    for(var ri=0;ri<rings.length;ri++){
+      var ring=rings[ri];
+      if(ring.length<3)continue;
+      var step=Math.max(1,Math.floor(ring.length/20));
+      for(var i=0;i<ring.length;i+=step)pts.push([ring[i][0],ring[i][1]]);
+      pts.push([ring[ring.length-1][0],ring[ring.length-1][1]]);
+    }
+  }
+  if(pts.length===0)return;
+  // 二分法搜索最优 scale：在当前 project() 投影下，使内容填满画布
+  var pad=0.06, lo=0.2, hi=16;
+  // 确保上界够大
+  for(var attempt=0;attempt<3;attempt++){
+    _mapView.scale=hi;_mapView.offsetX=0;_mapView.offsetY=0;
+    var ok=true;
+    for(var i=0;i<pts.length;i++){
+      var pt=project(pts[i][0],pts[i][1],W,H,hi,0,0);
+      if(pt.x<-W||pt.x>2*W||pt.y<-H||pt.y>2*H){ok=false;break;}
+    }
+    if(ok)break;hi*=4;
+  }
+  for(var iter=0;iter<40;iter++){
+    if(hi-lo<0.001)break;
+    var mid=(lo+hi)/2;
+    _mapView.scale=mid;_mapView.offsetX=0;_mapView.offsetY=0;
+    var minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+    for(var i=0;i<pts.length;i++){
+      var p=project(pts[i][0],pts[i][1],W,H,mid,0,0);
+      if(p.x<minX)minX=p.x;if(p.x>maxX)maxX=p.x;
+      if(p.y<minY)minY=p.y;if(p.y>maxY)maxY=p.y;
+    }
+    if((maxX-minX)<=W*(1-pad*2)&&(maxY-minY)<=H*(1-pad*2))lo=mid;else hi=mid;
+  }
+  _mapView.scale=lo;_mapView.offsetX=0;_mapView.offsetY=0;
+  var cMinX=Infinity,cMaxX=-Infinity,cMinY=Infinity,cMaxY=-Infinity;
+  for(var i=0;i<pts.length;i++){
+    var p=project(pts[i][0],pts[i][1],W,H,lo,0,0);
+    if(p.x<cMinX)cMinX=p.x;if(p.x>cMaxX)cMaxX=p.x;
+    if(p.y<cMinY)cMinY=p.y;if(p.y>cMaxY)cMaxY=p.y;
+  }
+  _mapView.offsetX=W/2-(cMinX+cMaxX)/2;
+  _mapView.offsetY=H/2-(cMinY+cMaxY)/2;
+}
+
+// ====== 自动缩放：计算单个 feature 的包围盒并适配（地图点击用） ======
+function fitBounds(feature,W,H){
+  // 收集所有坐标
+  var allCoords=[];
+  function collect(geom){
+    if(geom.type==='Polygon'){
+      for(var i=0;i<geom.coordinates.length;i++){
+        for(var j=0;j<geom.coordinates[i].length;j++)allCoords.push(geom.coordinates[i][j]);
+      }
+    }else if(geom.type==='MultiPolygon'){
+      for(var i=0;i<geom.coordinates.length;i++){
+        for(var j=0;j<geom.coordinates[i].length;j++){
+          for(var k=0;k<geom.coordinates[i][j].length;k++)allCoords.push(geom.coordinates[i][j][k]);
+        }
+      }
+    }
+  }
+  collect(feature.geometry);
+  if(allCoords.length===0)return;
+
+  // 计算包围盒
+  var minLng=180,maxLng=-180,minLat=90,maxLat=-90;
+  for(var i=0;i<allCoords.length;i++){
+    var lng=allCoords[i][0],lat=allCoords[i][1];
+    if(lng<minLng)minLng=lng;if(lng>maxLng)maxLng=lng;
+    if(lat<minLat)minLat=lat;if(lat>maxLat)maxLat=lat;
+  }
+
+  // 计算合适 scale
+  var pad=0.1; // 10% padding
+  var lngSpan=(maxLng-minLng)||1;
+  var latSpan=(maxLat-minLat)||1;
+  var scaleX=W*(1-pad*2)/(lngSpan*Math.cos((minLat+maxLat)/2*Math.PI/180)*W/55.0);
+  var scaleY=H*(1-pad*2)/(latSpan*W/55.0);
+  var bestScale=Math.min(scaleX,scaleY,8); // cap at 8x
+
+  // 计算中心偏移
+  var cx=104.0,cy=36.0;
+  var midLng=(minLng+maxLng)/2,midLat=(minLat+maxLat)/2;
+  var s=bestScale*W/55.0;
+  var centerX=(midLng-cx)*Math.cos(cy*Math.PI/180)*s+W/2;
+  var centerY=-(midLat-cy)*s+H/2;
+
+  _mapView.scale=bestScale;
+  _mapView.offsetX=W/2-centerX;
+  _mapView.offsetY=H/2-centerY;
+}
+
+// ====== Level 1: 国家地图（中国省份矢量） ======
+function drawCountryMap(ctx,W,H,provGeo,data){
+  ctx.clearRect(0,0,W,H);
+  var scale=_mapView.scale,ox=_mapView.offsetX,oy=_mapView.offsetY;
+
+  // Build province name -> total map
+  var totalMap={};
+  var maxTotal=0;
+  for(var i=0;i<data.provinces.length;i++){
+    var p=data.provinces[i];
+    totalMap[p.name]=p.total;
+    if(p.total>maxTotal)maxTotal=p.total;
+  }
+
+  // Draw provinces — first pass glow, second pass fill
+  for(var i=0;i<provGeo.features.length;i++){
+    var f=provGeo.features[i];
+    var name=f.properties.name;
+    var total=totalMap[name]||0;
+    if(total===0)continue;
+    var intensity=total/maxTotal;
+    ctx.lineWidth=2+intensity*4;
+    ctx.strokeStyle='rgba(140,210,255,'+(0.08+intensity*0.1)+')';
+    ctx.fillStyle='rgba(140,210,255,'+(0.12+intensity*0.15)+')';
+    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+  }
+  for(var i=0;i<provGeo.features.length;i++){
+    var f=provGeo.features[i];
+    var name=f.properties.name;
+    var total=totalMap[name]||0;
+    if(total>0){
+      var intensity=total/maxTotal;
+      ctx.lineWidth=0.8;
+      ctx.fillStyle='rgba(140,220,255,'+(0.6+intensity*0.35)+')';
+      ctx.strokeStyle='rgba(190,245,255,'+(0.9+intensity*0.1)+')';
+    } else {
+      ctx.lineWidth=0.8;
+      ctx.fillStyle='rgba(40,60,110,.50)';
+      ctx.strokeStyle='rgba(90,145,210,.70)';
+    }
+    ctx.globalAlpha=1;
+    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+
+    // Label for provinces with data
+    if(total>0){
+      var centroid=getCentroid(f);
+      var pt=project(centroid[0],centroid[1],W,H,scale,ox,oy);
+      if(pt.x>=0&&pt.x<=W&&pt.y>=0&&pt.y<=H){
+        var label=name.replace(/省|市|自治区|维吾尔|回族|壮族/g,'').substring(0,4);
+        ctx.fillStyle='#fff';ctx.font='bold 8px sans-serif';ctx.textAlign='center';
+        ctx.fillText(label,pt.x,pt.y-2);
+        ctx.fillStyle='#aaa';ctx.font='7px sans-serif';
+        ctx.fillText(total,pt.x,pt.y+8);
+      }
+    }
+  }
+
+  // Hover
+  if(_mapHovered){
+    ctx.fillStyle='rgba(255,255,255,.12)';
+    ctx.strokeStyle='#6c5ce7';ctx.lineWidth=2;ctx.globalAlpha=1;
+    drawGeoFeature(ctx,_mapHovered,W,H,scale,ox,oy);
+  }
+
+  renderCountryLegend(data);
+  $('mapBackBtn').style.display='inline';
+  $('mapHint').textContent='点击省份进入市级 · 滚轮缩放 · 拖拽平移';
+}
+
+function renderCountryLegend(data){
+  var html='<span style="color:#555">🇨🇳 中国 </span>';
+  for(var i=0;i<Math.min(data.provinces.length,16);i++){
+    var p=data.provinces[i];
+    var color=_chartColors[i%_chartColors.length];
+    html+='<span onclick="goRegionLevel(2,\'China\','+_provGeomIndex(p.name)+')" style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:2px 6px;border-radius:4px" onmouseover="this.style.background=\'rgba(255,255,255,.05)\'" onmouseout="this.style.background=\'transparent\'">'+
+      '<span style="width:8px;height:8px;border-radius:1px;background:'+color+'"></span>'+
+      esc(p.name.substring(0,8))+' <b>'+p.total+'</b></span>';
+  }
+  $('regionChartLegend').innerHTML=html;
+}
+
+// ====== Level 2: 省份地图（市级矢量） ======
+function drawProvinceMap(ctx,W,H,geo,prov){
+  ctx.clearRect(0,0,W,H);
+  var scale=_mapView.scale,ox=_mapView.offsetX,oy=_mapView.offsetY;
+
+  // Build city name->total map
+  var totalMap={};
+  var maxTotal=0;
+  for(var i=0;i<(prov.cities||[]).length;i++){
+    var c=prov.cities[i];
+    totalMap[c.name]=c.total;
+    if(c.total>maxTotal)maxTotal=c.total;
+  }
+
+  // Draw cities — first pass glow, second pass fill
+  for(var i=0;i<geo.features.length;i++){
+    var f=geo.features[i];
+    var name=f.properties.name;
+    var total=totalMap[name]||0;
+    if(total===0)continue;
+    var intensity=total/maxTotal;
+    ctx.lineWidth=2+intensity*4;
+    ctx.strokeStyle='rgba(140,210,255,'+(0.08+intensity*0.1)+')';
+    ctx.fillStyle='rgba(140,210,255,'+(0.12+intensity*0.15)+')';
+    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+  }
+  for(var i=0;i<geo.features.length;i++){
+    var f=geo.features[i];
+    var name=f.properties.name;
+    var total=totalMap[name]||0;
+    if(total>0){
+      var intensity=total/maxTotal;
+      ctx.lineWidth=0.7;
+      ctx.fillStyle='rgba(140,220,255,'+(0.6+intensity*0.35)+')';
+      ctx.strokeStyle='rgba(190,245,255,'+(0.9+intensity*0.1)+')';
+    } else {
+      ctx.lineWidth=0.5;
+      ctx.fillStyle='rgba(30,40,70,.45)';
+      ctx.strokeStyle='rgba(70,115,180,.65)';
+    }
+    ctx.globalAlpha=1;
+    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+  }
+
+  // City labels (only for cities with data)
+  for(var i=0;i<geo.features.length;i++){
+    var f=geo.features[i];
+    var name=f.properties.name;
+    var total=totalMap[name]||0;
+    if(total===0)continue;
+    var centroid=getCentroid(f);
+    var pt=project(centroid[0],centroid[1],W,H,scale,ox,oy);
+    if(pt.x<0||pt.x>W||pt.y<0||pt.y>H)continue;
+    ctx.fillStyle='#fff';ctx.font='bold 8px sans-serif';ctx.textAlign='center';
+    ctx.fillText(name.substring(0,5),pt.x,pt.y-1);
+    ctx.fillStyle='#aaa';ctx.font='7px sans-serif';
+    ctx.fillText(total,pt.x,pt.y+9);
+  }
+
+  // Hover
+  if(_mapHovered){
+    ctx.fillStyle='rgba(255,255,255,.12)';
+    ctx.strokeStyle='#6c5ce7';ctx.lineWidth=2;ctx.globalAlpha=1;
+    drawGeoFeature(ctx,_mapHovered,W,H,scale,ox,oy);
+  }
+
+  renderProvinceLegend(prov);
+  $('mapBackBtn').style.display='inline';
+  $('mapHint').textContent='点击城市查看详情 · 滚轮缩放 · 拖拽平移';
+}
+
+function renderProvinceLegend(prov){
+  var html='';
+  var cities=prov.cities||[];
+  for(var i=0;i<Math.min(cities.length,15);i++){
+    var c=cities[i];
+    var color=_chartColors[i%_chartColors.length];
+    var hasDist=c.districts&&c.districts.length>0;
+    html+='<span '+(hasDist?'onclick="goRegionLevel(3,\'China\','+_regionView.provIdx+','+i+')"':'')+
+      ' style="display:flex;align-items:center;gap:4px;'+(hasDist?'cursor:pointer;':'')+'padding:2px 6px;border-radius:4px" '+
+      (hasDist?'onmouseover="this.style.background=\'rgba(255,255,255,.05)\'" onmouseout="this.style.background=\'transparent\'"':'')+'>'+
+      '<span style="width:8px;height:8px;border-radius:1px;background:'+color+'"></span>'+
+      esc(c.name.substring(0,6))+' <b>'+c.total+'</b>'+
+      (hasDist?' →':'')+'</span>';
+  }
+  $('regionChartLegend').innerHTML='<span style="color:#555">'+(prov.cities||[]).length+' 个城市 </span> '+html;
+}
+
+// ====== 绘制 GeoJSON Feature ======
+function drawGeoFeature(ctx,f,W,H,scale,ox,oy){
+  var geom=f.geometry;
+  if(geom.type==='Polygon'){
+    for(var i=0;i<geom.coordinates.length;i++){
+      drawRing(ctx,geom.coordinates[i],W,H,scale,ox,oy);
+    }
+  }else if(geom.type==='MultiPolygon'){
+    for(var i=0;i<geom.coordinates.length;i++){
+      for(var j=0;j<geom.coordinates[i].length;j++){
+        drawRing(ctx,geom.coordinates[i][j],W,H,scale,ox,oy);
+      }
+    }
+  }else if(geom.type==='GeometryCollection'&&geom.geometries){
+    // 兼容 DataV 返回的 GeometryCollection（内含 Polygon/MultiPolygon + LineString）
+    for(var gi=0;gi<geom.geometries.length;gi++){
+      drawGeoFeature(ctx,{geometry:geom.geometries[gi]},W,H,scale,ox,oy);
+    }
+  }
+}
+
+function drawRing(ctx,ring,W,H,scale,ox,oy){
+  if(ring.length<2)return;
+  ctx.beginPath();
+  var pt=project(ring[0][0],ring[0][1],W,H,scale,ox,oy);
+  ctx.moveTo(pt.x,pt.y);
+  for(var i=1;i<ring.length;i++){
+    pt=project(ring[i][0],ring[i][1],W,H,scale,ox,oy);
+    ctx.lineTo(pt.x,pt.y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
+function getCentroid(f){
+  var geom=f.geometry;
+  var coords=[];
+  if(geom.type==='Polygon')coords=geom.coordinates[0];
+  else if(geom.type==='MultiPolygon'){
+    // 收集所有子多边形的外环坐标（避免只取第一个导致空/退化多边形返回 (0,0)）
+    for(var pi=0;pi<geom.coordinates.length;pi++){
+      if(geom.coordinates[pi]&&geom.coordinates[pi][0]&&geom.coordinates[pi][0].length>=3){
+        coords=coords.concat(geom.coordinates[pi][0]);
+      }
+    }
+  }else if(geom.type==='GeometryCollection'&&geom.geometries){
+    // 兼容 GeometryCollection：递归收集所有多边形外环坐标
+    for(var gi=0;gi<geom.geometries.length;gi++){
+      var sub={geometry:geom.geometries[gi]};
+      var c=getCentroid(sub);
+      if(!(c[0]===0&&c[1]===0))coords.push(c);
+    }
+  }
+  if(!coords||coords.length===0)return [0,0];
+  var cx=0,cy=0;
+  for(var i=0;i<coords.length;i++){cx+=coords[i][0];cy+=coords[i][1];}
+  return [cx/coords.length,cy/coords.length];
+}
+
+// ====== Level 1/3 环形图（非中国国家 / 市级详情） ======
+function drawCountryRingView(ctx,W,H,data,countryName){
+  ctx.clearRect(0,0,W,H);
+  if(!countryName){
+    ctx.fillStyle='#555';ctx.font='14px sans-serif';ctx.textAlign='center';
+    ctx.fillText('暂不支持此区域',W/2,H/2);
+    $('regionChartLegend').innerHTML='';
+    $('mapBackBtn').style.display='inline';
+    return;
+  }
+
+  // 找该国数据：先 provinces 再 countries
+  var country=null;
+  for(var i=0;i<data.provinces.length;i++){
+    if(data.provinces[i].name===countryName){country=data.provinces[i];break;}
+  }
+  if(!country&&data.countries){
+    country=data.countries.find(function(c){return c.name===countryName})||null;
+  }
+  if(!country){
+    ctx.fillStyle='#555';ctx.font='14px sans-serif';ctx.textAlign='center';
+    ctx.fillText(countryName+'（无数据）',W/2,H/2);
+    $('regionChartLegend').innerHTML='';
+    $('mapBackBtn').style.display='inline';
+    return;
+  }
+
+  var items=[];
+  if(country.points>0||parseInt(country.points)>0)items.push({name:'点要素',total:parseInt(country.points)||0});
+  if(country.lines>0)items.push({name:'线要素',total:parseInt(country.lines)||0});
+  if(country.polygons>0)items.push({name:'面要素',total:parseInt(country.polygons)||0});
+  if(country.timePaths>0)items.push({name:'时间路径',total:parseInt(country.timePaths)||0});
+  if(country.photos>0)items.push({name:'照片',total:country.photos});
+  if(country.videos>0)items.push({name:'视频',total:country.videos});
+  // 如果有城市数据也展示
+  var cities=country.cities||[];
+  for(var i=0;i<Math.min(cities.length,8);i++){
+    if(cities[i].total>0)items.push({name:cities[i].name,total:cities[i].total});
+  }
+
+  if(items.length===0){
+    ctx.fillStyle='#555';ctx.font='14px sans-serif';ctx.textAlign='center';
+    ctx.fillText(countryName+'（无下级数据）',W/2,H/2);
+    $('regionChartLegend').innerHTML='<span style="color:#555">'+esc(countryName)+' 暂无细分数据</span>';
+    $('mapBackBtn').style.display='inline';
+    return;
+  }
+
+  drawDonutChart(ctx,W,H,items,country.name);
+  $('mapBackBtn').style.display='inline';
+}
+
+function drawCityRingView(ctx,W,H,data){
+  var rv=_regionView;
+  if(rv.provIdx==null||rv.cityIdx==null)return;
+  var prov=_provObj(_provName(rv));
+  if(!prov)return;
+  var city=prov.cities[rv.cityIdx];
+  if(!city)return;
+
+  ctx.clearRect(0,0,W,H);
+
+  var items=[];
+  var dists=city.districts||[];
+  if(dists.length>0){
+    for(var i=0;i<dists.length;i++)items.push({name:dists[i].name,total:dists[i].total});
+  }else{
+    if(city.points>0)items.push({name:'点要素',total:city.points});
+    if(city.lines>0)items.push({name:'线要素',total:city.lines});
+    if(city.polygons>0)items.push({name:'面要素',total:city.polygons});
+    if(city.timePaths>0)items.push({name:'时间路径',total:city.timePaths});
+    if(city.photos>0)items.push({name:'照片',total:city.photos});
+    if(city.videos>0)items.push({name:'视频',total:city.videos});
+  }
+
+  if(items.length===0){
+    $('regionChartLegend').innerHTML='';
+    ctx.fillStyle='#555';ctx.font='14px sans-serif';ctx.textAlign='center';
+    ctx.fillText(city.name+'（无数据）',W/2,H/2);
+    $('mapBackBtn').style.display='inline';
+    return;
+  }
+
+  drawDonutChart(ctx,W,H,items,city.name);
+  $('mapBackBtn').style.display='inline';
+}
+
+function drawDonutChart(ctx,W,H,items,title){
+  var total=items.reduce(function(s,i){return s+i.total},0);
+  var cx=W/2-30,cy=H/2,r=Math.min(W,H)/2-60,ir=r*0.5;
+
+  var angle=-Math.PI/2;
+  var legendHtml='';
+  for(var i=0;i<items.length;i++){
+    var slice=items[i].total/total*Math.PI*2;
+    var color=_chartColors[i%_chartColors.length];
+    ctx.beginPath();
+    ctx.arc(cx,cy,r,angle,angle+slice);
+    ctx.arc(cx,cy,ir,angle+slice,angle,true);
+    ctx.closePath();
+    ctx.fillStyle=color;ctx.globalAlpha=0.8;ctx.fill();ctx.globalAlpha=1;
+    ctx.strokeStyle='rgba(8,8,15,.8)';ctx.lineWidth=1.5;ctx.stroke();
+
+    var mid=angle+slice/2;
+    var lx=cx+Math.cos(mid)*(r+10);
+    var ly=cy+Math.sin(mid)*(r+10);
+    ctx.fillStyle='#aaa';ctx.font='10px sans-serif';
+    ctx.textAlign=mid>Math.PI/2||mid<-Math.PI/2?'right':'left';
+    ctx.fillText(items[i].name+' ('+items[i].total+')',lx+(mid>Math.PI/2||mid<-Math.PI/2?-4:4),ly+3);
+    angle+=slice;
+    legendHtml+='<span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:'+color+'"></span>'+esc(items[i].name)+' <b>'+items[i].total+'</b></span>';
+  }
+
+  ctx.fillStyle='#ccc';ctx.font='bold 16px sans-serif';ctx.textAlign='center';
+  ctx.fillText(total,cx,cy-4);
+  ctx.fillStyle='#666';ctx.font='10px sans-serif';
+  ctx.fillText(title||'',cx,cy+14);
+  $('regionChartLegend').innerHTML='<span style="color:#555">📊 '+esc(title||'')+' 分布 </span>'+legendHtml;
+}
+
+// ====== 地图交互 ======
+function setupMapEvents(W,H){
+  var canvas=$('regionChart');
+  if(!canvas)return;
+
+  canvas.onwheel=function(e){
+    e.preventDefault();
+    var rect=canvas.getBoundingClientRect();
+    var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    var zoom=e.deltaY<0?1.15:0.87;
+    var newScale=_mapView.scale*zoom;
+    if(newScale<0.5)newScale=0.5;
+    if(newScale>8)newScale=8;
+    // Zoom toward cursor
+    _mapView.offsetX=mx-(mx-_mapView.offsetX)*newScale/_mapView.scale;
+    _mapView.offsetY=my-(my-_mapView.offsetY)*newScale/_mapView.scale;
+    _mapView.scale=newScale;
+    _mapUserPanned=true; // 用户手动缩放
+    redrawMap();
+  };
+
+  canvas.onmousedown=function(e){
+    _mapDragging=true;_mapDragX=e.clientX;_mapDragY=e.clientY;
+    canvas.style.cursor='grabbing';
+  };
+  canvas.onmousemove=function(e){
+    if(_mapDragging){
+      _mapView.offsetX+=e.clientX-_mapDragX;
+      _mapView.offsetY+=e.clientY-_mapDragY;
+      _mapDragX=e.clientX;_mapDragY=e.clientY;
+      _mapUserPanned=true; // 用户手动平移
+      redrawMap();
+      return;
+    }
+    // Hover detection
+    if(!_mapGeoData)return;
+    var rect=canvas.getBoundingClientRect();
+    var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    var found=null;
+    for(var i=_mapGeoData.features.length-1;i>=0;i--){
+      var f=_mapGeoData.features[i];
+      if(pointInFeature(mx,my,f,W,H)){
+        found=f;break;
+      }
+    }
+    if(found!==_mapHovered){
+      _mapHovered=found;
+      canvas.style.cursor=found?'pointer':'grab';
+      redrawMap();
+    }
+  };
+  canvas.onmouseup=function(e){
+    if(_mapDragging){
+      var dx=Math.abs(e.clientX-_mapDragX),dy=Math.abs(e.clientY-_mapDragY);
+      _mapDragging=false;
+      canvas.style.cursor='grab';
+      if(dx<3&&dy<3&&_mapHovered){
+        handleMapClick(_mapHovered);
+      }
+    }
+  };
+  canvas.onmouseleave=function(){_mapDragging=false;canvas.style.cursor='grab';};
+}
+
+function pointInFeature(px,py,f,W,H){
+  var geom=f.geometry;
+  var scale=_mapView.scale,ox=_mapView.offsetX,oy=_mapView.offsetY;
+  var rings=[];
+  if(geom.type==='Polygon')rings=geom.coordinates;
+  else if(geom.type==='MultiPolygon')rings=[];
+  if(geom.type==='MultiPolygon'){
+    for(var i=0;i<geom.coordinates.length;i++){
+      for(var j=0;j<geom.coordinates[i].length;j++){
+        rings.push(geom.coordinates[i][j]);
+      }
+    }
+  }
+  for(var r=0;r<rings.length;r++){
+    if(pointInRing(px,py,rings[r],W,H,scale,ox,oy))return true;
+  }
+  return false;
+}
+
+function pointInRing(px,py,ring,W,H,scale,ox,oy){
+  var inside=false;
+  for(var i=0,j=ring.length-1;i<ring.length;j=i++){
+    var pi=project(ring[i][0],ring[i][1],W,H,scale,ox,oy);
+    var pj=project(ring[j][0],ring[j][1],W,H,scale,ox,oy);
+    if((pi.y>py)!==(pj.y>py)&&px<(pj.x-pi.x)*(py-pi.y)/(pj.y-pi.y)+pi.x){
+      inside=!inside;
+    }
+  }
+  return inside;
+}
+
+function handleMapClick(f){
+  var name=f.properties.name;
+  var rv=_regionView;
+
+  if(rv.level===0){
+    // 世界 → 点击国家
+    if(!_mapProvinceData)return;
+    // 中国（含台湾）
+    if(name==='China'||name==='Taiwan'){
+      // 自动缩放至中国范围
+      loadWorldGeo(function(worldGeo){
+        for(var i=0;i<worldGeo.features.length;i++){
+          if(worldGeo.features[i].properties.name===name){
+            var canvas=$('regionChart');
+            var rect=canvas.getBoundingClientRect();
+            fitBounds(worldGeo.features[i],rect.width,rect.height);
+            break;
+          }
+        }
+        goRegionLevel(1,'China');
+      });
+    }else{
+      // 其他国家 → 自动缩放并显示环形图
+      loadWorldGeo(function(worldGeo){
+        for(var i=0;i<worldGeo.features.length;i++){
+          if(worldGeo.features[i].properties.name===name){
+            var canvas=$('regionChart');
+            var rect=canvas.getBoundingClientRect();
+            fitBounds(worldGeo.features[i],rect.width,rect.height);
+            break;
+          }
+        }
+        goRegionLevel(1,name);
+      });
+    }
+  }else if(rv.level===1){
+    // 国家（中国）→ 点击省份：基于 34 省几何列表定位，使全部省份可下钻
+    if(!_mapGeoData)return;
+    for(var j=0;j<_mapGeoData.features.length;j++){
+      if(_mapGeoData.features[j].properties.name===name){
+        // 自动缩放至该省份
+        var canvas=$('regionChart');
+        var rect=canvas.getBoundingClientRect();
+        fitBounds(_mapGeoData.features[j],rect.width,rect.height);
+        goRegionLevel(2,'China',j);
+        return;
+      }
+    }
+  }else if(rv.level===2){
+    // 省份 → 点击城市（省名按维度兼容解析）
+    var prov=_provObj(_provName(rv));
+    if(!prov)return;
+    for(var i=0;i<(prov.cities||[]).length;i++){
+      if(prov.cities[i].name===name){
+        // 自动缩放至该市
+        if(_mapGeoData){
+          for(var j=0;j<_mapGeoData.features.length;j++){
+            if(_mapGeoData.features[j].properties.name===name){
+              var canvas=$('regionChart');
+              var rect=canvas.getBoundingClientRect();
+              fitBounds(_mapGeoData.features[j],rect.width,rect.height);
+              break;
+            }
+          }
+        }
+        if(prov.cities[i].districts&&prov.cities[i].districts.length>0){
+          goRegionLevel(3,'China',rv.provIdx,i);
+        }
+        return;
+      }
+    }
+  }
+}
+
+function redrawMap(){
+  var canvas=$('regionChart');
+  if(!canvas)return;
+  var rect=canvas.getBoundingClientRect();
+  canvas.width=rect.width*devicePixelRatio;
+  canvas.height=rect.height*devicePixelRatio;
+  var ctx=canvas.getContext('2d');
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  var W=rect.width,H=rect.height;
+
+  if(!_mapProvinceData)return;
+  var rv=_regionView;
+
+  if(rv.level===0){
+    // 世界
+    loadWorldGeo(function(worldGeo){
+      _mapGeoData=worldGeo;
+      drawWorldMap(ctx,W,H,worldGeo,_mapProvinceData);
+    });
+  }else if(rv.level===1){
+    // 国家
+    if(rv.countryName==='China'){
+      loadProvGeo(function(provGeo){
+        _mapGeoData=provGeo;
+        drawCountryMap(ctx,W,H,provGeo,_mapProvinceData);
+      });
+    }else{
+      drawCountryRingView(ctx,W,H,_mapProvinceData,rv.countryName);
+    }
+  }else if(rv.level===2){
+    // 省份：重绘已加载的市级地图（省名按维度兼容解析，避免重复请求与崩溃）
+    var pname=_provName(rv);
+    if(rv.provIdx!=null&&_mapGeoData){
+      drawProvinceMap(ctx,W,H,_mapGeoData,_provObj(pname)||{name:pname});
+    }else if(pname){
+      loadCityGeo(pname,function(geo){
+        if(geo&&geo.features&&geo.features.length){
+          _mapGeoData=geo;
+          drawProvinceMap(ctx,W,H,geo,_provObj(pname)||{name:pname});
+        }
+      });
+    }
+  }else if(rv.level===3){
+    // 市
+    drawCityRingView(ctx,W,H,_mapProvinceData);
+  }
+}
+
+function resetMapView(){
+  _mapView={scale:1,offsetX:0,offsetY:0};
+  _mapHovered=null;
+  _regionView={level:0,countryName:null,provIdx:null,cityIdx:null};
+  if(_regionData){
+    renderByLevel(_regionData,0,_regionView);
+    drawRegionChart(_regionData,0);
+  }
+}
+
+// 自动刷新
+// 预加载 34 省几何列表，保证进入中国后侧边栏/图例下钻在任何时机都能解析省名（避免异步间隙期内 _provGeomIndex 失效）
+loadProvGeo(function(){});
+
+// 自动刷新
+loadDatabases(); refreshAll();
+// auto-refresh disabled
+</script>
+</body>
+</html>

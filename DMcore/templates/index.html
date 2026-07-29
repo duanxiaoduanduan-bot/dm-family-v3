@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DMcore · Linux 运维控制台</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◈</span>
+      <div>
+        <h1>DMcore</h1>
+        <small id="hostline">加载中…</small>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="liveDot" class="dot"></span>
+      <span id="lastUpdate">—</span>
+      <button id="refreshBtn" class="btn ghost" title="立即刷新">↻ 刷新</button>
+    </div>
+  </header>
+
+  <!-- 系统概览 -->
+  <section class="cards" id="sysCards">
+    <div class="card">
+      <div class="card-label">CPU 使用率</div>
+      <div class="card-value" id="cpuVal">—</div>
+      <div class="bar"><div class="bar-fill cpu" id="cpuBar"></div></div>
+      <div class="card-sub" id="cpuSub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">内存</div>
+      <div class="card-value" id="memVal">—</div>
+      <div class="bar"><div class="bar-fill mem" id="memBar"></div></div>
+      <div class="card-sub" id="memSub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">磁盘 (/)</div>
+      <div class="card-value" id="diskVal">—</div>
+      <div class="bar"><div class="bar-fill disk" id="diskBar"></div></div>
+      <div class="card-sub" id="diskSub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">负载 / 进程</div>
+      <div class="card-value" id="loadVal">—</div>
+      <div class="card-sub" id="loadSub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">运行时长</div>
+      <div class="card-value" id="upVal">—</div>
+      <div class="card-sub" id="upSub">—</div>
+    </div>
+  </section>
+
+  <!-- 标签页 -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="proj">项目管理</button>
+    <button class="tab" data-tab="proc">进程管理</button>
+    <button class="tab" data-tab="svc">服务管理</button>
+  </nav>
+
+  <main>
+    <!-- 项目管理 (DM 家族) -->
+    <section id="proj" class="panel active">
+      <div class="toolbar">
+        <strong style="color:var(--muted)">DM 家族项目</strong>
+        <span id="projRoot" class="muted"></span>
+        <span class="spacer"></span>
+        <button id="projAdd" class="btn">＋ 添加项目</button>
+        <button id="projRefresh" class="btn ghost">↻ 刷新</button>
+      </div>
+      <h3 style="margin:6px 14px 0;color:var(--muted);font-weight:500">已安装 / 托管中</h3>
+      <div id="projInstalled" class="proj-grid"></div>
+      <h3 style="margin:18px 14px 4px;color:var(--muted);font-weight:500">自动识别 · 待托管</h3>
+      <div id="projDetected" class="proj-grid"></div>
+      <h3 style="margin:18px 14px 4px;color:var(--muted);font-weight:500">可安装</h3>
+      <div id="projAvailable" class="proj-grid"></div>
+    </section>
+
+    <!-- 进程管理 -->
+    <section id="proc" class="panel">
+      <div class="toolbar">
+        <input id="procSearch" class="search" placeholder="搜索命令 / 用户 / PID…" />
+        <select id="procUser" class="select"><option value="">全部用户</option></select>
+        <span class="spacer"></span>
+        <span id="procCount" class="muted">0 个进程</span>
+      </div>
+      <div class="table-wrap">
+        <table id="procTable">
+          <thead>
+            <tr>
+              <th data-sort="pid">PID</th>
+              <th data-sort="user">用户</th>
+              <th data-sort="cpu" class="sortable">CPU%</th>
+              <th data-sort="mem" class="sortable">MEM%</th>
+              <th data-sort="rss">RSS</th>
+              <th>TTY</th>
+              <th>STAT</th>
+              <th data-sort="start">启动</th>
+              <th>命令</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="procBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 服务管理 -->
+    <section id="svc" class="panel">
+      <div id="svcNotice" class="notice hidden"></div>
+      <div class="table-wrap">
+        <table id="svcTable">
+          <thead>
+            <tr><th>服务</th><th>状态</th><th>子状态</th><th>说明</th><th>操作</th></tr>
+          </thead>
+          <tbody id="svcBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- 操作确认弹窗 -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h3 id="modalTitle">确认操作</h3>
+      <p id="modalText"></p>
+      <div class="modal-actions">
+        <button id="modalCancel" class="btn ghost">取消</button>
+        <button id="modalOk" class="btn danger">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志查看模态框 -->
+  <div id="logModal" class="modal hidden">
+    <div class="modal-box" style="width:min(640px,92vw)">
+      <h3 id="logTitle">日志</h3>
+      <pre id="logBody" class="log"></pre>
+      <div class="modal-actions"><button id="logClose" class="btn ghost">关闭</button></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

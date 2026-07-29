@@ -1,0 +1,9 @@
+{
+  "name": "DMshow",
+  "display": "DMshow 作品集主页",
+  "type": "web",
+  "port": 8086,
+  "command": "node server.js",
+  "description": "作品集个人主页：library 素材库自动排版，文本摘要 + 作品/图集/视频，全屏幻灯与自动轮播。",
+  "env": {}
+}

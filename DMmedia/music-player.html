@@ -1,0 +1,190 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎵 音乐</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;background:linear-gradient(135deg,#0f0f1a,#1a1a2e);color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;padding-bottom:64px}
+.drop-overlay{position:fixed;inset:0;z-index:999;background:rgba(108,92,231,.15);backdrop-filter:blur(8px);border:4px dashed rgba(108,92,231,.5);display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#6c5ce7}
+.drop-overlay.show{display:flex}
+.header{padding:12px 20px;background:rgba(0,0,0,.3);border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.header h1{font-size:17px;font-weight:600}
+.header .st{font-size:11px;color:#888;background:rgba(255,255,255,.04);padding:2px 10px;border-radius:10px}
+.header .actions{margin-left:auto;display:flex;gap:6px}
+.header .actions button{padding:5px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#aaa;font-size:11px;cursor:pointer}
+.header .actions button:hover{background:rgba(255,255,255,.12);color:#fff}
+.main{flex:1;display:flex;gap:16px;padding:16px;overflow:hidden;align-items:flex-start;justify-content:center}
+
+/* 左侧列表卡片 */
+.side{width:280px;min-width:200px;flex-shrink:0;background:rgba(255,255,255,.03);border-radius:12px;border:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 210px)}
+.side .sh{padding:12px 14px 8px;font-size:12px;font-weight:600;flex-shrink:0;color:#aaa}
+.side .sl{flex:1;overflow-y:auto;padding:4px 6px}
+.side .sl::-webkit-scrollbar{width:3px}
+.side .sl::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.resize-handle{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;z-index:10}
+.resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:30px;background:rgba(255,255,255,.1);border-radius:1px}
+.resize-handle:hover::after{background:#6c5ce7;height:50px;width:3px}
+.sr{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer}
+.sr:hover{background:rgba(255,255,255,.06)}
+.sr.act{background:rgba(231,76,60,.12)}
+.sr .ix{width:18px;text-align:center;font-size:11px;color:#555;flex-shrink:0}
+.sr .nf{flex:1;min-width:0}
+.sr .nf .nm{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr .nf .ar{font-size:10px;color:#777;margin-top:1px}
+/* 右侧歌词卡片 */
+.cp{flex:1;min-width:280px;background:rgba(255,255,255,.02);border-radius:12px;border:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 210px)}
+.cp .ch{padding:12px 14px 8px;font-size:12px;font-weight:600;flex-shrink:0;color:#aaa;border-bottom:1px solid rgba(255,255,255,.04)}
+.lyrics{flex:1;overflow-y:auto;padding:16px 20px;text-align:center}
+.lyrics::-webkit-scrollbar{width:3px}
+.lyrics::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.lyrics .lr{font-size:14px;color:#555;padding:6px 0;transition:all .3s;cursor:pointer;line-height:1.8}
+.lyrics .lr:hover{color:#aaa}
+.lyrics .lr.act{color:#e17055;font-size:16px;font-weight:600}
+.lyrics .lr.done{color:#444}
+.es{text-align:center;color:#555;padding:40px}
+.es .ei{font-size:48px;margin-bottom:10px;opacity:.4}
+.es p{font-size:14px}
+.pb{position:fixed;bottom:0;left:0;right:0;z-index:100;background:rgba(18,18,38,.97);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;height:60px;padding:0 16px;gap:10px;box-shadow:0 -4px 20px rgba(0,0,0,.4)}
+.pb .ti{width:180px;overflow:hidden}
+.pb .ti .nm{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pb .ti .ar{font-size:10px;color:#777}
+.pb .ct{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;max-width:500px}
+.pb .ct .bt{display:flex;gap:14px;align-items:center}
+.pb .ct .bt button{background:none;border:none;color:#aaa;cursor:pointer;font-size:15px;padding:2px}
+.pb .ct .bt button:hover{color:#fff}
+.pb .ct .bt .pp{width:30px;height:30px;border-radius:50%;background:#fff;color:#000;font-size:12px;display:flex;align-items:center;justify-content:center}
+.pb .pr{width:100%;display:flex;align-items:center;gap:6px;font-size:10px;color:#777}
+.pb .pr input[type=range]{flex:1;height:3px;-webkit-appearance:none;background:rgba(255,255,255,.1);border-radius:2px;outline:none}
+.pb .pr input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:#e74c3c;cursor:pointer}
+@media(max-width:768px){
+  .main{flex-direction:column;align-items:stretch;gap:12px;padding:10px}
+  .side{width:100%;max-height:35vh}
+  .cp{min-width:0;max-height:40vh}
+  .pb{height:56px;padding:0 8px;gap:8px}
+  .pb .ti{width:90px}.pb .ti .nm{font-size:11px}
+}
+</style>
+</head>
+<body>
+<div class="drop-overlay" id="dz"><div style="font-size:48px">🎵</div><p>放开添加音乐</p></div>
+<div class="header"><h1>🎵 音乐</h1><span class="st" id="status">...</span>
+<div class="actions">
+<button onclick="document.getElementById('fi').click()">📂 选文件</button>
+<button onclick="document.getElementById('fd').click()">📁 选文件夹</button>
+<button onclick="loadList()">🔄 刷新</button>
+</div>
+<input type="file" id="fi" multiple accept="audio/*" style="display:none" onchange="addLocal(this.files)">
+<input type="file" id="fd" webkitdirectory multiple accept="audio/*" style="display:none" onchange="addLocal(this.files)">
+</div>
+<div class="main">
+<div class="side" id="sidebar"><div class="sh">🎶 列表 <span id="sc"></span></div><div class="sl" id="pl"></div></div>
+<div class="cp" id="cp">
+  <div class="ch">📝 歌词</div>
+  <div class="lyrics" id="lyrics"><div class="es" id="es"><div class="ei">🎵</div><p id="hint">加载中...</p></div></div>
+</div>
+</div>
+<div class="pb">
+<div class="ti"><div class="nm" id="nt">未播放</div><div class="ar" id="na">—</div></div>
+<div class="ct"><div class="bt">
+<button onclick="shf=!shf;this.style.color=shf?'#e74c3c':'#aaa'">🔀</button>
+<button onclick="pr()">⏮</button><button class="pp" id="pB" onclick="togP()">▶</button><button onclick="nx()">⏭</button>
+</div><div class="pr"><span id="cT">00:00</span><input type="range" id="pBar" value="0" max="1000" onpointerdown="skStart()" ontouchstart="skStart()" oninput="skDrag()" onchange="skEnd()"><span id="tT">00:00</span></div></div></div>
+<script>
+let sg=[],ci=-1,shf=false,A=new Audio();
+const $=i=>document.getElementById(i),pl=$('pl'),nt=$('nt'),na=$('na'),pB=$('pB'),rB=$('pBar'),cT=$('cT'),tT=$('tT'),st=$('status'),ht=$('hint'),sc=$('sc'),dz=$('dz'),es=$('es'),lrContainer=$('lyrics');
+
+// 拖放/本地
+document.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('show')});
+document.addEventListener('dragleave',function(){dz.classList.remove('show')});
+document.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('show');addLocal(e.dataTransfer.files)});
+
+function addLocal(fl){var n=0;for(var i=0;i<fl.length;i++){var f=fl[i];if(!f.name.match(/\.(mp3|wav|flac|ogg|aac|m4a)$/i))continue;var t=f.name.replace(/\.\w+$/,''),ar='',di=t.lastIndexOf(' - ');if(di>0){ar=t.slice(0,di);t=t.slice(di+3)}sg.push({title:t,artist:ar,url:URL.createObjectURL(f)});n++}if(n){st.textContent='📂 '+sg.length+'首';ht.textContent='';up();if(ci<0)playS(0)}}
+
+// 从服务器加载（每次请求都重新扫描）
+async function loadList(){
+  st.textContent='加载中...';
+  try{
+    var r=await fetch('music-list.json?_='+Date.now());
+    if(!r.ok)throw Error('fetch fail');
+    var d=await r.json();
+    if(!d||!d.length)throw Error('empty');
+    sg=d.map(function(s){return{title:s.title||s.name,artist:s.artist||'',url:s.file||s.url||s.path}});
+    st.textContent='🎵 '+sg.length+'首';
+    ht.textContent='';
+    up();
+    if(sg.length&&ci<0)playS(0);
+  }catch(e){
+    st.textContent='📂 本地模式';
+    ht.innerHTML='拖拽音乐到窗口<br>或点「选文件」';
+  }
+}
+
+function playS(i){if(i<0||i>=sg.length)return;ci=i;var s=sg[i];nt.textContent=s.title;na.textContent=s.artist||'';A.src=s.url;A.play().catch(function(){});pB.textContent='⏸';es.style.display='none';
+  // 解析歌词：优先用 song 里的 lrc，否则尝试加载同名 .lrc 文件
+  loadLyrics(s);
+A.ontimeupdate=function(){if(A.duration&&isFinite(A.duration)&&!dragging){rB.value=(A.currentTime/A.duration)*1000;cT.textContent=f(A.currentTime);syncLyrics(A.currentTime)}};A.onloadedmetadata=function(){tT.textContent=f(A.duration);up()};A.ondurationchange=function(){if(isFinite(A.duration))tT.textContent=f(A.duration)};A.onended=function(){rB.value=0;cT.textContent='00:00';nx()};A.onerror=function(){rB.value=0;cT.textContent='00:00';nx()};up();}
+function togP(){if(!sg.length)return;if(ci<0){playS(0);return}if(A.paused){A.play().catch(function(){});pB.textContent='⏸'}else{A.pause();pB.textContent='▶'}}
+function nx(){if(!sg.length)return;var n;if(shf)do{n=Math.floor(Math.random()*sg.length)}while(n===ci&&sg.length>1);else{n=ci+1;if(n>=sg.length)n=0}playS(n)}
+function pr(){if(A.currentTime>3){A.currentTime=0;return}var p=ci-1;if(p<0)p=sg.length-1;playS(p)}
+var dragging=false;
+function skStart(){dragging=true}
+function skDrag(){if(!dragging)return;var d=A.duration;if(!d||!isFinite(d))return;cT.textContent=f((rB.value/1000)*d)}
+function skEnd(){dragging=false;var d=A.duration;if(!d||!isFinite(d))return;var t=(rB.value/1000)*d;if(t>=0&&t<=d)A.currentTime=t}
+function f(s){if(!s||isNaN(s)||!isFinite(s))return'00:00';return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0')}
+
+// ===== 歌词系统 =====
+var lrcLines=[],lastLrcIdx=-1;
+
+function parseLrc(raw){
+  var lines=[];raw.split(/\n|\r\n/).forEach(function(line){
+    var m=line.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]\s*(.*)/);
+    if(m){
+      var t=parseInt(m[1])*60+parseInt(m[2])+(parseInt(m[3])||0)/(m[3]&&m[3].length===2?100:1000);
+      lines.push({time:t,text:m[4]||''});
+    }
+  });
+  lines.sort(function(a,b){return a.time-b.time});
+  return lines;
+}
+
+function renderLyrics(){
+  lrContainer.innerHTML='';
+  if(!lrcLines.length){lrContainer.innerHTML='<div class="es"><div class="ei">🎵</div><p>暂无歌词</p></div>';return}
+  for(var i=0;i<lrcLines.length;i++){
+    var d=document.createElement('div');d.className='lr';d.textContent=lrcLines[i].text;
+    d.onclick=function(t){return function(){A.currentTime=t;if(A.paused)A.play().catch(function(){})}}(lrcLines[i].time);
+    lrContainer.appendChild(d);
+  }
+  lastLrcIdx=-1;
+}
+
+function syncLyrics(t){
+  if(!lrcLines.length)return;
+  var idx=-1;
+  for(var i=lrcLines.length-1;i>=0;i--){if(t>=lrcLines[i].time){idx=i;break}}
+  if(idx===lastLrcIdx)return;
+  var children=lrContainer.children;
+  for(var i=0;i<children.length;i++)children[i].classList.remove('act','done');
+  for(var i=0;i<=idx;i++)children[i].classList.add('done');
+  if(idx>=0)children[idx].classList.add('act');
+  // 自动滚动
+  if(idx>=0)children[idx].scrollIntoView({behavior:'smooth',block:'center'});
+  lastLrcIdx=idx;
+}
+
+async function loadLyrics(song){
+  lrcLines=[];lastLrcIdx=-1;
+  // 1. 先试同名 .lrc 文件
+  if(song.url&&song.url.indexOf('blob:')!==0){
+    var lrcUrl=song.url.replace(/\.\w+(\?.*)?$/,'.lrc');
+    try{var r=await fetch(lrcUrl);if(r.ok){lrcLines=parseLrc(await r.text());renderLyrics();return}}catch(e){}
+  }
+  // 2. 没有歌词文件
+  renderLyrics();
+}
+function up(){pl.innerHTML='';sc.textContent='('+sg.length+'首)';if(!sg.length)return;
+for(var i=0;i<sg.length;i++){var s=sg[i],dt=s.title,da=s.artist,di=s.title.lastIndexOf(' - ');if(di>0&&!s.artist){da=s.title.slice(0,di);dt=s.title.slice(di+3)}var r=document.createElement('div');r.className='sr'+(i===ci?' act':'');r.innerHTML='<div class="ix">'+(i+1)+'</div><div class="nf"><div class="nm">'+dt+'</div><div class="ar">'+da+'</div></div>';r.onclick=function(j){return function(){if(j===ci)togP();else playS(j)}}(i);pl.appendChild(r)}}
+document.addEventListener('keydown',function(e){if(e.key===' '){e.preventDefault();togP()}});
+loadList();up();
+</script>
+</body>
+</html>

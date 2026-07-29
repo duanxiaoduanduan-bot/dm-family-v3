@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMpageo 合并门户</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#0a0a0f;color:#e0e0ee;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.header{display:flex;align-items:center;gap:16px;padding:14px 28px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(10,10,15,.85);backdrop-filter:blur(20px);flex-shrink:0}
+.logo{font-size:20px;font-weight:700;background:linear-gradient(135deg,#6c5ce7,#00cec9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:flex;align-items:center;gap:8px}
+.tabs{display:flex;gap:8px;margin-left:24px}
+.tab{padding:8px 20px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);color:#888;font-size:13px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px}
+.tab:hover{color:#fff;border-color:rgba(108,92,231,.3)}
+.tab.active{background:linear-gradient(135deg,rgba(108,92,231,.18),rgba(0,206,201,.12));color:#fff;border-color:rgba(108,92,231,.4)}
+.hint{margin-left:auto;font-size:12px;color:#555}
+.stage{flex:1;position:relative}
+.frame{position:absolute;inset:0;border:0;width:100%;height:100%;display:none}
+.frame.active{display:block}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">✦ DMpageo 合并门户</div>
+  <div class="tabs">
+    <div class="tab active" data-tab="media">🎬 媒体网盘</div>
+    <div class="tab" data-tab="geo">🗺️ 地理统计</div>
+    <div class="tab" data-tab="show">📱 个人主页</div>
+  </div>
+  <div class="hint">单独运行各自独立 · 合并运行同处一界面</div>
+</div>
+<div class="stage">
+  <iframe id="f-media" class="frame active" src=""></iframe>
+  <iframe id="f-geo" class="frame" src=""></iframe>
+  <iframe id="f-show" class="frame" src=""></iframe>
+</div>
+<script>
+  const isProxy = location.port === '8080' || location.pathname.startsWith('/pageo');
+  const host = location.hostname;
+  const URLS = {
+    media: isProxy ? '/media/' : ('//' + host + ':8081/'),
+    geo:   isProxy ? '/geo/'   : ('//' + host + ':8084/'),
+    show:  isProxy ? '/show/'  : ('//' + host + ':8086/')
+  };
+  const loaded = {}; // 懒加载：首次切到某 tab 才设 src
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.frame').forEach(x => x.classList.remove('active'));
+    document.querySelector('.tab[data-tab="'+name+'"]').classList.add('active');
+    var f = document.getElementById('f-' + name);
+    f.classList.add('active');
+    if (!loaded[name]) { f.src = URLS[name]; loaded[name] = true; }
+    location.hash = name;
+  }
+
+  // 恢复上次 tab
+  var start = (location.hash.slice(1) || 'media');
+  if (!URLS[start]) start = 'media';
+
+  // 默认激活的 tab 立即加载
+  loaded[start] = true;
+  document.getElementById('f-' + start).src = URLS[start];
+  document.querySelector('.tab[data-tab="'+start+'"]').classList.add('active');
+  document.getElementById('f-' + start).classList.add('active');
+  // 去掉 HTML 中的默认 active
+  document.querySelectorAll('.tab').forEach(t => { if (t.dataset.tab !== start) t.classList.remove('active'); });
+  document.querySelectorAll('.frame').forEach(f => { if (f.id !== 'f-' + start) f.classList.remove('active'); });
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => switchTab(t.dataset.tab));
+  });
+
+  // 监听浏览器前进/后退
+  window.addEventListener('hashchange', () => {
+    var name = location.hash.slice(1);
+    if (URLS[name]) switchTab(name);
+  });
+</script>
+</body></html>

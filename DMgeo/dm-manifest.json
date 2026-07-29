@@ -1,0 +1,9 @@
+{
+  "name": "DMgeo",
+  "display": "DMgeo 地理统计",
+  "type": "web",
+  "port": 8084,
+  "command": "node server.js",
+  "description": "地图轨迹/大数据展示屏/行政区划管理/图层管理 + PostGIS 空间数据库（依赖 dmpageo-pg:5432）",
+  "env": {"PGHOST": "localhost"}
+}

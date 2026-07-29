@@ -1,0 +1,2061 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🗺️ 地图轨迹</title>
+<link rel="stylesheet" href="leaflet.css" />
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#0a0a0f;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+.header{padding:5px 12px;background:rgba(0,0,0,.5);border-bottom:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;gap:4px;flex-shrink:0;z-index:1000}
+.header-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.header h1{font-size:14px;font-weight:600;white-space:nowrap}
+.header .actions{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.header .actions button{padding:4px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#aaa;font-size:10px;cursor:pointer;white-space:nowrap;transition:all .2s}
+.header .actions button:hover{background:rgba(255,255,255,.12);color:#fff}
+.header .actions button.prim{background:#e17055;border-color:#e17055;color:#fff}
+.header .actions button.accent{background:#00cec9;border-color:#00cec9;color:#000}
+.header .actions .tsep{display:inline-block;width:1px;height:18px;background:rgba(255,255,255,.18);margin:0 5px;vertical-align:middle}
+
+/* 底图选择器 */
+.base-select{display:flex;gap:2px;background:rgba(255,255,255,.04);border-radius:12px;padding:2px;border:1px solid rgba(255,255,255,.06)}
+.base-select .bs-btn{padding:3px 10px;border-radius:10px;border:none;background:transparent;color:#888;font-size:10px;cursor:pointer;transition:all .15s}
+.base-select .bs-btn:hover{color:#ccc}
+.base-select .bs-btn.act{background:rgba(255,255,255,.1);color:#fff}
+
+.main{flex:1;display:flex;overflow:hidden;position:relative}
+#map{flex:1;z-index:1;background:#1a1a2e}
+.leaflet-container{background:#1a1a2e!important}
+
+/* 标记弹出框 */
+.marker-popup{font-size:12px;min-width:180px}
+.marker-popup img{max-width:200px;max-height:150px;border-radius:6px;margin:4px 0;display:block;cursor:pointer}
+.marker-popup .mp-btns{display:flex;gap:4px;margin-top:6px}
+.marker-popup .mp-btns button{padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#f5f5f5;font-size:11px;cursor:pointer}
+
+/* 地图上的照片缩略图 */
+.map-photo{width:80px;height:60px;border-radius:4px;overflow:hidden;border:2px solid #fdcb6e;box-shadow:0 2px 8px rgba(0,0,0,.5);background:#000;cursor:pointer;transition:transform .2s}
+.map-photo:hover{transform:scale(1.15);z-index:999!important;border-color:#fff}
+.map-photo img{width:100%;height:100%;object-fit:cover}
+.map-photo .mp-label{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#fff;font-size:8px;padding:1px 3px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 右侧面板 */
+.panel{width:340px;flex-shrink:0;background:rgba(18,18,30,.95);border-left:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;z-index:10;transition:transform .3s}
+.panel.collapsed{transform:translateX(340px);position:absolute;right:0;top:0;bottom:0}
+.panel-toggle{position:absolute;left:-32px;top:50%;transform:translateY(-50%);width:32px;height:64px;background:rgba(18,18,30,.9);border:1px solid rgba(255,255,255,.06);border-right:none;border-radius:8px 0 0 8px;color:#aaa;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;z-index:11}
+.panel-toggle:hover{color:#fff}
+.panel-tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.panel-tabs .pt{padding:8px 14px;font-size:10px;cursor:pointer;color:#666;border-bottom:2px solid transparent;transition:all .2s}
+.panel-tabs .pt:hover{color:#aaa}
+.panel-tabs .pt.act{color:#e17055;border-bottom-color:#e17055}
+.panel-body{flex:1;overflow-y:auto;padding:10px}
+.panel-body::-webkit-scrollbar{width:3px}
+.panel-body::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.panel-section{display:none}
+.panel-section.act{display:block}
+
+.marker-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;margin-bottom:1px;font-size:11px;transition:all .15s}
+.marker-item:hover{background:rgba(255,255,255,.05)}
+.marker-item.act{background:rgba(225,112,85,.12)}
+.marker-item .mi-icon{width:20px;text-align:center;flex-shrink:0;font-size:14px}
+.marker-item .mi-info{flex:1;min-width:0}
+.marker-item .mi-info .mi-name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.marker-item .mi-info .mi-coord{font-size:9px;color:#555}
+.marker-item .mi-del{background:none;border:none;color:#555;cursor:pointer;font-size:14px;padding:0 4px;opacity:0;transition:all .15s}
+.marker-item:hover .mi-del{opacity:1}
+.marker-item .mi-del:hover{color:#e74c3c}
+
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.photo-grid .pg-item{aspect-ratio:1;border-radius:6px;overflow:hidden;cursor:pointer;background:#111;position:relative;border:2px solid transparent;transition:all .15s}
+.photo-grid .pg-item:hover{border-color:rgba(225,112,85,.4)}
+.photo-grid .pg-item.act{border-color:#e17055}
+.photo-grid .pg-item img{width:100%;height:100%;object-fit:cover}
+.photo-grid .pg-item .pg-name{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);font-size:8px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.photo-grid .pg-item .pg-coord{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);color:#0f0;font-size:7px;padding:1px 4px;border-radius:4px}
+
+.data-table{width:100%;border-collapse:collapse;font-size:10px}
+.data-table th,.data-table td{padding:5px 8px;text-align:left;border-bottom:1px solid rgba(255,255,255,.04)}
+.data-table th{color:#888;font-weight:500;background:rgba(255,255,255,.02);position:sticky;top:0}
+.data-table td{color:#aaa}
+.data-table tr:hover td{background:rgba(255,255,255,.02)}
+.data-table .editable{cursor:pointer;min-width:40px}
+.data-table .editable:hover{color:#e17055;text-decoration:underline}
+
+.footnotes{margin-top:10px;padding:8px 10px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.04)}
+.footnotes .fn-title{font-size:10px;color:#888;margin-bottom:4px}
+.footnotes .fn-item{font-size:9px;color:#666;padding:2px 0;display:flex;gap:4px}
+.footnotes .fn-item .fn-num{color:#e17055;flex-shrink:0}
+
+.edit-form{display:flex;flex-direction:column;gap:6px}
+.edit-form label{font-size:10px;color:#888}
+.edit-form input,.edit-form textarea{padding:5px 8px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#ccc;font-size:10px;width:100%}
+.edit-form textarea{min-height:50px;resize:vertical}
+.edit-form .ef-row{display:flex;gap:6px}
+.edit-form .ef-row>*{flex:1}
+.edit-form button{padding:5px 12px;border-radius:5px;border:none;background:#e17055;color:#fff;cursor:pointer;font-size:10px;align-self:flex-start}
+
+/* 内联标记创建面板 */
+.marker-create-panel{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);z-index:2500;background:rgba(18,18,30,.97);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:16px 20px;display:none;flex-direction:column;gap:10px;min-width:320px;max-width:420px;box-shadow:0 8px 40px rgba(0,0,0,.6)}
+.marker-create-panel.open{display:flex}
+.marker-create-panel h3{font-size:13px;color:#aaa;margin:0}
+.marker-create-panel .mcp-row{display:flex;gap:8px}
+.marker-create-panel .mcp-row input{flex:1;padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#ddd;font-size:12px}
+.marker-create-panel .mcp-row input::placeholder{color:#555}
+.marker-create-panel .mcp-row input:focus{outline:none;border-color:rgba(225,112,85,.4)}
+.marker-create-panel .mcp-actions{display:flex;gap:6px;justify-content:flex-end}
+.marker-create-panel .mcp-actions button{padding:7px 16px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:500}
+.marker-create-panel .mcp-actions .mcp-ok{background:#e17055;color:#fff}
+.marker-create-panel .mcp-actions .mcp-cancel{background:rgba(255,255,255,.06);color:#888}
+.marker-create-panel .mcp-actions .mcp-ok:hover{background:#f07b62}
+.marker-create-panel .mcp-actions .mcp-cancel:hover{color:#ccc}
+.marker-create-panel .mcp-preview{width:60px;height:45px;border-radius:4px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:#555}
+.marker-create-panel .mcp-preview img{width:100%;height:100%;object-fit:cover}
+.marker-create-panel .mcp-preview.has-img{border-color:rgba(225,112,85,.3)}
+
+/* 标记缩略图图标 */
+.marker-thumb{width:40px;height:40px;border-radius:6px;overflow:hidden;border:2px solid #e17055;box-shadow:0 2px 8px rgba(0,0,0,.5);background:#111;display:flex;align-items:center;justify-content:center}
+.marker-thumb img{width:100%;height:100%;object-fit:cover}
+.marker-thumb video{width:100%;height:100%;object-fit:cover}
+.marker-thumb .mt-placeholder{font-size:16px;color:#e17055}
+.marker-thumb.mt-video{border-color:#a29bfe}
+.marker-dot{width:12px;height:12px;border-radius:50%;background:#e17055;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+
+.empty-state{padding:30px;text-align:center;color:#555;font-size:12px}
+
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:2000;background:rgba(0,0,0,.85);color:#fff;padding:8px 20px;border-radius:20px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+
+.legend{position:absolute;bottom:80px;right:10px;z-index:500;background:rgba(18,18,30,.9);border-radius:8px;padding:8px 12px;font-size:9px;color:#aaa;border:1px solid rgba(255,255,255,.06);pointer-events:none}
+.legend .lg-row{display:flex;align-items:center;gap:6px;padding:2px 0}
+.legend .lg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* 照片预览弹窗 */
+.img-lightbox{position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;cursor:pointer}
+.img-lightbox.open{display:flex}
+.img-lightbox img{max-width:90vw;max-height:85vh;object-fit:contain;border-radius:4px}
+.img-lightbox video{max-width:90vw;max-height:85vh;border-radius:4px;outline:none}
+.img-lightbox .il-close{position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.img-lightbox .il-info{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-size:12px;color:#aaa;background:rgba(0,0,0,.6);padding:6px 16px;border-radius:10px}
+
+/* 地图上的视频覆盖层 */
+.map-video{width:80px;height:60px;border-radius:4px;overflow:hidden;border:2px solid #a29bfe;box-shadow:0 2px 8px rgba(0,0,0,.5);background:#000;cursor:pointer;transition:transform .2s;position:relative}
+.map-video:hover{transform:scale(1.15);z-index:999!important;border-color:#fff}
+.map-video video{width:100%;height:100%;object-fit:cover}
+.map-video .mv-label{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#fff;font-size:8px;padding:1px 3px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.map-video .mv-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,.8)}
+
+/* marker popup 中视频 */
+.marker-popup video{max-width:200px;max-height:150px;border-radius:6px;margin:4px 0;display:block;cursor:pointer}
+
+/* 视频网格 */
+.video-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.video-grid .vg-item{aspect-ratio:1;border-radius:6px;overflow:hidden;cursor:pointer;background:#111;position:relative;border:2px solid transparent;transition:all .15s}
+.video-grid .vg-item:hover{border-color:rgba(162,155,254,.4)}
+.video-grid .vg-item.act{border-color:#a29bfe}
+.video-grid .vg-item video{width:100%;height:100%;object-fit:cover}
+.video-grid .vg-item .vg-name{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);font-size:8px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.video-grid .vg-item .vg-icon{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:20px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,.8)}
+
+@media(max-width:768px){
+  .panel{width:100%;position:absolute;right:0;top:0;bottom:0}
+  .panel.collapsed{transform:translateX(100%)}
+  .panel-toggle{left:-28px;width:28px;height:48px}
+  .header{padding:4px 6px;gap:3px}
+  .header h1{font-size:13px}
+  .header .actions button{padding:3px 7px;font-size:9px}
+  .base-select .bs-btn{padding:2px 7px;font-size:9px}
+  .map-photo{width:60px;height:44px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-row">
+    <h1>🗺️ 地图轨迹</h1>
+    <div class="base-select" id="baseSelect">
+      <button class="bs-btn act" data-base="amap" onclick="switchBase('amap',this)">🗺 高德</button>
+      <button class="bs-btn" data-base="amap-sat" onclick="switchBase('amap-sat',this)">🛰 高德卫星</button>
+      <button class="bs-btn" data-base="osm" onclick="switchBase('osm',this)">🌍 OSM</button>
+      <button class="bs-btn" data-base="dark" onclick="switchBase('dark',this)">🌙 暗色</button>
+    </div>
+    <select id="dbSelect" onchange="switchDb(this.value)" style="padding:3px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#aaa;font-size:10px;outline:none">
+      
+      
+      🗄️ 
+    </select>
+    <button onclick="showBaseDialog()" style="padding:3px 10px;border-radius:10px;border:1px dashed rgba(255,255,255,.15);background:transparent;color:#888;font-size:10px;cursor:pointer;white-space:nowrap;transition:all .2s" onmouseover="this.style.borderColor='#00cec9';this.style.color='#00cec9'" onmouseout="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='#888'">➕ 底图</button>
+    <div style="flex:1"></div>
+    <button onclick="togglePanel()" style="padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#aaa;font-size:10px;cursor:pointer;white-space:nowrap">📋 面板</button>
+    <a href="admin-regions.html" target="_blank" style="padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#f39c12;font-size:10px;text-decoration:none;white-space:nowrap">📍 区划</a>
+  </div>
+  <div class="header-row">
+    <div class="actions">
+      <button onclick="addMarkerMode()">📍 点</button>
+      <button onclick="addPhotoMarkerMode()">🖼 照片</button>
+      <button onclick="addVideoMarkerMode()">🎬 视频</button>
+      <button onclick="addFolderMode()">📁 文件夹</button>
+      <button onclick="startDraw()" id="drawBtn">✏️ 线</button>
+      <button onclick="startPolygonDraw()" id="polyBtn">⬠ 面</button>
+      <button onclick="startLinkMode()" id="linkBtn">🔗 连线</button>
+      <button onclick="startEditMode()" id="editBtn">🖊 编辑</button>
+      <span class="tsep"></span>
+      <button onclick="loadGeodata()">📂 加载</button>
+      <button class="accent" onclick="importGeoJSONFile()">📥 导入</button>
+      <button class="prim" onclick="exportGeoJSON()">📤 导出GeoJSON</button>
+      <button onclick="exportAllPaths()">📤 GPX</button>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div id="map"></div>
+
+  <div class="panel" id="panel">
+    <div class="panel-toggle" onclick="togglePanel()">◀</div>
+    <div class="panel-tabs">
+      <div class="pt act" data-tab="markers" onclick="switchTab('markers')">📍 点</div>
+      <div class="pt" data-tab="paths" onclick="switchTab('paths')">📐 线</div>
+      <div class="pt" data-tab="photos" onclick="switchTab('photos')">🖼️ 照片</div>
+      <div class="pt" data-tab="videos" onclick="switchTab('videos')">🎬 视频</div>
+      <div class="pt" data-tab="layers" onclick="switchTab('layers')">📑 图层</div>
+      <div class="pt" data-tab="table" onclick="switchTab('table')">📊 表格</div>
+      <div class="pt" data-tab="data" onclick="switchTab('data')">📥 数据</div>
+      <div class="pt" data-tab="notes" onclick="switchTab('notes')">📝 脚注</div>
+    </div>
+    <div class="panel-body">
+      <div class="panel-section act" id="sec-markers">
+        <div class="empty-state" id="markerList">暂无点</div>
+      </div>
+      <div class="panel-section" id="sec-paths">
+        <div class="empty-state" id="pathList">暂无线</div>
+        <div style="padding:4px 0">
+          <button onclick="exportAllPaths()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#aaa;font-size:10px;cursor:pointer;margin-right:4px">📤 导出全部GPX</button>
+          <button onclick="importPathFile()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#aaa;font-size:10px;cursor:pointer">📥 导入GPX</button>
+          <input type="file" id="gpxInput" accept=".gpx,.geojson" style="display:none" onchange="handlePathImport(this.files)">
+          <input type="file" id="folderInput" webkitdirectory style="display:none" onchange="handleFolderSelect(event)">
+        </div>
+      </div>
+      <div class="panel-section" id="sec-layers">
+        <div style="font-size:10px;color:#888;margin-bottom:6px">控制各图层显示/隐藏</div>
+        <div id="layerList"></div>
+      </div>
+      <div class="panel-section" id="sec-photos">
+        <div class="photo-grid" id="photoGrid"></div>
+        <div class="empty-state" id="photoEmpty">拖入照片到 geodata 目录</div>
+      </div>
+      <div class="panel-section" id="sec-videos">
+        <div class="video-grid" id="videoGrid"></div>
+        <div class="empty-state" id="videoEmpty">拖入视频到 geodata 目录</div>
+      </div>
+      <div class="panel-section" id="sec-table">
+        <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+          <select id="tableTypeFilter" onchange="renderTable()" style="padding:4px 8px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#aaa;font-size:10px">
+            <option value="">全部类型</option><option value="point">📍 点要素</option><option value="line">📏 线要素</option><option value="polygon">⬡ 面要素</option><option value="timePath">🕐 时间路径</option>
+          </select>
+          <input id="tableSearch" placeholder="🔍 搜索名称..." oninput="renderTable()" style="flex:1;min-width:100px;padding:4px 8px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#ccc;font-size:10px" />
+          <button onclick="renderTable()" style="padding:4px 10px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#aaa;font-size:10px;cursor:pointer" title="刷新">🔄</button>
+          <button onclick="addCustomField()" style="padding:4px 10px;border-radius:5px;border:1px solid rgba(0,206,201,.3);background:rgba(0,206,201,.1);color:#00cec9;font-size:10px;cursor:pointer;white-space:nowrap">+ 字段</button>
+          <button onclick="removeCustomField()" id="btnRemoveField" style="padding:4px 10px;border-radius:5px;border:1px solid rgba(231,76,60,.3);background:rgba(231,76,60,.1);color:#e74c3c;font-size:10px;cursor:pointer;white-space:nowrap;display:none">- 字段</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="dataTable"><thead></thead><tbody id="tableBody"><tr><td colspan="8" class="empty-state">加载中...</td></tr></tbody></table>
+        </div>
+        <div id="tableSummary" style="font-size:9px;color:#555;margin-top:6px;text-align:right"></div>
+      </div>
+      <div class="panel-section" id="sec-notes">
+      <div class="panel-section" id="sec-data">
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:#888;margin-bottom:6px">📥 导入要素数据</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button onclick="importGeoJSONFile()" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(0,206,201,.3);background:rgba(0,206,201,.1);color:#00cec9;cursor:pointer;font-size:10px;flex:1;min-width:80px">📄 GeoJSON</button>
+            <button onclick="importPathFile()" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(108,92,231,.3);background:rgba(108,92,231,.1);color:#a29bfe;cursor:pointer;font-size:10px;flex:1;min-width:80px">📍 GPX</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:#888;margin-bottom:6px">🖼️ 挂载媒体到要素</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button onclick="attachMedia('image')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(253,203,110,.3);background:rgba(253,203,110,.08);color:#fdcb6e;cursor:pointer;font-size:10px;flex:1;min-width:70px">📷 图片</button>
+            <button onclick="attachMedia('video')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(162,155,254,.3);background:rgba(162,155,254,.08);color:#a29bfe;cursor:pointer;font-size:10px;flex:1;min-width:70px">🎬 视频</button>
+            <button onclick="attachMediaFolder()" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(225,112,85,.3);background:rgba(225,112,85,.08);color:#e17055;cursor:pointer;font-size:10px;flex:1;min-width:70px">📁 文件夹</button>
+          </div>
+          <div style="font-size:8px;color:#555;margin-top:4px">点击要素选中 → 再点击挂载按钮 → 选择文件关联</div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:#888;margin-bottom:6px">⬆️ 批量上传到服务器</div>
+          <div id="uploadZone" style="border:2px dashed rgba(255,255,255,.08);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:all .2s;background:rgba(255,255,255,.01)"
+               ondragover="this.style.borderColor='#00cec9';this.style.background='rgba(0,206,201,.05)';return false"
+               ondragleave="this.style.borderColor='rgba(255,255,255,.08)';this.style.background='rgba(255,255,255,.01)'"
+               ondrop="handleDrop(event);this.style.borderColor='rgba(255,255,255,.08)';this.style.background='rgba(255,255,255,.01)';return false"
+               onclick="batchUpload()">
+            <div style="font-size:24px;margin-bottom:4px">📂</div>
+            <div style="font-size:10px;color:#888">拖入文件/文件夹到此</div>
+            <div style="font-size:8px;color:#555;margin-top:4px">支持: .geojson .gpx .jpg .png .mp4 .webm</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:#888;margin-bottom:6px">📋 上传队列</div>
+          <div id="uploadQueue" style="font-size:9px;color:#555;max-height:200px;overflow-y:auto">
+            <div class="empty-state">拖入文件开始上传</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:#888;margin-bottom:6px">🔗 已挂载媒体</div>
+          <div id="attachedMedia" style="font-size:9px;color:#555">
+            <div class="empty-state">选中要素查看挂载媒体</div>
+          </div>
+        </div>
+      </div>
+        <div class="footnotes" id="footnotes">
+          <div class="fn-title">📝 脚注说明</div>
+          <div class="empty-state" id="notesEmpty">暂无脚注</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="img-lightbox" id="lightbox" onclick="closeLightbox()">
+  <span id="lbContent"></span>
+  <button class="il-close">✕</button>
+  <div class="il-info" id="lbInfo"></div>
+</div>
+
+<div class="marker-create-panel" id="markerCreatePanel">
+  <h3 id="mcpTitle">📍 新建点</h3>
+  <div class="mcp-row">
+    <div class="mcp-preview" id="mcpPreview">📍</div>
+    <input id="mcpName" placeholder="点名称" autofocus />
+  </div>
+  <div class="mcp-row">
+    <input id="mcpDesc" placeholder="描述（可选）" />
+  </div>
+  <div class="mcp-row">
+    <input id="mcpPhoto" placeholder="图片URL（可选，支持拖入geodata目录的图片）" oninput="updateMcpPreview()" />
+  </div>
+  <div class="mcp-actions">
+    <button class="mcp-cancel" onclick="cancelMarkerCreate()">取消</button>
+    <button class="mcp-ok" onclick="confirmMarkerCreate()">✓ 确认</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 自定义底图对话框 -->
+<div class="marker-create-panel" id="baseDialog">
+  <h3>➕ 自定义底图</h3>
+  <div class="mcp-row">
+    <input id="baseName" placeholder="底图名称（如：天地图）" />
+  </div>
+  <div class="mcp-row">
+    <select id="baseType" style="padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#ddd;font-size:12px">
+      <option value="xyz">XYZ 瓦片（{x}/{y}/{z}）</option>
+      <option value="wms">WMS</option>
+      <option value="wmts">WMTS</option>
+    </select>
+  </div>
+  <div class="mcp-row">
+    <input id="baseUrl" placeholder="URL 模板（{x} {y} {z} 会被替换）" />
+  </div>
+  <div class="mcp-row">
+    <input id="baseToken" placeholder="Token / API Key（可选，附加到URL）" />
+  </div>
+  <div class="mcp-actions">
+    <button class="mcp-cancel" onclick="closeBaseDialog()">取消</button>
+    <button class="mcp-ok" onclick="addCustomBase()">✓ 添加</button>
+  </div>
+</div>
+
+<script src="leaflet.js"></script>
+<script>
+// ===== 状态 =====
+var markers=[],paths=[],photoMarkers=[],videoMarkers=[];
+var markerId=0,pathId=0;
+var currentDb=localStorage.getItem('pgm_db')||'Work';
+
+function switchDb(db){currentDb=db;localStorage.setItem('pgm_db',db);markers=[];paths=[];photoMarkers=[];videoMarkers=[];renderAll();loadGeoData().then(function(){renderAll()})}
+function loadDatabases(){fetch('/api/pg/databases').then(r=>r.json()).then(dbs=>{var s=document.getElementById('dbSelect');s.innerHTML='';dbs.forEach(function(d){s.innerHTML+='<option value="'+d+'"'+(d===currentDb?' selected':'')+'>🗄 '+d+'</option>'})})}
+function dbApi(url,opts){
+  opts=opts||{};
+  url+=(url.indexOf('?')>=0?'&':'?')+'db='+encodeURIComponent(currentDb);
+  return fetch(url,opts);
+}
+var drawing=false,drawPoints=[],drawLayer=null,tempLine=null;
+var activeMarker=null,panelOpen=true;
+var photoList=[],videoList=[],activePhoto=null,activeVideo=null;
+var addPhotoMode=false;  // 照片标记模式
+var addVideoMode=false;  // 视频标记模式
+var pendingMarker=null;   // 待确认的标记坐标
+var polygonDrawing=false,polygonPoints=[],tempPolygon=null;  // 多边形绘制
+var editMode=false,editingPath=null,editMarkers=[];  // 编辑模式
+var folderMode=false;  // 文件夹导入模式
+
+var $=function(i){return document.getElementById(i)},
+  toast=$('toast'),panel=$('panel'),panelToggle=document.querySelector('.panel-toggle'),
+  lightbox=$('lightbox'),lbContent=$('lbContent'),lbInfo=$('lbInfo');
+
+function showToast(msg){toast.textContent=msg;toast.classList.add('show');setTimeout(function(){toast.classList.remove('show')},2000)}
+
+// ===== 面板 =====
+function togglePanel(){panelOpen=!panelOpen;panel.classList.toggle('collapsed',!panelOpen);panelToggle.textContent=panelOpen?'◀':'▶';setTimeout(function(){map.invalidateSize()},300)}
+function switchTab(tab){
+  document.querySelectorAll('.panel-tabs .pt').forEach(function(t){t.classList.toggle('act',t.dataset.tab===tab)});
+  document.querySelectorAll('.panel-section').forEach(function(s){s.classList.toggle('act',s.id==='sec-'+tab)});
+  if(tab==='photos')renderPhotoGrid();if(tab==='videos')renderVideoGrid();if(tab==='table')renderTable();if(tab==='notes')renderFootnotes();if(tab==='paths')renderPathList();if(tab==='layers')renderLayerList();if(tab==='data')renderAttachedMedia();
+}
+
+// ===== 多底图 =====
+var baseLayers={},currentBase='amap';
+var baseDefs={
+  amap:{name:'高德街道',url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',attr:'&copy; 高德',maxZoom:18,subdomains:'1234'},
+  'amap-sat':{name:'高德卫星',url:'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',attr:'&copy; 高德',maxZoom:18,subdomains:'1234'},
+  osm:{name:'OSM街道',url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',attr:'&copy; OSM',maxZoom:19},
+  dark:{name:'暗色',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',attr:'&copy; CartoDB',maxZoom:19}
+};
+
+var map=L.map('map',{center:[35,105],zoom:5,zoomControl:true});
+
+for(var k in baseDefs){
+  var d=baseDefs[k];
+  var opts={attribution:d.attr,maxZoom:d.maxZoom};
+  if(d.subdomains)opts.subdomains=d.subdomains.split('');
+  baseLayers[k]=L.tileLayer(d.url,opts);
+}
+baseLayers['amap'].addTo(map);
+
+function switchBase(key,btn){
+  if(currentBase===key)return;
+  map.removeLayer(baseLayers[currentBase]);
+  baseLayers[key].addTo(map);
+  currentBase=key;
+  document.querySelectorAll('.bs-btn').forEach(function(b){b.classList.toggle('act',b.dataset.base===key)});
+}
+
+// ===== 自定义底图（WMS/WMTS/XYZ + Token） =====
+var customBases={};
+try{var saved=JSON.parse(localStorage.getItem('dmpageo_custom_bases')||'{}');
+  for(var cbk in saved){var cb=saved[cbk];addBaseLayer(cbk,cb.name,cb.url,cb.token,cb.type,cb.maxZoom);}
+}catch(e){}
+function addBaseLayer(key, name, url, token, type, maxZoom){
+  if(baseLayers[key]){map.removeLayer(baseLayers[key]);delete baseLayers[key]}
+  var u=url; if(token)u+=(u.indexOf('?')===-1?'?':'&')+'token='+encodeURIComponent(token);
+  var opts={attribution:name,maxZoom:maxZoom||18};
+  if(type==='wms'){
+    baseLayers[key]=L.tileLayer.wms(u.replace('{x}','{x}').replace('{y}','{y}').replace('{z}','{z}'),{layers:name,...opts});
+  }else{
+    baseLayers[key]=L.tileLayer(u,opts);
+  }
+}
+function saveCustomBases(){var o={};for(var k in customBases)o[k]=customBases[k];localStorage.setItem('dmpageo_custom_bases',JSON.stringify(o))}
+function showBaseDialog(){$('baseDialog').classList.add('open');$('baseName').value='';$('baseUrl').value='';$('baseToken').value='';$('baseType').value='xyz'}
+function closeBaseDialog(){$('baseDialog').classList.remove('open')}
+function addCustomBase(){
+  var name=$('baseName').value.trim(),url=$('baseUrl').value.trim(),token=$('baseToken').value.trim(),type=$('baseType').value;
+  if(!name||!url){showToast('请输入名称和URL');return}
+  var key='custom_'+(new Date().getTime());
+  addBaseLayer(key,name,url,token,type,18);
+  var bs=document.getElementById('baseSelect');
+  var btn=document.createElement('button');btn.className='bs-btn';btn.dataset.base=key;btn.textContent=name;
+  btn.onclick=function(){switchBase(key,btn)};bs.appendChild(btn);
+  customBases[key]={name:name,url:url,token:token,type:type,maxZoom:18};
+  saveCustomBases();closeBaseDialog();switchBase(key,btn);showToast('已添加底图: '+name);
+}
+// ===== 图例 =====
+var legend=L.control({position:'bottomright'});
+legend.onAdd=function(){
+  var div=L.DomUtil.create('div','legend');
+  div.innerHTML='<div class="lg-row"><div class="lg-dot" style="background:#e17055"></div>点</div><div class="lg-row"><div class="lg-dot" style="background:#00cec9"></div>线</div><div class="lg-row"><div class="lg-dot" style="background:#fdcb6e"></div>照片</div><div class="lg-row"><div class="lg-dot" style="background:#a29bfe"></div>视频</div>';
+  return div;
+};
+legend.addTo(map);
+
+// ===== 标记图标 =====
+function makeIcon(color,size,mediaUrl,mediaType){
+  size=size||14;
+  if(mediaUrl){
+    if(mediaType==='video'){
+      // 视频：显示带播放按钮的缩略图
+      return L.divIcon({className:'custom-div-icon',
+        html:'<div class="marker-thumb mt-video"><video src="'+mediaUrl+'" muted preload="metadata"></video><div class="mv-play">▶</div></div>',
+        iconSize:[40,40],iconAnchor:[20,20],popupAnchor:[0,-20]});
+    }
+    // 照片：显示缩略图
+    return L.divIcon({className:'custom-div-icon',
+      html:'<div class="marker-thumb"><img src="'+mediaUrl+'" /></div>',
+      iconSize:[40,40],iconAnchor:[20,20],popupAnchor:[0,-20]});
+  }
+  return L.divIcon({className:'custom-div-icon',
+    html:'<div class="marker-dot" style="background:'+color+'"></div>',
+    iconSize:[size,size],iconAnchor:[size/2,size/2],popupAnchor:[0,-size/2]});
+}
+
+// ===== 地图上的照片覆盖层 =====
+function addPhotoToMap(lat,lng,photoUrl,label){
+  var icon=L.divIcon({
+    className:'map-photo-container',
+    html:'<div class="map-photo" onclick="event.stopPropagation();openLightbox(\''+photoUrl+'\',\''+escJs(label)+'\')"><img src="'+photoUrl+'" loading="lazy" /><div class="mp-label">'+esc(label)+'</div></div>',
+    iconSize:[80,60],iconAnchor:[40,30]
+  });
+  var pm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true}).addTo(map);
+  pm._photoData={photo:photoUrl,name:label};
+  pm.on('mousedown',function(){map.dragging.disable()});
+  pm.on('dragend',function(){
+    var pos=pm.getLatLng();
+    var pd=pm._photoData;
+    // 更新关联标记
+    var mk=markers.find(function(m){return m.media===pd.photo});
+    if(mk){mk.lat=pos.lat;mk.lng=pos.lng;mk.marker.setLatLng(pos);updateMarkerPopup(mk);renderMarkerList();renderTable()}
+    // 异步保存定位
+    savePhotoLocation(pd.photo,pd.name,pos.lat,pos.lng);
+    autoSave();
+    showToast('照片已移动到: '+pos.lat.toFixed(4)+', '+pos.lng.toFixed(4));
+  });
+  // 更新 photoMarkers 中的引用
+  for(var i=0;i<photoMarkers.length;i++){
+    if(photoMarkers[i].photo===photoUrl){photoMarkers[i].marker=pm;photoMarkers[i].lat=lat;photoMarkers[i].lng=lng;return pm}
+  }
+  photoMarkers.push({marker:pm,lat:lat,lng:lng,photo:photoUrl,name:label});
+  return pm;
+}
+
+// 保存照片定位到服务器
+async function savePhotoLocation(photoName,displayName,lat,lng){
+  try{
+    await fetch('/api/update-photo-location',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({photoName:photoName,newName:displayName,lat:lat,lng:lng})
+    });
+  }catch(e){console.error('保存照片定位失败',e)}
+}
+
+// ===== 地图上的视频覆盖层 =====
+function addVideoToMap(lat,lng,videoUrl,label){
+  var icon=L.divIcon({
+    className:'map-video-container',
+    html:'<div class="map-video" onclick="event.stopPropagation();openLightbox(\''+escJs(videoUrl)+'\',\''+escJs(label)+'\',true)"><video src="'+videoUrl+'" muted preload="metadata"></video><div class="mv-play">▶</div><div class="mv-label">'+esc(label)+'</div></div>',
+    iconSize:[80,60],iconAnchor:[40,30]
+  });
+  var vm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true}).addTo(map);
+  vm._videoData={video:videoUrl,name:label};
+  vm.on('mousedown',function(){map.dragging.disable()});
+  vm.on('dragend',function(){
+    var pos=vm.getLatLng();
+    var vd=vm._videoData;
+    var mk=markers.find(function(m){return m.media===vd.video});
+    if(mk){mk.lat=pos.lat;mk.lng=pos.lng;mk.marker.setLatLng(pos);updateMarkerPopup(mk);renderMarkerList();renderTable()}
+    savePhotoLocation(vd.video,vd.name,pos.lat,pos.lng);
+    showToast('视频已移动到: '+pos.lat.toFixed(4)+', '+pos.lng.toFixed(4));
+  });
+  for(var i=0;i<videoMarkers.length;i++){
+    if(videoMarkers[i].video===videoUrl){videoMarkers[i].marker=vm;videoMarkers[i].lat=lat;videoMarkers[i].lng=lng;return vm}
+  }
+  videoMarkers.push({marker:vm,lat:lat,lng:lng,video:videoUrl,name:label});
+  return vm;
+}
+
+// ===== 添加标记 =====
+function addMarker(lat,lng,name,desc,media,note,mediaType){
+  if(!lat||!lng){var c=map.getCenter();lat=c.lat;lng=c.lng}
+  var id='m_'+(++markerId);
+  name=name||'点 '+markerId;desc=desc||'';media=media||'';note=note||'';mediaType=mediaType||(media?isVideoUrl(media)?'video':'photo':'');
+  var icon=makeIcon('#e17055',14,media,mediaType);
+  var m=L.marker([lat,lng],{icon:icon,draggable:true}).addTo(map);
+  m.on('mousedown',function(){map.dragging.disable()});
+
+  var popupHtml='<div class="marker-popup"><b>'+esc(name)+'</b><br><small style="color:#888">'+lat.toFixed(6)+', '+lng.toFixed(6)+'</small>';
+  if(desc)popupHtml+='<br><span style="color:#aaa">'+esc(desc)+'</span>';
+  if(media){
+    if(mediaType==='video'){
+      popupHtml+='<br><video src="'+media+'" controls preload="metadata" onclick="event.stopPropagation()" style="max-width:200px;max-height:150px"></video>';
+    }else{
+      popupHtml+='<br><img src="'+media+'" onclick="event.stopPropagation();openLightbox(\''+escJs(media)+'\',\''+escJs(name)+'\')" />';
+    }
+  }
+  popupHtml+='<div class="mp-btns"><button onclick="editMarker(\''+id+'\')">编辑</button><button onclick="deleteMarker(\''+id+'\')" style="color:#e74c3c">删除</button></div></div>';
+  m.bindPopup(popupHtml);
+
+  m.on('dragend',function(){var pos=m.getLatLng();var mk=getMarkerById(id);if(mk){mk.lat=pos.lat;mk.lng=pos.lng;updateMarkerPopup(mk);renderMarkerList();renderTable();autoSave()}});
+  m.on('click',function(){if(linkMode){onMarkerClickForLink(mk);return}activeMarker=id;renderMarkerList()});
+
+  var mk={id:id,lat:lat,lng:lng,name:name,desc:desc,media:media,note:note,mediaType:mediaType,marker:m};
+  markers.push(mk);
+
+  // 有媒体时添加覆盖层
+  if(media){
+    if(mediaType==='video'){
+      mk.videoMarker=addVideoToMap(lat,lng,media,name);
+    }else{
+      mk.photoMarker=addPhotoToMap(lat,lng,media,name);
+    }
+  }
+
+  renderMarkerList();renderTable();renderFootnotes();
+  showToast('已添加: '+name);
+  autoSave();
+  return mk;
+}
+
+function isVideoUrl(url){
+  return /\.(mp4|webm|mkv|mov|avi|flv|wmv)(\?|$)/i.test(url);
+}
+
+function getMarkerById(id){for(var i=0;i<markers.length;i++){if(markers[i].id===id)return markers[i]}return null}
+
+function updateMarkerPopup(mk){
+  var popupHtml='<div class="marker-popup"><b>'+esc(mk.name)+'</b><br><small style="color:#888">'+mk.lat.toFixed(6)+', '+mk.lng.toFixed(6)+'</small>';
+  if(mk.desc)popupHtml+='<br><span style="color:#aaa">'+esc(mk.desc)+'</span>';
+  if(mk.media){
+    if(mk.mediaType==='video'){
+      popupHtml+='<br><video src="'+mk.media+'" controls preload="metadata" onclick="event.stopPropagation()" style="max-width:200px;max-height:150px"></video>';
+    }else{
+      popupHtml+='<br><img src="'+mk.media+'" onclick="event.stopPropagation();openLightbox(\''+escJs(mk.media)+'\',\''+escJs(mk.name)+'\')" />';
+    }
+  }
+  popupHtml+='<div class="mp-btns"><button onclick="editMarker(\''+mk.id+'\')">编辑</button><button onclick="deleteMarker(\''+mk.id+'\')" style="color:#e74c3c">删除</button></div></div>';
+  mk.marker.setPopupContent(popupHtml);
+}
+
+function editMarker(id){
+  var mk=getMarkerById(id);if(!mk)return;
+  showMarkerEditPanel(mk);
+}
+
+// ===== 内联编辑/创建面板 =====
+var editingMarkerId=null;
+function showMarkerCreatePanel(lat,lng){
+  editingMarkerId=null;
+  $('mcpTitle').textContent='📍 新建点 ('+lat.toFixed(4)+', '+lng.toFixed(4)+')';
+  $('mcpName').value='';
+  $('mcpDesc').value='';
+  $('mcpPhoto').value='';
+  $('mcpPreview').innerHTML='📍';
+  $('mcpPreview').classList.remove('has-img');
+  $('markerCreatePanel').classList.add('open');
+  setTimeout(function(){$('mcpName').focus()},100);
+}
+function showMarkerEditPanel(mk){
+  editingMarkerId=mk.id;
+  $('mcpTitle').textContent='✏️ 编辑: '+mk.name;
+  $('mcpName').value=mk.name;
+  $('mcpDesc').value=mk.desc||'';
+  $('mcpPhoto').value=mk.media||'';
+  updateMcpPreview();
+  $('markerCreatePanel').classList.add('open');
+  setTimeout(function(){$('mcpName').focus()},100);
+}
+function updateMcpPreview(){
+  var url=$('mcpPhoto').value.trim();
+  var pv=$('mcpPreview');
+  if(url){
+    pv.innerHTML='<img src="'+esc(url)+'" onerror="this.parentElement.textContent=String.fromCodePoint(10060)" />';
+    pv.classList.add('has-img');
+  }else{
+    pv.innerHTML=editingMarkerId?'📍':'📍';
+    pv.classList.remove('has-img');
+  }
+}
+function confirmMarkerCreate(){
+  var name=$('mcpName').value.trim();
+  if(!name){$('mcpName').focus();return}
+  var desc=$('mcpDesc').value.trim();
+  var media=$('mcpPhoto').value.trim();
+  
+  if(editingMarkerId){
+    // 编辑模式
+    var mk=getMarkerById(editingMarkerId);if(!mk)return;
+    // 移除旧覆盖层
+    if(mk.photoMarker){map.removeLayer(mk.photoMarker);mk.photoMarker=null}
+    if(mk.videoMarker){map.removeLayer(mk.videoMarker);mk.videoMarker=null}
+    mk.name=name;mk.desc=desc;mk.media=media;mk.mediaType=media?isVideoUrl(media)?'video':'photo':'';mk.note=mk.note||'';
+    // 更新图标
+    mk.marker.setIcon(makeIcon('#e17055',14,media,mk.mediaType));
+    if(media){
+      if(mk.mediaType==='video'){mk.videoMarker=addVideoToMap(mk.lat,mk.lng,media,mk.name)}
+      else{mk.photoMarker=addPhotoToMap(mk.lat,mk.lng,media,mk.name)}
+    }
+    updateMarkerPopup(mk);
+    renderMarkerList();renderTable();renderFootnotes();
+    showToast('已更新: '+name);
+    autoSave();
+  }else{
+    // 新建模式
+    if(!pendingMarker)return;
+    addMarker(pendingMarker.lat,pendingMarker.lng,name,desc,media);
+    pendingMarker=null;
+    map.getContainer().style.cursor='';
+  }
+  closeMarkerPanel();
+}
+function cancelMarkerCreate(){
+  pendingMarker=null;
+  editingMarkerId=null;
+  markerMode=false;addPhotoMode=false;addVideoMode=false;
+  map.getContainer().style.cursor='';
+  closeMarkerPanel();
+}
+function closeMarkerPanel(){$('markerCreatePanel').classList.remove('open')}
+// ESC 关闭面板
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    if($('markerCreatePanel').classList.contains('open')){cancelMarkerCreate();return}
+    closeLightbox();if(drawing)finishDraw();
+  }
+  if(e.key==='Enter'&&$('markerCreatePanel').classList.contains('open')){confirmMarkerCreate()}
+});
+
+function deleteMarker(id){
+  if(!confirm('确定删除此点？'))return;
+  var mk=getMarkerById(id);if(!mk)return;
+  map.removeLayer(mk.marker);
+  if(mk.photoMarker)map.removeLayer(mk.photoMarker);
+  if(mk.videoMarker)map.removeLayer(mk.videoMarker);
+  markers=markers.filter(function(m){return m.id!==id});
+  // 直接从数据库删
+  dbApi('/api/geo/marker/'+id,{method:'DELETE'}).catch(function(){});
+  if(activeMarker===id)activeMarker=null;
+  renderMarkerList();renderTable();renderFootnotes();
+  autoSave();
+}
+
+// ===== 标图模式 =====
+var markerMode=false;
+function addMarkerMode(){
+  if(linkMode)stopLinkMode();
+  markerMode=true;addPhotoMode=false;drawing=false;
+  if(drawLayer)drawLayer.clearLayers();drawPoints=[];
+  document.getElementById('drawBtn').textContent='✏️ 线';
+  document.getElementById('drawBtn').style.background='';
+  document.getElementById('drawBtn').style.borderColor='';
+  showToast('点击地图添加点');
+  map.getContainer().style.cursor='crosshair';
+}
+function addPhotoMarkerMode(){
+  if(linkMode)stopLinkMode();
+  addPhotoMode=true;markerMode=false;drawing=false;
+  if(drawLayer)drawLayer.clearLayers();drawPoints=[];
+  document.getElementById('drawBtn').textContent='✏️ 线';
+  document.getElementById('drawBtn').style.background='';
+  document.getElementById('drawBtn').style.borderColor='';
+  showToast('选中右侧照片后点击地图定位');
+  map.getContainer().style.cursor='cell';
+}
+function addVideoMarkerMode(){
+  if(linkMode)stopLinkMode();
+  addVideoMode=true;markerMode=false;addPhotoMode=false;drawing=false;
+  if(drawLayer)drawLayer.clearLayers();drawPoints=[];
+  document.getElementById('drawBtn').textContent='✏️ 线';
+  document.getElementById('drawBtn').style.background='';
+  document.getElementById('drawBtn').style.borderColor='';
+  showToast('选中右侧视频后点击地图定位');
+  map.getContainer().style.cursor='cell';
+}
+function addFolderMode(){
+  if(linkMode)stopLinkMode();if(editMode)stopEditMode();
+  folderMode=true;markerMode=false;addPhotoMode=false;drawing=false;
+  if(drawLayer)drawLayer.clearLayers();drawPoints=[];
+  showToast('选择本地文件夹...');
+  document.getElementById('folderInput').click();
+}
+async function handleFolderSelect(e){
+  var files=e.target.files;
+  if(!files||!files.length){folderMode=false;showToast('未选择文件夹');return}
+  folderMode=false;
+  var total=files.length, gpsPhotos=[], noGps=[];
+  showToast('🔍 扫描 '+total+' 个文件的 GPS 坐标...');
+  // 第1步：逐张读 EXIF GPS
+  for(var i=0;i<files.length;i++){
+    var f=files[i];
+    if(!/\.(jpg|jpeg)$/i.test(f.name)){noGps.push(f);continue}
+    try{
+      var gps=await readExifGPS(f);
+      gpsPhotos.push({file:f,gps:gps});
+    }catch(ex){noGps.push(f)}
+  }
+  if(!gpsPhotos.length){showToast('未发现带 GPS 的照片（'+noGps.length+' 张无坐标，已加入照片列表）');return}
+  showToast('📍 开始放置 '+gpsPhotos.length+' 张 GPS 照片...');
+  // 第2步：上传 + 放置缩略图 + 创建标记
+  var placed=0;
+  for(var j=0;j<gpsPhotos.length;j++){
+    var item=gpsPhotos[j],f=item.file;
+    var fd=new FormData();fd.append('media',f,f.name);
+    try{
+      var r=await fetch('/upload-photo',{method:'POST',body:fd});
+      var result=await r.json();
+      if(result.ok){
+        var lat=item.gps.lat, lng=item.gps.lng;
+        var name=f.name.replace(/\.\w+$/,'');
+        addPhotoToMap(lat,lng,result.file,name);
+        addMarker(lat,lng,name,'',result.file,'','photo');
+        placed++;
+        if(j%5===0||j===gpsPhotos.length-1)showToast('📍 '+placed+'/'+gpsPhotos.length+' 张已定位');
+      }
+    }catch(e){}
+  }
+  // 第3步：无GPS照片上传到服务器，加入照片面板
+  var uploadedNoGps=0;
+  for(var k=0;k<noGps.length;k++){
+    var nf=noGps[k];
+    if(!/\.(jpg|jpeg|png|gif|webp|bmp|mp4|webm|mkv|mov)$/i.test(nf.name))continue;
+    var fd2=new FormData();fd2.append('media',nf,nf.name);
+    try{
+      var r2=await fetch('/upload-photo',{method:'POST',body:fd2});
+      var j2=await r2.json();
+      if(j2.ok)uploadedNoGps++;
+    }catch(e){}
+  }
+  showToast('✅ 完成: '+placed+' 张 GPS 定位 + '+uploadedNoGps+' 张已上传待手动放置');
+  renderMarkerList();renderLayerList();autoSave();
+}
+function showFolderPopup(mk){
+  var html='<div class="marker-popup"><b>📁 '+esc(mk.name)+'</b><br><small>'+mk.folderUrls.length+' 个文件</small>';
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px;max-height:200px;overflow-y:auto">';
+  for(var i=0;i<mk.folderUrls.length;i++){
+    var f=mk.folderUrls[i];
+    html+='<div style="cursor:pointer;aspect-ratio:1;border-radius:4px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,.1)" onclick="openLightbox(\''+escJs(f.url)+'\',\''+escJs(f.name)+'\','+f.isVideo+')">';
+    if(f.isVideo){
+      html+='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:18px">▶️</div>';
+    }else{
+      html+='<img src="'+esc(f.url)+'" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.parentElement.innerHTML=\'🖼\'">';
+    }
+    html+='</div>';
+  }
+  html+='</div><div class="mp-btns"><button onclick="deleteMarker(\''+mk.id+'\')">删除</button></div></div>';
+  mk.marker.bindPopup(html,{maxWidth:300});
+  mk.marker.openPopup();
+}
+
+// ===== 画线 =====
+function startDraw(){
+  if(drawing){finishDraw();return}
+  if(linkMode)stopLinkMode();
+  drawing=true;drawPoints=[];addPhotoMode=false;addVideoMode=false;markerMode=false;
+  document.getElementById('drawBtn').textContent='✅ 完成';
+  document.getElementById('drawBtn').style.background='#00cec9';
+  document.getElementById('drawBtn').style.borderColor='#00cec9';
+  showToast('在地图上点击添加线顶点');
+  if(!drawLayer){drawLayer=L.layerGroup().addTo(map)}
+  tempLine=L.polyline([],{color:'#00cec9',weight:3,dashArray:'8,6'}).addTo(drawLayer);
+  map.getContainer().style.cursor='crosshair';
+  map.off('click');map.on('click',onDrawClick);
+}
+function onDrawClick(e){if(!drawing)return;drawPoints.push([e.latlng.lat,e.latlng.lng]);tempLine.setLatLngs(drawPoints);L.circleMarker(e.latlng,{radius:4,color:'#00cec9',fillColor:'#fff',fillOpacity:1,weight:2}).addTo(drawLayer)}
+function finishDraw(){
+  drawing=false;
+  document.getElementById('drawBtn').textContent='✏️ 线';
+  document.getElementById('drawBtn').style.background='';
+  document.getElementById('drawBtn').style.borderColor='';
+  map.getContainer().style.cursor='';
+  map.off('click',onDrawClick);
+  if(drawPoints.length<2){if(drawLayer)drawLayer.clearLayers();drawPoints=[];showToast('至少需要2个点');return}
+  var name=prompt('线名称','线 '+(pathId+1));if(!name){if(drawLayer)drawLayer.clearLayers();drawPoints=[];return}
+  var id='p_'+(++pathId);
+  var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+  var line=L.polyline(drawPoints,{color:color,weight:4}).addTo(map);
+  line.bindPopup('<b>'+esc(name)+'</b><br>'+drawPoints.length+'个点<br><button onclick="deletePath(\''+id+'\')" style="color:#e74c3c;font-size:11px">删除线</button>');
+  paths.push({id:id,name:name,coords:drawPoints,color:color,line:line});
+  if(drawLayer)drawLayer.clearLayers();drawPoints=[];showToast('线已创建: '+name);autoSave();
+}
+function deletePath(id){if(!confirm('确定删除？'))return;var p=paths.find(function(x){return x.id===id});if(!p)return;map.removeLayer(p.line);paths=paths.filter(function(x){return x.id!==id});if(p.dbId)dbApi('/api/geo/marker/'+p.dbId,{method:'DELETE'}).catch(function(){});autoSave()}
+
+// ===== 多边形绘制 =====
+function startPolygonDraw(){
+  if(polygonDrawing){finishPolygonDraw();return}
+  if(drawing)finishDraw();
+  if(linkMode)stopLinkMode();
+  if(editMode)stopEditMode();
+  polygonDrawing=true;polygonPoints=[];addPhotoMode=false;markerMode=false;
+  document.getElementById('polyBtn').textContent='✅ 完成';
+  document.getElementById('polyBtn').style.background='#a29bfe';
+  document.getElementById('polyBtn').style.borderColor='#a29bfe';
+  showToast('在地图上点击添加多边形顶点，双击或按Enter完成');
+  if(!drawLayer){drawLayer=L.layerGroup().addTo(map)}
+  tempPolygon=L.polygon([],{color:'#a29bfe',weight:2,fillColor:'#a29bfe',fillOpacity:0.15,dashArray:'6,4'}).addTo(drawLayer);
+  map.getContainer().style.cursor='crosshair';
+  map.off('click');map.on('click',onPolygonClick);
+  map.on('dblclick',function(e){if(polygonDrawing){L.DomEvent.stop(e);finishPolygonDraw()}});
+}
+function onPolygonClick(e){
+  if(!polygonDrawing)return;
+  polygonPoints.push([e.latlng.lat,e.latlng.lng]);
+  tempPolygon.setLatLngs(polygonPoints);
+  L.circleMarker(e.latlng,{radius:3,color:'#a29bfe',fillColor:'#fff',fillOpacity:1,weight:2}).addTo(drawLayer);
+}
+function finishPolygonDraw(){
+  polygonDrawing=false;
+  document.getElementById('polyBtn').textContent='⬠ 面';
+  document.getElementById('polyBtn').style.background='';
+  document.getElementById('polyBtn').style.borderColor='';
+  map.getContainer().style.cursor='';
+  map.off('click',onPolygonClick);
+  if(polygonPoints.length<3){if(drawLayer)drawLayer.clearLayers();polygonPoints=[];showToast('至少需要3个点');return}
+  var name=prompt('区域名称','区域 '+(pathId+1));if(!name){if(drawLayer)drawLayer.clearLayers();polygonPoints=[];return}
+  var id='p_'+(++pathId);
+  var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+  var polygon=L.polygon(polygonPoints,{color:color,weight:3,fillColor:color,fillOpacity:0.2}).addTo(map);
+  polygon.bindPopup('<b>'+esc(name)+'</b><br>'+polygonPoints.length+'个顶点 · 面积约'+calcArea(polygonPoints).toFixed(2)+' km²<br><button onclick="deletePath(\''+id+'\')" style="color:#e74c3c;font-size:11px">删除区域</button>');
+  paths.push({id:id,name:name,coords:polygonPoints,color:color,line:polygon,isPolygon:true});
+  if(drawLayer)drawLayer.clearLayers();polygonPoints=[];
+  showToast('区域已创建: '+name);autoSave();renderPathList();
+}
+
+// 简单面积计算（使用 Shoelace 公式 + 球面近似）
+function calcArea(coords){
+  if(coords.length<3)return 0;
+  var area=0;
+  for(var i=0;i<coords.length;i++){
+    var j=(i+1)%coords.length;
+    var x1=coords[i][1]*Math.cos(coords[i][0]*Math.PI/180);
+    var y1=coords[i][0];
+    var x2=coords[j][1]*Math.cos(coords[j][0]*Math.PI/180);
+    var y2=coords[j][0];
+    area+=x1*y2-x2*y1;
+  }
+  return Math.abs(area/2)*111.32*111.32;
+}
+
+// ===== 编辑模式：编辑已有路径的节点 =====
+function startEditMode(){
+  if(editMode){stopEditMode();return}
+  if(drawing)finishDraw();
+  if(polygonDrawing)finishPolygonDraw();
+  if(linkMode)stopLinkMode();
+  editMode=true;markerMode=false;addPhotoMode=false;
+  document.getElementById('editBtn').textContent='🖊 完成';
+  document.getElementById('editBtn').style.background='#fdcb6e';
+  document.getElementById('editBtn').style.borderColor='#fdcb6e';
+  showToast('点击线进入编辑模式，拖拽节点修改');
+  // 给每条路径添加点击编辑
+  paths.forEach(function(p){
+    p.line.off('click');p.line.on('click',function(){enterPathEdit(p)});
+    p.line.setStyle({dashArray:'6,4'});
+  });
+}
+
+function stopEditMode(){
+  editMode=false;editingPath=null;
+  document.getElementById('editBtn').textContent='🖊 编辑';
+  document.getElementById('editBtn').style.background='';
+  document.getElementById('editBtn').style.borderColor='';
+  clearEditMarkers();
+  paths.forEach(function(p){
+    p.line.setStyle({dashArray:null});
+    p.line.off('click');
+    p.line.on('click',function(){p.line.openPopup()});
+  });
+  showToast('编辑模式已退出');
+}
+
+function enterPathEdit(p){
+  if(!editMode)return;
+  clearEditMarkers();
+  editingPath=p;
+  var coords=p.isPolygon?(p.line.getLatLngs()[0]):p.line.getLatLngs();
+  editMarkers=[];
+  for(var i=0;i<coords.length;i++){
+    var mk=L.circleMarker(coords[i],{radius:6,color:'#fdcb6e',fillColor:'#fff',fillOpacity:1,weight:3,draggable:true,bubblingMouseEvents:false}).addTo(map);
+    mk._nodeIndex=i;
+    mk.on('mousedown',function(e){L.DomEvent.stopPropagation(e); L.DomEvent.preventDefault(e); _editActiveVertex=this; map.dragging.disable()});
+    mk.on('drag',function(e){
+      L.DomEvent.stopPropagation(e);
+      _editActiveVertex=this;
+      var idx=this._nodeIndex;
+      var newPos=e.target.getLatLng();
+      // Ctrl 按下时微调：吸附到约 1cm 精度
+      if(e.originalEvent && e.originalEvent.ctrlKey){
+        newPos.lat = Math.round(newPos.lat * 10000000) / 10000000;
+        newPos.lng = Math.round(newPos.lng * 10000000) / 10000000;
+      }
+      var newCoords=p.isPolygon?(p.line.getLatLngs()[0]):p.line.getLatLngs();
+      newCoords[idx]=[newPos.lat,newPos.lng];
+      if(p.isPolygon){
+        p.line.setLatLngs([newCoords]);
+      }else{
+        p.line.setLatLngs(newCoords);
+      }
+    });
+    mk.on('dragend',function(){
+      map.dragging.enable();
+      var newCoords=p.isPolygon?(p.line.getLatLngs()[0]):p.line.getLatLngs();
+      p.coords=newCoords.map(function(c){return[c.lat,c.lng]});
+      autoSave();renderPathList();
+    });
+    // 右键删除节点
+    mk.on('contextmenu',function(e){
+      L.DomEvent.stop(e);
+      var idx=this._nodeIndex;
+      var newCoords=p.isPolygon?(p.line.getLatLngs()[0]):p.line.getLatLngs();
+      if(newCoords.length<=2){showToast('至少需要2个节点');return}
+      newCoords.splice(idx,1);
+      if(p.isPolygon){p.line.setLatLngs([newCoords])}else{p.line.setLatLngs(newCoords)}
+      p.coords=newCoords.map(function(c){return[c.lat,c.lng]});
+      autoSave();renderPathList();
+      enterPathEdit(p); // 刷新编辑节点
+    });
+    editMarkers.push(mk);
+  }
+  showToast('编辑: '+p.name+' ('+coords.length+'节点) · 拖拽移动 · 右键删除节点');
+}
+
+function clearEditMarkers(){
+  for(var i=0;i<editMarkers.length;i++){map.removeLayer(editMarkers[i])}
+  editMarkers=[];editingPath=null;
+}
+var linkMode=false,linkFirst=null;
+function startLinkMode(){
+  if(linkMode){stopLinkMode();return}
+  linkMode=true;markerMode=false;addPhotoMode=false;drawing=false;
+  linkFirst=null;
+  if(drawLayer)drawLayer.clearLayers();
+  document.getElementById('linkBtn').textContent='🔗 取消';
+  document.getElementById('linkBtn').style.background='#fdcb6e';
+  document.getElementById('linkBtn').style.borderColor='#fdcb6e';
+  document.getElementById('drawBtn').textContent='✏️ 线';
+  document.getElementById('drawBtn').style.background='';
+  document.getElementById('drawBtn').style.borderColor='';
+  map.getContainer().style.cursor='pointer';
+  showToast('点击第一个点，再点第二个点自动连线');
+  // 高亮所有标记
+  markers.forEach(function(mk){mk.marker.setOpacity(1)});
+}
+function stopLinkMode(){
+  linkMode=false;linkFirst=null;
+  document.getElementById('linkBtn').textContent='🔗 连线';
+  document.getElementById('linkBtn').style.background='';
+  document.getElementById('linkBtn').style.borderColor='';
+  map.getContainer().style.cursor='';
+  // 取消高亮
+  markers.forEach(function(mk){mk.marker.setOpacity(1)});
+  showToast('连线模式已取消');
+}
+function onMarkerClickForLink(mk){
+  if(!linkMode)return;
+  if(!linkFirst){
+    linkFirst=mk;
+    mk.marker.setOpacity(0.5);
+    showToast('已选: '+mk.name+' — 请点击第二个点');
+  }else if(linkFirst.id===mk.id){
+    // 点同一个取消
+    linkFirst.marker.setOpacity(1);
+    linkFirst=null;
+    showToast('已取消选择');
+  }else{
+    // 两个标记都选了，创建连线
+    var id='p_'+(++pathId);
+    var coords=[[linkFirst.lat,linkFirst.lng],[mk.lat,mk.lng]];
+    var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+    var line=L.polyline(coords,{color:color,weight:4}).addTo(map);
+    var name=(linkFirst.name||'?')+' → '+(mk.name||'?');
+    line.bindPopup('<b>'+esc(name)+'</b><br><button onclick="deletePath(\''+id+'\')" style="color:#e74c3c;font-size:11px">删除连线</button>');
+    paths.push({id:id,name:name,coords:coords,color:color,line:line});
+    linkFirst.marker.setOpacity(1);
+    linkFirst=null;
+    autoSave();
+    showToast('已连线: '+name);
+  }
+}
+
+// ===== 数据加载 =====
+async function loadGeodata(){
+  showToast('加载数据中...');
+  try{
+    var r=await fetch('geodata-list.json?_='+Date.now());
+    if(!r.ok)throw Error('empty');
+    var data=await r.json();
+    if(!data||!data.length){showToast('geodata 目录为空');return}
+    photoList=[];videoList=[];
+    for(var i=0;i<data.length;i++){
+      var d=data[i];
+      if(d.type==='photo_group'&&d.photos){
+        for(var j=0;j<d.photos.length;j++){
+          var p=d.photos[j];
+          if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(p.file)){
+            videoList.push({name:p.name,file:p.file,group:d.name});
+          }else{
+            photoList.push({name:p.name,file:p.file,group:d.name});
+          }
+        }
+      }
+      if(d.type==='geojson'||d.type==='gpx'){
+        try{var fr=await fetch(d.file);var json=await fr.json();if(d.type==='gpx')json=convertGpxToGeoJSON(json);importGeoJSON(json,d.name)}catch(e){console.error(d.name,e)}
+      }
+    }
+    // 也检查根目录媒体
+    for(var k=0;k<data.length;k++){
+      var dd=data[k];
+      if(dd.type==='photo'&&dd.file){
+        if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(dd.file)){
+          if(!videoList.find(function(v){return v.file===dd.file}))videoList.push({name:dd.name,file:dd.file,group:''});
+        }else{
+          if(!photoList.find(function(p){return p.file===dd.file}))photoList.push({name:dd.name,file:dd.file,group:''});
+        }
+      }
+    }
+    renderPhotoGrid();renderVideoGrid();
+    showToast('加载了 '+photoList.length+' 张照片 + '+videoList.length+' 个视频');
+  }catch(e){showToast('加载失败: '+e.message)}
+}
+
+function renderVideoGrid(){
+  var grid=$('videoGrid'),empty=$('videoEmpty');grid.innerHTML='';
+  if(!videoList.length){empty.style.display='block';return}
+  empty.style.display='none';
+  for(var i=0;i<videoList.length;i++){
+    var v=videoList[i];
+    var item=document.createElement('div');item.className='vg-item'+(activeVideo===i?' act':'');
+    item.innerHTML='<video src="'+v.file+'" muted preload="metadata"></video><div class="vg-icon">▶</div><div class="vg-name">'+v.name+'</div>';
+    item.onclick=function(j){return function(e){
+      activeVideo=j;renderVideoGrid();
+      if(addPhotoMode){
+        showToast('已选中视频: '+videoList[j].name+' — 点击地图放置');
+      }
+    }}(i);
+    item.ondblclick=function(j){return function(){
+      openLightbox(videoList[j].file,videoList[j].name,true);
+    }}(i);
+    grid.appendChild(item);
+  }
+}
+
+function renderPhotoGrid(){
+  var grid=$('photoGrid'),empty=$('photoEmpty');grid.innerHTML='';
+  if(!photoList.length){empty.style.display='block';return}
+  empty.style.display='none';
+  for(var i=0;i<photoList.length;i++){
+    var p=photoList[i];
+    var item=document.createElement('div');item.className='pg-item'+(activePhoto===i?' act':'');
+    item.innerHTML='<img src="'+p.file+'" loading="lazy" /><div class="pg-name">'+p.name+'</div>';
+    item.onclick=function(j){return function(e){
+      activePhoto=j;renderPhotoGrid();
+      if(addPhotoMode){
+        var p=photoList[j];
+        showToast('已选中: '+p.name+' — 检测 EXIF 定位中...');
+        // 尝试自动从 EXIF 读取 GPS
+        dbApi('/api/geo/photo-exif?photo='+encodeURIComponent(p.name)).then(function(r){return r.json()}).then(function(d){
+          if(d.gps){
+            var gpsMsg='EXIF GPS: '+d.gps.lat.toFixed(4)+', '+d.gps.lng.toFixed(4);
+            if(confirm('📷 '+p.name+'\n\n检测到 EXIF GPS 坐标：\n'+gpsMsg+'\n\n是否自动定位到该坐标？\n（选"取消"可手动点击地图放置）')){
+              addPhotoToMap(d.gps.lat,d.gps.lng,p.file,p.name);
+              addMarker(d.gps.lat,d.gps.lng,p.name,'',p.file,'','photo');
+              activePhoto=null;addPhotoMode=false;renderPhotoGrid();
+              map.setView([d.gps.lat,d.gps.lng],15);
+              showToast('✅ 已自动定位: '+p.name);
+            }else{
+              showToast('已选中: '+p.name+' — 点击地图手动放置');
+            }
+          }else{
+            showToast('已选中: '+p.name+' — 无 EXIF GPS，请点击地图放置');
+          }
+        }).catch(function(){
+          showToast('已选中: '+p.name+' — 点击地图放置照片');
+        });
+      }
+    }}(i);
+    item.ondblclick=function(j){return function(){
+      openLightbox(photoList[j].file,photoList[j].name);
+    }}(i);
+    grid.appendChild(item);
+  }
+}
+
+// ===== 地图点击 =====
+map.on('click',function(e){
+  if(drawing)return;
+  if(addPhotoMode&&activePhoto!==null&&photoList[activePhoto]){
+    // 照片模式：在点击位置放照片
+    var p=photoList[activePhoto];
+    addPhotoToMap(e.latlng.lat,e.latlng.lng,p.file,p.name);
+    addMarker(e.latlng.lat,e.latlng.lng,p.name,'',p.file);
+    activePhoto=null;addPhotoMode=false;renderPhotoGrid();
+    map.getContainer().style.cursor='';
+    showToast('照片已放置: '+p.name);
+  }else if(addVideoMode&&activeVideo!==null&&videoList[activeVideo]){
+    // 视频模式：在点击位置放视频
+    var v=videoList[activeVideo];
+    addVideoToMap(e.latlng.lat,e.latlng.lng,v.file,v.name);
+    addMarker(e.latlng.lat,e.latlng.lng,v.name,'',v.file,'','video');
+    activeVideo=null;addVideoMode=false;renderVideoGrid();
+    map.getContainer().style.cursor='';
+    showToast('视频已放置: '+v.name);
+  }else if(addPhotoMode){
+    // 标图模式但没有选中照片：弹出创建面板
+    pendingMarker={lat:e.latlng.lat,lng:e.latlng.lng};
+    showMarkerCreatePanel(e.latlng.lat,e.latlng.lng);
+  }else if(markerMode){
+    // 标点模式：弹出创建面板
+    pendingMarker={lat:e.latlng.lat,lng:e.latlng.lng};
+    showMarkerCreatePanel(e.latlng.lat,e.latlng.lng);
+  }
+});
+
+// ===== 灯箱 =====
+function openLightbox(url,info,isVideo){
+  if(isVideo){
+    lbContent.innerHTML='<video src="'+url+'" controls autoplay style="max-width:90vw;max-height:85vh;border-radius:4px" onclick="event.stopPropagation()"></video>';
+  }else{
+    lbContent.innerHTML='<img src="'+url+'" style="max-width:90vw;max-height:85vh;object-fit:contain;border-radius:4px" />';
+  }
+  lbInfo.textContent=info||'';lightbox.classList.add('open');
+}
+function closeLightbox(){lightbox.classList.remove('open');lbContent.innerHTML=''}
+
+// ===== 表格 =====
+// ===== 属性表：从 PostGIS 数据库读取 =====
+var _tableCache=null;
+var _customFields=[]; // 用户自定义字段列表
+
+// 从 localStorage 恢复自定义字段
+try{_customFields=JSON.parse(localStorage.getItem('dmpageo_custom_fields')||'[]')}catch(e){_customFields=[]}
+
+function saveCustomFields(){
+  localStorage.setItem('dmpageo_custom_fields',JSON.stringify(_customFields));
+  updateFieldButtons();
+}
+
+function updateFieldButtons(){
+  $('btnRemoveField').style.display=_customFields.length>0?'inline':'none';
+}
+
+function addCustomField(){
+  var name=prompt('新字段名（英文/中文均可）:','');
+  if(!name||!name.trim())return;
+  name=name.trim();
+  if(_customFields.indexOf(name)>=0){showToast('字段已存在');return}
+  _customFields.push(name);
+  saveCustomFields();
+  renderTable();
+  showToast('已添加字段: '+name);
+}
+
+function removeCustomField(){
+  if(!_customFields.length)return;
+  var names=_customFields.join(', ');
+  var name=prompt('要删除的字段名（当前: '+names+'）:','');
+  if(!name)return;
+  var idx=_customFields.indexOf(name.trim());
+  if(idx<0){showToast('未找到该字段');return}
+  _customFields.splice(idx,1);
+  saveCustomFields();
+  renderTable();
+  showToast('已删除字段: '+name);
+}
+
+async function renderTable(){
+  var tbody=$('tableBody');
+  tbody.innerHTML='<tr><td colspan="10" class="empty-state">加载中...</td></tr>';
+  try{
+    var r=await dbApi('/api/geo?_='+Date.now());
+    var geojson=await r.json();
+    _tableCache=geojson.features||[];
+  }catch(e){tbody.innerHTML='<tr><td colspan="10" class="empty-state">加载失败</td></tr>';return}
+
+  var features=_tableCache;
+  var typeFilter=$('tableTypeFilter').value;
+  var q=($('tableSearch').value||'').toLowerCase();
+
+  if(typeFilter)features=features.filter(function(f){return (f.properties||{}).type===typeFilter});
+  if(q)features=features.filter(function(f){return (f.properties||{}).name.toLowerCase().indexOf(q)>=0});
+
+  if(!features.length){tbody.innerHTML='<tr><td colspan="10" class="empty-state">暂无数据</td></tr>';$('tableSummary').textContent='';return}
+
+  var typeIcon={point:'📍',line:'📏',polygon:'⬡',timePath:'🕐'};
+
+  // 动态表头
+  var headerHtml='<th>类型</th><th>名称</th><th>坐标</th><th>描述</th>';
+  for(var ci=0;ci<_customFields.length;ci++){
+    headerHtml+='<th style="color:#00cec9">'+esc(_customFields[ci])+'</th>';
+  }
+  headerHtml+='<th>时间</th><th>操作</th>';
+  tbody.innerHTML='<tr style="background:rgba(255,255,255,.03);position:sticky;top:0">'+headerHtml+'</tr>';
+
+  for(var i=0;i<features.length;i++){
+    var f=features[i],props=f.properties||{},g=f.geometry||{};
+    var type=props.type||'point';
+    var coordStr='';
+    if(g.type==='Point')coordStr=g.coordinates[0].toFixed(4)+','+g.coordinates[1].toFixed(4);
+    else if(g.type==='LineString')coordStr=g.coordinates.length+'点';
+    else if(g.type==='Polygon')coordStr=(g.coordinates[0]||[]).length+'点';
+
+    var tr=document.createElement('tr');tr.style.cursor='pointer';
+    tr.onclick=(function(ft){return function(){focusTableFeature(ft)}})(f);
+    tr.onmouseover=function(){this.style.background='rgba(255,255,255,.04)'};
+    tr.onmouseout=function(){this.style.background=''};
+
+    var rowHtml='<td style="font-size:13px">'+(typeIcon[type]||'📍')+'</td>'+
+      '<td class="editable" onclick="event.stopPropagation();editTableField('+i+',\'name\')">'+esc(props.name||'—')+'</td>'+
+      '<td style="font-size:9px;color:#888">'+coordStr+'</td>'+
+      '<td class="editable" onclick="event.stopPropagation();editTableField('+i+',\'desc\')">'+esc((props.desc||'—').substring(0,20))+'</td>';
+
+    // 自定义字段列
+    for(var ci=0;ci<_customFields.length;ci++){
+      var fieldName=_customFields[ci];
+      var val=props[fieldName]||'';
+      rowHtml+='<td class="editable" onclick="event.stopPropagation();editTableField('+i+',\''+escJs(fieldName)+'\')">'+
+        (val?esc(String(val).substring(0,15)):'<span style="color:#444">—</span>')+'</td>';
+    }
+
+    rowHtml+='<td style="font-size:8px;color:#555">'+(props.createdAt||'').substring(0,10)+'</td>'+
+      '<td><button onclick="event.stopPropagation();deleteTableFeature('+i+')" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:12px">✕</button></td>';
+    tr.innerHTML=rowHtml;
+    tbody.appendChild(tr);
+  }
+  $('tableSummary').textContent=features.length+' / '+_tableCache.length+' 条';
+  updateFieldButtons();
+}
+
+function focusTableFeature(f){
+  var g=f.geometry;if(!g)return;
+  var lat,lng;
+  if(g.type==='Point'){lng=g.coordinates[0];lat=g.coordinates[1];}
+  else if(g.type==='LineString'){var mid=g.coordinates[Math.floor(g.coordinates.length/2)];lng=mid[0];lat=mid[1];}
+  else if(g.type==='Polygon'&&g.coordinates[0]){var mid=g.coordinates[0][Math.floor(g.coordinates[0].length/2)];lng=mid[0];lat=mid[1];}
+  if(lat!=null)map.setView([lat,lng],map.getZoom()<14?14:map.getZoom());
+}
+
+function editTableField(i,field){
+  if(!_tableCache||!_tableCache[i])return;
+  var f=_tableCache[i],props=f.properties||{};
+  var val=prompt('编辑 '+field,props[field]||'');
+  if(val===null)return;
+  props[field]=val;props.updatedAt=new Date().toISOString();
+  // 通过 API 更新
+  var id=f.id||'';
+  dbApi('/api/geo/marker/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(props)})
+    .then(function(){showToast('已更新');renderTable();autoSave()})
+    .catch(function(){showToast('更新失败')});
+}
+
+function deleteTableFeature(i){
+  if(!_tableCache||!_tableCache[i])return;
+  var f=_tableCache[i],props=f.properties||{};
+  if(!confirm('删除 '+props.name+'?'))return;
+  var id=f.id||'';
+  dbApi('/api/geo/marker/'+id,{method:'DELETE'})
+    .then(function(){showToast('已删除');renderTable();loadDatabases(); loadGeodata();autoSave()})
+    .catch(function(){showToast('删除失败')});
+}
+
+// ===== 脚注 =====
+function renderFootnotes(){
+  var fn=$('footnotes'),empty=$('notesEmpty');
+  var old=fn.querySelectorAll('.fn-item');old.forEach(function(el){el.remove()});
+  var hasNotes=false;
+  for(var i=0;i<markers.length;i++){if(markers[i].note){hasNotes=true;var div=document.createElement('div');div.className='fn-item';div.innerHTML='<span class="fn-num">['+(i+1)+']</span><span>'+esc(markers[i].note)+' <small style="color:#555">— '+esc(markers[i].name)+'</small></span>';fn.appendChild(div)}}
+  empty.style.display=hasNotes?'none':'block';
+}
+
+// ===== 标记列表 =====
+function renderMarkerList(){
+  var container=$('markerList');
+  if(!markers.length){container.innerHTML='<div class="empty-state">暂无点</div>';return}
+  container.innerHTML='';
+  for(var i=0;i<markers.length;i++){
+    var m=markers[i];
+    var item=document.createElement('div');item.className='marker-item'+(activeMarker===m.id?' act':'');
+    item.innerHTML='<div class="mi-icon">'+(m.media?(m.mediaType==='video'?'🎬':'🖼'):'📍')+'</div><div class="mi-info"><div class="mi-name">'+esc(m.name)+'</div><div class="mi-coord">'+m.lat.toFixed(4)+', '+m.lng.toFixed(4)+'</div></div><button class="mi-del" title="删除">✕</button>';
+    item.onclick=function(mk){return function(e){if(e.target.classList.contains('mi-del')){deleteMarker(mk.id);return}activeMarker=mk.id;_selectedFeature=mk;renderMarkerList();map.setView([mk.lat,mk.lng],map.getZoom()<13?13:map.getZoom());mk.marker.openPopup()}}(m);
+    item.querySelector('.mi-del').onclick=function(mk){return function(e){e.stopPropagation();deleteMarker(mk.id)}}(m);
+    container.appendChild(item);
+  }
+}
+
+// ===== GeoJSON 导出 =====
+function buildGeoJSON(){
+  var features=[];
+  markers.forEach(function(m){
+    var props={name:m.name,desc:m.desc||'',media:m.media||'',mediaType:m.mediaType||'',note:m.note||'',clientId:m.id};
+    if(m.mediaType==='folder'&&m.folderUrls)props.folderUrls=m.folderUrls;
+    features.push({type:'Feature',geometry:{type:'Point',coordinates:[m.lng,m.lat]},properties:props});
+  });
+  paths.forEach(function(p){
+    if(p.isPolygon){
+      features.push({type:'Feature',geometry:{type:'Polygon',coordinates:[p.coords.map(function(c){return[c[1],c[0]]})]},properties:{name:p.name,type:'polygon',clientId:p.id}});
+    }else{
+      features.push({type:'Feature',geometry:{type:'LineString',coordinates:p.coords.map(function(c){return[c[1],c[0]]})},properties:{name:p.name,type:'path',clientId:p.id}});
+    }
+  });
+  return {type:'FeatureCollection',features:features};
+}
+
+function exportGeoJSON(){
+  var geojson=buildGeoJSON();
+  // 下载到本地
+  var blob=new Blob([JSON.stringify(geojson,null,2)],{type:'application/geo+json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='map-export-'+new Date().toISOString().slice(0,10)+'.geojson';a.click();
+  // 同时保存到服务器 geodata 目录
+  saveToServer(geojson);
+  showToast('已导出 '+geojson.features.length+' 个要素');
+}
+
+async function saveToServer(geojson){
+  try{
+    // 先清空当前库的要素，再全量写入（保证删除同步）
+    await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({features:[]})});
+    var r=await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(geojson||buildGeoJSON())});
+    if(r.ok)showToast('已同步');
+  }catch(e){console.error('保存���败',e)}
+}
+
+// 自动保存（标记/路径变更后 2 秒自动存）
+var autoSaveTimer=null;
+function autoSave(){
+  if(autoSaveTimer)clearTimeout(autoSaveTimer);
+  autoSaveTimer=setTimeout(function(){saveToServer()},2000);
+}
+
+// 页面加载时自动恢复数据（从 PostGIS API）
+async function autoLoad(){
+  try{
+    var r=await dbApi('/api/geo?_='+Date.now());
+    if(!r.ok)return;
+    var geojson=await r.json();
+    if(geojson&&geojson.features&&geojson.features.length){
+      importGeoJSON(geojson,'从数据库恢复');
+      showToast('已恢复 '+geojson.features.length+' 个要素');
+    }
+  }catch(e){console.error('自动恢复失败',e)}
+}
+
+function importGeoJSON(geojson,name){
+  if(!geojson||!geojson.features)return;var added=0;
+  geojson.features.forEach(function(f){
+    if(!f.geometry)return;var props=f.properties||{};
+    var gt=f.geometry.type, coord=f.geometry.coordinates;
+    if(gt==='MultiPoint'){gt='Point';if(coord.length)coord=coord[0];}
+    else if(gt==='MultiLineString'){gt='LineString';if(coord.length)coord=coord[0];}
+    else if(gt==='MultiPolygon'){gt='Polygon';if(coord.length)coord=coord[0];}
+    if(gt==='Point'){
+      if(props.type==='photo'&&props.photo){
+        addPhotoToMap(coord[1],coord[0],props.photo,props.name||'');added++;
+      } else if(props.type==='video'&&props.video){
+        addVideoToMap(coord[1],coord[0],props.video,props.name||'');added++;
+      } else if(props.mediaType==='folder'&&props.folderUrls){
+        // 文件夹标记：用 addMarker 创建，然后补 folderUrls
+        addMarker(coord[1],coord[0],props.name||'文件夹','',props.desc||'','','folder');
+        var fMk=markers[markers.length-1];
+        if(fMk){fMk.folderUrls=props.folderUrls;fMk.marker.off('click');
+          fMk.marker.on('click',function(){showFolderPopup(fMk)});}
+        added++;
+      } else {
+        var media=props.media||props.photo||'';
+        var mtype=props.mediaType||(media?isVideoUrl(media)?'video':'photo':'');
+        addMarker(coord[1],coord[0],props.name||'导入点',props.desc||'',media,props.note||'',mtype);added++;
+      }
+    }else if(gt==='LineString'){
+      var coords=coord.map(function(c){return[c[1],c[0]]});
+      var id='p_'+(++pathId);var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+      var line=L.polyline(coords,{color:color,weight:4}).addTo(map);
+      line.bindPopup('<b>'+esc(props.name||name||'线')+'</b>');
+      paths.push({id:id,name:props.name||name||'导入线',coords:coords,color:color,line:line});added++;
+    }else if(gt==='Polygon'){
+      var coords=coord[0].map(function(c){return[c[1],c[0]]});
+      var id='p_'+(++pathId);var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+      var polygon=L.polygon(coords,{color:color,weight:3,fillColor:color,fillOpacity:0.2}).addTo(map);
+      polygon.bindPopup('<b>'+esc(props.name||name||'区域')+'</b>');
+      paths.push({id:id,name:props.name||name||'导入区域',coords:coords,color:color,line:polygon,isPolygon:true});added++;
+    }
+  });showToast('导入完成: '+added+' 个要素');
+}
+
+function convertGpxToGeoJSON(gpx){
+  var features=[];
+  function getText(el,tag){var n=el.getElementsByTagName(tag);return n.length?n[0].textContent:''}
+  if(typeof gpx==='string'){var parser=new DOMParser();gpx=parser.parseFromString(gpx,'text/xml')}
+  var trks=gpx.getElementsByTagName('trk');
+  for(var i=0;i<trks.length;i++){var segs=trks[i].getElementsByTagName('trkseg');
+    for(var j=0;j<segs.length;j++){var pts=segs[j].getElementsByTagName('trkpt');var coords=[];
+      for(var k=0;k<pts.length;k++){coords.push([parseFloat(pts[k].getAttribute('lat')),parseFloat(pts[k].getAttribute('lon'))])}
+      if(coords.length)features.push({type:'Feature',geometry:{type:'LineString',coordinates:coords.map(function(c){return[c[1],c[0]]})},properties:{name:getText(trks[i],'name')||'GPX线'}})}}
+  var wpts=gpx.getElementsByTagName('wpt');
+  for(var w=0;w<wpts.length;w++){features.push({type:'Feature',geometry:{type:'Point',coordinates:[parseFloat(wpts[w].getAttribute('lon')),parseFloat(wpts[w].getAttribute('lat'))]},properties:{name:getText(wpts[w],'name')||'航点'}})}
+  return {type:'FeatureCollection',features:features};
+}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function escJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"')}
+
+document.addEventListener('keydown',function(e){
+  if(e.key==='f'||e.key==='F'){e.preventDefault();if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen().catch(function(){})}
+});
+
+// ===== 拖拽图片到地图 =====
+var dragTarget=null;
+document.addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='copy'});
+document.addEventListener('drop',function(e){
+  e.preventDefault();
+  var files=e.dataTransfer.files;
+  if(!files||!files.length)return;
+  
+  // 判断落点是否在地图区域
+  var mapEl=document.getElementById('map');
+  var rect=mapEl.getBoundingClientRect();
+  var x=e.clientX,y=e.clientY;
+  var onMap=x>=rect.left&&x<=rect.right&&y>=rect.top&&y<=rect.bottom;
+  if(!onMap)return;
+  
+  // 将屏幕坐标转为经纬度
+  var point=map.containerPointToLatLng([x-rect.left,y-rect.top]);
+  
+  // 逐个上传并放置
+  for(var i=0;i<files.length;i++){
+    uploadAndPlaceMedia(files[i], point.lat, point.lng);
+  }
+});
+
+async function uploadAndPlaceMedia(file, lat, lng){
+  var isVideo=/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(file.name);
+  var isImage=(file.type&&file.type.match(/^image\//))||/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(file.name);
+  if(!isVideo&&!isImage)return;
+  var typeLabel=isVideo?'视频':'图片';
+  
+  // 如果是图片，尝试读取 EXIF GPS 坐标
+  if(isImage && /\.(jpg|jpeg)$/i.test(file.name)){
+    try{
+      var gpsCoords=await readExifGPS(file);
+      if(gpsCoords){
+        lat=gpsCoords.lat;lng=gpsCoords.lng;
+        showToast('已从 EXIF 读取坐标: '+lat.toFixed(4)+', '+lng.toFixed(4));
+      }
+    }catch(e){}
+  }
+
+  showToast('上传中: '+file.name+'...');
+  try{
+    var form=new FormData();
+    form.append('media',file,file.name);
+    var r=await fetch('/upload-photo',{method:'POST',body:form});
+    var result=await r.json();
+    if(result.ok){
+      var name=file.name.replace(/\.\w+$/,'');
+      if(isVideo){
+        addVideoToMap(lat,lng,result.file,name);
+      }else{
+        addPhotoToMap(lat,lng,result.file,name);
+      }
+      addMarker(lat,lng,name,'',result.file,'',isVideo?'video':'photo');
+      showToast('已放置: '+name);
+    }
+  }catch(e){
+    console.error('上传失败，使用本地URL:',e);
+    var url=URL.createObjectURL(file);
+    var name=file.name.replace(/\.\w+$/,'');
+    if(isVideo){
+      addVideoToMap(lat,lng,url,name);
+    }else{
+      addPhotoToMap(lat,lng,url,name);
+    }
+    addMarker(lat,lng,name,'',url,'',isVideo?'video':'photo');
+    showToast('已放置(本地): '+name);
+  }
+}
+
+// 轻量 EXIF GPS 读取（纯 JS）
+function readExifGPS(file){
+  return new Promise(function(resolve,reject){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        var buf=new Uint8Array(e.target.result);
+        var gps=extractExifGPS(buf);
+        if(gps)resolve(gps);else reject('no GPS');
+      }catch(ex){reject(ex)}
+    };
+    reader.onerror=reject;
+    reader.readAsArrayBuffer(file.slice(0,65536)); // 只读前64KB
+  });
+}
+
+function extractExifGPS(buf){
+  // 检查 JPEG SOI
+  if(buf[0]!==0xFF||buf[1]!==0xD8)return null;
+  
+  var offset=2;
+  while(offset<buf.length-4){
+    if(buf[offset]!==0xFF)break;
+    var marker=buf[offset+1];
+    if(marker===0xE1)break; // APP1 (EXIF)
+    offset+=2+buf[offset+2]*256+buf[offset+3];
+    if(offset>=buf.length)return null;
+  }
+  
+  if(buf[offset+1]!==0xE1)return null;
+  var app1Len=buf[offset+2]*256+buf[offset+3];
+  var app1Start=offset+4;
+  
+  // 检查 Exif 标识
+  var exifId=String.fromCharCode.apply(null,buf.slice(app1Start,app1Start+6));
+  if(exifId!=='Exif\0\0')return null;
+  
+  var tiffStart=app1Start+6;
+  var bigEndian=buf[tiffStart]===0x4D; // 'M'
+  var ifd0Offset=tiffStart+4+(bigEndian?buf[tiffStart+4]*256+buf[tiffStart+5]:buf[tiffStart+4]+buf[tiffStart+5]*256);
+  
+  function readU16(off){return bigEndian?buf[off]*256+buf[off+1]:buf[off]+buf[off+1]*256}
+  function readU32(off){return bigEndian?buf[off]*16777216+buf[off+1]*65536+buf[off+2]*256+buf[off+3]:buf[off]+buf[off+1]*256+buf[off+2]*65536+buf[off+3]*16777216}
+  
+  // 在 IFD 中查找 GPS IFD 指针 (tag 0x8825)
+  var ifd0Entries=readU16(ifd0Offset);
+  var gpsIfdOffset=null;
+  for(var i=0;i<ifd0Entries;i++){
+    var entryOff=ifd0Offset+2+i*12;
+    var tag=readU16(entryOff);
+    if(tag===0x8825){ // GPS IFD
+      gpsIfdOffset=tiffStart+readU32(entryOff+8);
+      break;
+    }
+  }
+  if(!gpsIfdOffset)return null;
+  
+  // 读取 GPS IFD
+  var gpsEntries=readU16(gpsIfdOffset);
+  var lat=null,lon=null,latRef=null,lonRef=null;
+  for(var j=0;j<gpsEntries;j++){
+    var geOff=gpsIfdOffset+2+j*12;
+    var gtag=readU16(geOff);
+    var gtype=readU16(geOff+2);
+    var gcount=readU32(geOff+4);
+    var gvalOff=gcount<=4?geOff+8:tiffStart+readU32(geOff+8);
+    
+    if(gtag===1){latRef=String.fromCharCode(buf[gvalOff])} // GPSLatitudeRef
+    if(gtag===2&&gcount===3){ // GPSLatitude
+      var deg=buf[gvalOff]/buf[gvalOff+4]||readU32(gvalOff)/readU32(gvalOff+4);
+      var min=buf[gvalOff+8]/buf[gvalOff+12]||readU32(gvalOff+8)/readU32(gvalOff+12);
+      var sec=buf[gvalOff+16]/buf[gvalOff+20]||readU32(gvalOff+16)/readU32(gvalOff+20);
+      lat=deg+min/60+sec/3600;
+    }
+    if(gtag===3){lonRef=String.fromCharCode(buf[gvalOff])} // GPSLongitudeRef
+    if(gtag===4&&gcount===3){ // GPSLongitude
+      var deg=buf[gvalOff]/buf[gvalOff+4]||readU32(gvalOff)/readU32(gvalOff+4);
+      var min=buf[gvalOff+8]/buf[gvalOff+12]||readU32(gvalOff+8)/readU32(gvalOff+12);
+      var sec=buf[gvalOff+16]/buf[gvalOff+20]||readU32(gvalOff+16)/readU32(gvalOff+20);
+      lon=deg+min/60+sec/3600;
+    }
+  }
+  
+  if(lat===null||lon===null)return null;
+  if(latRef==='S')lat=-lat;
+  if(lonRef==='W')lon=-lon;
+  return {lat:lat,lon:lon};
+}
+
+// ===== 路径列表面板 =====
+function renderPathList(){
+  var container=$('pathList');
+  if(!paths.length){container.innerHTML='<div class="empty-state">暂无线<br><small>使用「线」或「连线」创建</small></div>';return}
+  container.innerHTML='';
+  for(var i=0;i<paths.length;i++){
+    var p=paths[i];
+    var item=document.createElement('div');item.className='marker-item';
+    var len=0;
+    if(p.coords&&p.coords.length>1){
+      for(var j=1;j<p.coords.length;j++){
+        len+=haversine(p.coords[j-1][0],p.coords[j-1][1],p.coords[j][0],p.coords[j][1]);
+      }
+    }
+    item.innerHTML='<div class="mi-icon" style="color:'+p.color+'">📐</div>'+
+      '<div class="mi-info"><div class="mi-name">'+esc(p.name)+'</div><div class="mi-coord">'+p.coords.length+'点 · '+(len>0?(len<1?(len*1000).toFixed(0)+'m':len.toFixed(2)+'km'):'')+'</div></div>'+
+      '<button class="mi-del" title="删除">✕</button>';
+    item.onclick=function(pathObj){return function(e){
+      if(e.target.classList.contains('mi-del')){deletePath(pathObj.id);renderPathList();return}
+      map.fitBounds(pathObj.line.getBounds());
+      pathObj.line.openPopup();
+    }}(p);
+    item.querySelector('.mi-del').onclick=function(pid){return function(e){e.stopPropagation();deletePath(pid);renderPathList()}}(p.id);
+    container.appendChild(item);
+  }
+}
+
+// Haversine 距离计算
+function haversine(lat1,lon1,lat2,lon2){
+  var R=6371,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ===== 图层管理面板 =====
+var layerGroups={
+  markers:{name:'📍 点',visible:true,getItems:function(){return markers}},
+  paths:{name:'📐 线',visible:true,getItems:function(){return paths}},
+  photos:{name:'🖼️ 照片覆盖层',visible:true,getItems:function(){return photoMarkers}},
+  videos:{name:'🎬 视频覆盖层',visible:true,getItems:function(){return videoMarkers}}
+};
+
+function renderLayerList(){
+  var container=$('layerList');
+  var html='';
+  for(var key in layerGroups){
+    var lg=layerGroups[key];
+    var itemCount=lg.getItems().length;
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;margin-bottom:2px;background:rgba(255,255,255,.02)">'+
+      '<span style="font-size:16px">'+lg.name.split(' ')[0]+'</span>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:11px">'+lg.name.split(' ').slice(1).join(' ')+'</div><div style="font-size:9px;color:#555">'+itemCount+' 项</div></div>'+
+      '<button onclick="toggleLayer(\''+key+'\')" id="layerBtn_'+key+'" style="padding:4px 10px;border-radius:10px;border:1px solid '+(lg.visible?'rgba(0,206,201,.3)':'rgba(255,255,255,.1)')+';background:'+(lg.visible?'rgba(0,206,201,.15)':'rgba(255,255,255,.04)')+';color:'+(lg.visible?'#00cec9':'#888')+';font-size:10px;cursor:pointer;transition:all .2s">'+(lg.visible?'显示':'隐藏')+'</button>'+
+      '</div>';
+  }
+  container.innerHTML=html;
+}
+
+function toggleLayer(key){
+  var lg=layerGroups[key];if(!lg)return;
+  lg.visible=!lg.visible;
+  var items=lg.getItems();
+  for(var i=0;i<items.length;i++){
+    var item=items[i];
+    if(item.marker){
+      if(lg.visible)item.marker.addTo(map);else map.removeLayer(item.marker);
+    }
+    if(item.line){
+      if(lg.visible)item.line.addTo(map);else map.removeLayer(item.line);
+    }
+  }
+  renderLayerList();
+}
+
+// ===== 导出全部路径为 GPX =====
+function exportAllPaths(){
+  if(!paths.length){showToast('暂无线可导出');return}
+  var gpx='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="DMpage">\n';
+  for(var i=0;i<paths.length;i++){
+    var p=paths[i];
+    gpx+='  <trk><name>'+escXml(p.name)+'</name>\n';
+    gpx+='    <trkseg>\n';
+    for(var j=0;j<p.coords.length;j++){
+      gpx+='      <trkpt lat="'+p.coords[j][0]+'" lon="'+p.coords[j][1]+'"></trkpt>\n';
+    }
+    gpx+='    </trkseg>\n  </trk>\n';
+  }
+  gpx+='</gpx>';
+  var blob=new Blob([gpx],{type:'application/gpx+xml'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='paths-'+new Date().toISOString().slice(0,10)+'.gpx';a.click();
+  showToast('已导出 '+paths.length+' 条线');
+}
+
+function importPathFile(){
+  document.getElementById('gpxInput').click();
+}
+
+async function handlePathImport(files){
+  if(!files||!files.length)return;
+  for(var i=0;i<files.length;i++){
+    var f=files[i];
+    try{
+      var text=await f.text();
+      var geojson;
+      if(f.name.endsWith('.gpx')){
+        geojson=convertGpxToGeoJSON(text);
+      }else{
+        geojson=JSON.parse(text);
+      }
+      if(geojson&&geojson.features){
+        importGeoJSON(geojson,f.name.replace(/\.\w+$/,''));
+      }
+    }catch(e){showToast('导入失败: '+f.name+' - '+e.message)}
+  }
+  renderPathList();renderLayerList();
+}
+
+function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// ===== 导入 GeoJSON 文件 =====
+function importGeoJSONFile(){
+  var input=document.createElement('input');
+  input.type='file';input.accept='.geojson,.json,.gpx,.kml';
+  input.onchange=function(){
+    if(!this.files||!this.files.length)return;
+    for(var i=0;i<this.files.length;i++){
+      var f=this.files[i];var reader=new FileReader();
+      reader.onload=(function(file){return function(e){
+        try{
+          var text=e.target.result;
+          var geojson;
+          if(file.name.endsWith('.gpx')){
+            geojson=convertGpxToGeoJSON(text);
+          }else{
+            geojson=JSON.parse(text);
+          }
+          if(geojson&&geojson.features){
+            importGeoJSON(geojson,file.name.replace(/\.\w+$/,''));
+            showToast('导入 '+geojson.features.length+' 个要素');
+            renderTable();renderMarkerList();renderPathList();renderLayerList();
+            autoSave();
+          }
+        }catch(ex){showToast('导入失败: '+file.name+' - '+ex.message)}
+      }})(f);
+      reader.readAsText(f);
+    }
+  };
+  input.click();
+}
+
+function updatePathPopup(p){
+  if(!p.line)return;
+  var name=p.name||(p.isPolygon?'区域':'线');
+  var coords=p.coords||[];
+  var html='<b>'+esc(name)+'</b><br><small>'+coords.length+' 点</small>';
+  if(p.isPolygon)html+='<br><small>面要素</small>';
+  p.line.setPopupContent(html);
+}
+
+// ===== 编辑模式键盘操作 =====
+// 在编辑模式下可以用方向键微调折点（编辑最后一个被拖拽的节点）
+var _editActiveVertex=null;
+document.addEventListener('keydown',function(e){
+  if(!editMode||!editingPath||!editMarkers.length)return;
+  // 找被 hover 的编辑节点
+  var step=e.shiftKey?0.00001:0.0001;
+  var target=_editActiveVertex;
+  if(!target)target=editMarkers[editMarkers.length-1]; // 默认最后一个
+  var idx=target._nodeIndex;
+  if(idx==null)return;
+
+  var coords=editingPath.isPolygon?(editingPath.line.getLatLngs()[0]):editingPath.line.getLatLngs();
+  if(!coords||idx>=coords.length)return;
+  var changed=false;
+  switch(e.key){
+    case 'ArrowUp':coords[idx].lat+=step;changed=true;e.preventDefault();break;
+    case 'ArrowDown':coords[idx].lat-=step;changed=true;e.preventDefault();break;
+    case 'ArrowLeft':coords[idx].lng-=step;changed=true;e.preventDefault();break;
+    case 'ArrowRight':coords[idx].lng+=step;changed=true;e.preventDefault();break;
+    case 'Delete':
+    case 'Backspace':
+      if(coords.length<=2){showToast('至少需要2个节点');return}
+      coords.splice(idx,1);changed=true;e.preventDefault();
+      break;
+    default:return;
+  }
+  if(!changed)return;
+  if(editingPath.isPolygon){editingPath.line.setLatLngs([coords])}else{editingPath.line.setLatLngs(coords)}
+  editingPath.coords=coords.map(function(c){return[c.lat,c.lng]});
+  // 更新编辑节点位置
+  for(var i=0;i<editMarkers.length;i++){
+    if(i<coords.length)editMarkers[i].setLatLng(coords[i]);
+  }
+  updatePathPopup(editingPath);
+  autoSave();
+});
+
+// ===== 数据导入面板：上传 + 媒体挂载 =====
+var _uploadQueue=[];
+var _selectedFeature=null; // 当前选中要挂载媒体的要素
+
+function batchUpload(){
+  var input=document.createElement('input');input.type='file';input.multiple=true;
+  input.accept='.geojson,.json,.gpx,.jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.mkv,.mov';
+  input.onchange=function(){processUploadFiles(this.files)};
+  input.click();
+}
+
+function handleDrop(e){
+  e.preventDefault();
+  var items=e.dataTransfer.items;
+  if(!items){processUploadFiles(e.dataTransfer.files);return}
+  // 支持文件夹递归
+  var files=[];
+  function traverse(entry,cb){
+    if(entry.isFile){entry.file(function(f){files.push(f);cb()})}
+    else if(entry.isDirectory){
+      var reader=entry.createReader();
+      reader.readEntries(function(entries){
+        var count=entries.length;if(!count){cb();return}
+        entries.forEach(function(e){traverse(e,function(){count--;if(!count)cb()})})
+      })
+    }
+  }
+  var pending=items.length;
+  for(var i=0;i<items.length;i++){
+    var entry=items[i].webkitGetAsEntry?items[i].webkitGetAsEntry():null;
+    if(entry){traverse(entry,function(){pending--;if(!pending)processUploadFiles(files)})}
+    else{pending--}
+  }
+  if(!pending)processUploadFiles(files);
+}
+
+async function processUploadFiles(files){
+  if(!files||!files.length)return;
+  var queueEl=$('uploadQueue');
+  var geojsonFiles=[],mediaFiles=[];
+  for(var i=0;i<files.length;i++){
+    var f=files[i];
+    if(/\.(geojson|json|gpx)$/i.test(f.name))geojsonFiles.push(f);
+    else if(/\.(jpg|jpeg|png|gif|webp|mp4|webm|mkv|mov)$/i.test(f.name))mediaFiles.push(f);
+  }
+
+  // 处理 GeoJSON/GPX 文件
+  for(var i=0;i<geojsonFiles.length;i++){
+    var f=geojsonFiles[i];
+    queueEl.innerHTML+='<div style="padding:2px 0;color:#00cec9">📄 导入: '+esc(f.name)+'...</div>';
+    try{
+      var text=await f.text();
+      var geojson;
+      if(f.name.endsWith('.gpx')){geojson=convertGpxToGeoJSON(text)}
+      else{geojson=JSON.parse(text)}
+      if(geojson&&geojson.features){
+        importGeoJSON(geojson,f.name.replace(/\.\w+$/,''));
+        queueEl.innerHTML+='<div style="padding:2px 0;color:#0c0">  ✅ 导入 '+geojson.features.length+' 要素</div>';
+      }
+    }catch(e){queueEl.innerHTML+='<div style="padding:2px 0;color:#e74c3c">  ❌ '+esc(f.name)+': '+e.message+'</div>'}
+  }
+
+  // 处理媒体文件：上传到服务器并创建要素
+  for(var i=0;i<mediaFiles.length;i++){
+    var f=mediaFiles[i];
+    var isVideo=/\.(mp4|webm|mkv|mov)$/i.test(f.name);
+    queueEl.innerHTML+='<div style="padding:2px 0;color:#fdcb6e">'+(isVideo?'🎬':'📷')+' 上传: '+esc(f.name)+'...</div>';
+    try{
+      var form=new FormData();form.append('media',f,f.name);
+      var r=await fetch('/upload-photo',{method:'POST',body:form});
+      var result=await r.json();
+      if(result.ok){
+        var name=f.name.replace(/\.\w+$/,'');
+        // 在地图中心创建要素
+        var center=map.getCenter();
+        if(isVideo){
+          addVideoToMap(center.lat,center.lng,result.file,name);
+        }else{
+          addPhotoToMap(center.lat,center.lng,result.file,name);
+        }
+        addMarker(center.lat,center.lng,name,'',result.file,'',isVideo?'video':'photo');
+        queueEl.innerHTML+='<div style="padding:2px 0;color:#0c0">  ✅ 已挂载: '+esc(name)+'</div>';
+      }else{
+        queueEl.innerHTML+='<div style="padding:2px 0;color:#e74c3c">  ❌ '+result.error+'</div>';
+      }
+    }catch(e){
+      // 本地回退：创建 blob URL
+      var url=URL.createObjectURL(f);
+      var name=f.name.replace(/\.\w+$/,'');
+      var center=map.getCenter();
+      if(isVideo){addVideoToMap(center.lat,center.lng,url,name)}
+      else{addPhotoToMap(center.lat,center.lng,url,name)}
+      addMarker(center.lat,center.lng,name,'',url,'',isVideo?'video':'photo');
+      queueEl.innerHTML+='<div style="padding:2px 0;color:#0c0">  ✅ 本地挂载: '+esc(name)+'</div>';
+    }
+  }
+
+  if(!geojsonFiles.length&&!mediaFiles.length){
+    queueEl.innerHTML='<div class="empty-state">无支持的文件类型</div>';
+  }
+  renderMarkerList();renderPathList();renderLayerList();autoSave();
+}
+
+// 挂载媒体到已选中的要素
+function attachMedia(type){
+  if(!_selectedFeature){
+    showToast('请先在点列表选中一个要素');
+    return;
+  }
+  var input=document.createElement('input');input.type='file';
+  input.accept=type==='video'?'.mp4,.webm,.mkv,.mov':'.jpg,.jpeg,.png,.gif,.webp';
+  input.onchange=async function(){
+    if(!this.files.length)return;
+    var f=this.files[0];
+    var featureId=_selectedFeature.id||'unknown';
+    try{
+      var form=new FormData();form.append('media',f,f.name);
+      var r=await fetch('/upload-photo?feature='+encodeURIComponent(featureId),{method:'POST',body:form});
+      var result=await r.json();
+      var url=result.ok?result.file:URL.createObjectURL(f);
+      if(_selectedFeature.marker){
+        _selectedFeature.media=url;
+        _selectedFeature.mediaType=type;
+        updateMarkerPopup(_selectedFeature);
+      }
+      // 同时更新数据库 properties
+      var dbId=_selectedFeature.dbId;
+      if(dbId){
+        var props={media:url,mediaType:type,updatedAt:new Date().toISOString()};
+        dbApi('/api/geo/marker/'+dbId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(props)}).catch(function(){});
+      }
+      showToast('已挂载到: '+featureId+'/'+result.name);
+      renderAttachedMedia();
+      autoSave();
+    }catch(e){showToast('挂载失败: '+e.message)}
+  };
+  input.click();
+}
+
+function attachMediaFolder(){
+  var input=document.createElement('input');input.type='file';
+  input.multiple=true;input.webkitdirectory=true;
+  input.onchange=function(){processUploadFiles(this.files)};
+  input.click();
+}
+
+// 显示已挂载媒体（从服务器 API 读取目录结构）
+async function renderAttachedMedia(){
+  var el=$('attachedMedia');
+  el.innerHTML='<div class="empty-state">加载中...</div>';
+  try{
+    var r=await dbApi('/api/geo/media');
+    var mediaList=await r.json();
+    if(!mediaList.length){el.innerHTML='<div class="empty-state">暂无挂载媒体</div>';return}
+
+    // 按要素分组
+    var groups={};
+    mediaList.forEach(function(item){
+      if(!groups[item.featureId])groups[item.featureId]=[];
+      groups[item.featureId].push(item);
+    });
+
+    var html='';
+    for(var featureId in groups){
+      var files=groups[featureId];
+      var totalSize=files.reduce(function(s,f){return s+f.size},0);
+      html+='<div style="margin-bottom:6px">'+
+        '<div style="font-size:10px;color:#888;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03);display:flex;align-items:center;gap:6px">'+
+        '<span>📁 <b style="color:#ccc">'+esc(featureId)+'</b></span>'+
+        '<span style="font-size:8px;color:#555">'+files.length+' 文件 · '+(totalSize/1024).toFixed(1)+'KB</span>'+
+        '<button onclick="deleteFeatureMedia(\''+escJs(featureId)+'\')" style="margin-left:auto;background:none;border:none;color:#e74c3c;cursor:pointer;font-size:10px" title="删除该要素全部媒体">🗑</button>'+
+        '</div>';
+
+      for(var i=0;i<files.length;i++){
+        var item=files[i];
+        html+='<div style="display:flex;align-items:center;gap:6px;padding:3px 6px 3px 16px;border-radius:4px;cursor:pointer;font-size:10px" '+
+          'onclick="previewMedia(\''+escJs(item.file)+'\',\''+escJs(item.name)+'\','+item.isVideo+')" '+
+          'onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">'+
+          '<span>'+(item.isVideo?'🎬':'📷')+'</span>'+
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaa">'+esc(item.name)+'</span>'+
+          '<span style="font-size:8px;color:#555">'+(item.size/1024).toFixed(0)+'KB</span>'+
+          '</div>';
+      }
+      html+='</div>';
+    }
+    el.innerHTML=html;
+  }catch(e){el.innerHTML='<div class="empty-state">加载失败</div>'}
+}
+
+function previewMedia(file,name,isVideo){
+  if(isVideo){
+    openLightbox(file,name,true);
+  }else{
+    openLightbox(file,name);
+  }
+}
+
+async function deleteFeatureMedia(featureId){
+  if(!confirm('删除要素 '+featureId+' 的所有媒体文件？'))return;
+  try{
+    var r=await dbApi('/api/geo/media?feature='+encodeURIComponent(featureId),{method:'DELETE'});
+    if(r.ok){showToast('已删除');renderAttachedMedia()}
+    else showToast('删除失败');
+  }catch(e){showToast('删除失败')}
+}
+
+// 选中要素（从标记列表点击时调用）
+var _origMarkerClick=null;
+(function(){
+  // 拦截标记列表点击来记录选中
+  var observer=new MutationObserver(function(){});
+  // 简化：直接在 switchTab 时检查
+})();
+
+showToast('🗺 高德|🛰 卫星|🌍 OSM|🌙 暗色 · 点击点 · 拖拽图片/视频');
+// 自动恢复上次保存的数据 + 加载 geodata 照片
+autoLoad();
+loadDatabases(); loadGeodata();
+</script>
+</body>
+</html>

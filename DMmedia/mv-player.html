@@ -1,0 +1,302 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎬 MV</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;background:linear-gradient(135deg,#0f0f1a,#1a1a2e);color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;padding-bottom:72px}
+.drop-overlay{position:fixed;inset:0;z-index:999;background:rgba(108,92,231,.15);backdrop-filter:blur(8px);border:4px dashed rgba(108,92,231,.5);display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#6c5ce7}
+.drop-overlay.show{display:flex}
+.header{padding:12px 20px;background:rgba(0,0,0,.3);border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.header h1{font-size:17px;font-weight:600}
+.header .st{font-size:11px;color:#888;background:rgba(255,255,255,.04);padding:2px 10px;border-radius:10px}
+.header .actions{margin-left:auto;display:flex;gap:6px}
+.header .actions button{padding:5px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#aaa;font-size:11px;cursor:pointer}
+.header .actions button:hover{background:rgba(255,255,255,.12);color:#fff}
+
+/* 主布局 */
+.main{flex:1;display:flex;gap:16px;padding:16px;overflow:hidden;align-items:flex-start;justify-content:center}
+
+/* 左侧列表卡片 */
+.side{width:280px;flex-shrink:0;background:rgba(255,255,255,.03);border-radius:12px;border:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 210px)}
+.side .sh{padding:12px 14px 8px;font-size:12px;font-weight:600;flex-shrink:0;color:#aaa}
+.side .sl{flex:1;overflow-y:auto;padding:4px 6px}
+.side .sl::-webkit-scrollbar{width:3px}
+.side .sl::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.sr{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer}
+.sr:hover{background:rgba(255,255,255,.06)}
+.sr.act{background:rgba(231,76,60,.12)}
+.sr .ix{width:16px;text-align:center;font-size:10px;color:#555;flex-shrink:0}
+.sr .nf{flex:1;min-width:0}
+.sr .nf .nm{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr .nf .ar{font-size:9px;color:#777;margin-top:1px}
+
+/* 右侧视频卡片 - 自适应 */
+.cp{flex:1;min-width:280px;background:#000;border-radius:12px;border:1px solid rgba(255,255,255,.06);overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center}
+.cp video{width:100%;height:100%;object-fit:contain;background:#000}
+.cp .voverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2}
+.cp .voverlay .vplay{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.15);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-size:24px;transition:transform .2s}
+.cp .voverlay:hover .vplay{transform:scale(1.1)}
+.es{text-align:center;color:#555;position:absolute;z-index:1}
+.es .ei{font-size:40px;margin-bottom:8px;opacity:.4}
+.es p{font-size:13px}
+
+/* 悬浮视频窗口 */
+.float-video{position:fixed;z-index:200;width:320px;background:#000;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.6);resize:both;min-width:200px;min-height:120px;display:none}
+.float-video .fv-header{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:rgba(0,0,0,.7);cursor:grab;user-select:none}
+.float-video .fv-header:active{cursor:grabbing}
+.float-video .fv-header .fv-title{font-size:10px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;margin-right:4px}
+.float-video .fv-header .fv-btns{display:flex;gap:2px;flex-shrink:0}
+.float-video .fv-header .fv-btns button{background:none;border:none;color:#aaa;cursor:pointer;font-size:12px;padding:2px 4px;border-radius:2px;line-height:1}
+.float-video .fv-header .fv-btns button:hover{color:#fff;background:rgba(255,255,255,.1)}
+.float-video video{width:100%;height:calc(100% - 24px);display:block;object-fit:contain;background:#000}
+.float-video .fv-overlay{position:absolute;top:24px;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.float-video .fv-overlay .fv-play{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px}
+
+/* ===== 底部播放栏 ===== */
+.pb{position:fixed;bottom:0;left:0;right:0;z-index:100;background:rgba(18,18,38,.97);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;height:64px;padding:0 16px;gap:12px;box-shadow:0 -4px 20px rgba(0,0,0,.4);transition:transform .3s,opacity .3s}
+/* 全屏时自动隐藏 */
+body.fullscreen .pb{transform:translateY(100%);opacity:0}
+body.fullscreen .pb.show{transform:translateY(0);opacity:1}
+
+.pb .ti{width:160px;overflow:hidden;flex-shrink:0}
+.pb .ti .nm{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pb .ti .ar{font-size:10px;color:#777}
+.pb .ct{display:flex;flex-direction:column;align-items:center;gap:4px;max-width:500px;flex:1}
+.pb .ct .bt{display:flex;gap:12px;align-items:center}
+.pb .ct .bt button{background:none;border:none;color:#aaa;cursor:pointer;font-size:15px;padding:2px}
+.pb .ct .bt button:hover{color:#fff}
+.pb .ct .bt .pp{width:28px;height:28px;border-radius:50%;background:#fff;color:#000;font-size:12px;display:flex;align-items:center;justify-content:center}
+.pb .pr{width:100%;display:flex;align-items:center;gap:6px;font-size:10px;color:#777}
+.pb .pr input[type=range]{flex:1;height:3px;-webkit-appearance:none;background:rgba(255,255,255,.1);border-radius:2px;outline:none}
+.pb .pr input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:#e74c3c;cursor:pointer}
+
+/* 音量控制 */
+.vol-wrap{display:flex;align-items:center;gap:4px}
+.vol-wrap button{background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;padding:2px}
+.vol-wrap button:hover{color:#fff}
+.vol-wrap input[type=range]{width:60px;height:3px;-webkit-appearance:none;background:rgba(255,255,255,.15);border-radius:2px;outline:none}
+.vol-wrap input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:#fff;cursor:pointer}
+
+.fv-toggle-btn{background:none;border:none;color:#aaa;cursor:pointer;font-size:15px;padding:2px}
+.fv-toggle-btn:hover{color:#fff}
+.fv-toggle-btn.active{color:#6c5ce7}
+
+/* 全屏时隐藏 header 和 side */
+body.fullscreen .header{display:none}
+body.fullscreen .main{padding:0;align-items:stretch}
+body.fullscreen .side{display:none}
+body.fullscreen .cp{border-radius:0;border:none;min-width:0;max-width:85vw;max-height:85vh;aspect-ratio:16/9;margin:auto}
+body.fullscreen{padding-bottom:0;background:#000;overflow:hidden}
+body.fullscreen .float-video{z-index:300}
+
+@media(max-width:768px){
+  .main{flex-direction:column;align-items:stretch;gap:12px;padding:10px}
+  .side{width:100%;max-height:35vh}
+  .cp{min-width:0}
+  .pb{height:56px;padding:0 8px;gap:8px}
+  .pb .ti{width:90px}.pb .ti .nm{font-size:11px}
+  .vol-wrap input[type=range]{width:40px}
+  .float-video{width:260px!important;min-width:160px}
+}
+</style>
+</head>
+<body id="body">
+<div class="drop-overlay" id="dz"><div style="font-size:48px">🎬</div><p>放开添加 MV</p></div>
+<div class="header"><h1>🎬 MV</h1><span class="st" id="status">...</span>
+<div class="actions">
+<button onclick="document.getElementById('fi').click()">📂 选文件</button>
+<button onclick="document.getElementById('fd').click()">📁 选文件夹</button>
+<button onclick="loadList()">🔄 刷新</button>
+</div>
+<input type="file" id="fi" multiple accept="video/*" style="display:none" onchange="addLocal(this.files)">
+<input type="file" id="fd" webkitdirectory multiple accept="video/*" style="display:none" onchange="addLocal(this.files)">
+</div>
+
+<div class="main">
+  <div class="side" id="sidebar">
+    <div class="sh">🎬 列表 <span id="sc"></span></div>
+    <div class="sl" id="pl"></div>
+  </div>
+  <div class="cp" id="cp">
+    <div class="es" id="es"><div class="ei">🎬</div><p id="hint">加载中...</p></div>
+    <video id="vp" playsinline webkit-playsinline preload="metadata" crossorigin="anonymous"></video>
+    <div class="voverlay" id="vo" style="display:none" onclick="togP()"><div class="vplay">▶</div></div>
+  </div>
+</div>
+
+<!-- 悬浮视频窗口 -->
+<div class="float-video" id="fv">
+  <div class="fv-header" id="fvHdr">
+    <span class="fv-title" id="fvTitle">未播放</span>
+    <div class="fv-btns">
+      <button onclick="toggleFS()" title="全屏">⛶</button>
+      <button onclick="toggleFloat()" title="固定回去">📌</button>
+    </div>
+  </div>
+  <video id="fvVp" playsinline webkit-playsinline preload="metadata" crossorigin="anonymous"></video>
+  <div class="fv-overlay" id="fvOverlay" onclick="togP()"><div class="fv-play">▶</div></div>
+</div>
+
+<div class="pb" id="pb">
+  <div class="ti"><div class="nm" id="nt">未播放</div><div class="ar" id="na">—</div></div>
+  <div class="ct">
+    <div class="bt">
+      <button onclick="shf=!shf;this.style.color=shf?'#e74c3c':'#aaa'">🔀</button>
+      <button onclick="pr()">⏮</button><button class="pp" id="pB" onclick="togP()">▶</button><button onclick="nx()">⏭</button>
+      <button onclick="toggleFS()">⛶</button>
+      <button class="fv-toggle-btn" id="fvBtn" onclick="toggleFloat()" title="悬浮窗口">🖼️</button>
+    </div>
+    <div class="pr"><span id="cT">00:00</span><input type="range" id="pBar" value="0" max="1000" onpointerdown="skStart()" ontouchstart="skStart()" oninput="skDrag()" onchange="skEnd()"><span id="tT">00:00</span>
+    <!-- 音量 -->
+    <span class="vol-wrap"><button id="volBtn" onclick="toggleMute()">🔊</button><input type="range" id="volBar" value="100" max="100" oninput="setVol()"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let sg=[],ci=-1,shf=false,floatMode=false;
+const V=document.getElementById('vp'), FV=document.getElementById('fvVp');
+const $=i=>document.getElementById(i),pl=$('pl'),nt=$('nt'),na=$('na'),pB=$('pB'),rB=$('pBar'),cT=$('cT'),tT=$('tT'),st=$('status'),ht=$('hint'),sc=$('sc'),dz=$('dz'),cp=$('cp'),es=$('es'),vo=$('vo'),fv=$('fv'),fvHdr=$('fvHdr'),fvTitle=$('fvTitle'),fvOverlay=$('fvOverlay'),fvBtn=$('fvBtn'),pb=$('pb'),body=$('body'),volBar=$('volBar'),volBtn=$('volBtn');
+
+function activeV(){return floatMode?FV:V}
+
+// 悬浮窗口拖拽
+(function(){
+  let ox=0,oy=0,px=0,py=0,down=false;
+  fvHdr.addEventListener('pointerdown',function(e){
+    down=true;ox=e.clientX;oy=e.clientY;
+    let r=fv.getBoundingClientRect();px=r.left;py=r.top;
+    fvHdr.setPointerCapture(e.pointerId);
+  });
+  fvHdr.addEventListener('pointermove',function(e){
+    if(!down)return;
+    let nx=px+(e.clientX-ox),ny=py+(e.clientY-oy);
+    let mw=window.innerWidth-fv.offsetWidth,mh=window.innerHeight-fv.offsetHeight-64;
+    nx=Math.max(0,Math.min(nx,mw));ny=Math.max(0,Math.min(ny,mh));
+    fv.style.left=nx+'px';fv.style.top=ny+'px';fv.style.right='auto';fv.style.bottom='auto';
+  });
+  fvHdr.addEventListener('pointerup',function(){down=false});
+})();
+
+cp.addEventListener('click',function(e){if(e.target===cp||e.target===vo||e.target.closest('.voverlay'))togP()});
+fvOverlay.addEventListener('click',function(e){e.stopPropagation();togP()});
+
+// 全屏时底部栏自动隐藏/显示
+let fsHideTimer=null;
+function showPb(){pb.classList.add('show');clearTimeout(fsHideTimer);fsHideTimer=setTimeout(function(){if(isFS())pb.classList.remove('show')},3000)}
+document.addEventListener('mousemove',function(){if(isFS())showPb()});
+document.addEventListener('touchmove',function(){if(isFS())showPb()});
+document.addEventListener('click',function(){if(isFS())showPb()});
+
+function isFS(){return !!document.fullscreenElement}
+
+document.addEventListener('fullscreenchange',function(){
+  if(isFS()){body.classList.add('fullscreen');pb.classList.remove('show');showPb()}
+  else{body.classList.remove('fullscreen');pb.classList.add('show');clearTimeout(fsHideTimer)}
+});
+
+document.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('show')});
+document.addEventListener('dragleave',function(){dz.classList.remove('show')});
+document.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('show');addLocal(e.dataTransfer.files)});
+
+function addLocal(fl){var n=0;for(var i=0;i<fl.length;i++){var f=fl[i];if(!f.name.match(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i))continue;var t=f.name.replace(/\.\w+$/,''),ar='',di=t.lastIndexOf(' - ');if(di>0){ar=t.slice(0,di);t=t.slice(di+3)}sg.push({title:t,artist:ar,url:URL.createObjectURL(f)});n++}if(n){st.textContent='📂 '+sg.length+'个';ht.textContent='';es.style.display='none';up();if(ci<0)playS(0)}}
+
+async function loadList(){
+  st.textContent='加载中...';
+  try{
+    var r=await fetch('video-list.json?_='+Date.now());
+    if(!r.ok)throw Error('fetch fail');
+    var d=await r.json();
+    if(!d||!d.length)throw Error('empty');
+    sg=d.map(function(s){return{title:s.title||s.name,artist:s.artist||'',url:s.file||s.url||s.path}});
+    st.textContent='🎬 '+sg.length+'个';
+    ht.textContent='';es.style.display='none';
+    up();
+    if(sg.length&&ci<0)playS(0);
+  }catch(e){
+    st.textContent='📂 本地模式';
+    ht.innerHTML='拖拽MV到窗口<br>或点「选文件」';
+  }
+}
+
+function playS(i){if(i<0||i>=sg.length)return;ci=i;var s=sg[i];nt.textContent=s.title;na.textContent=s.artist||'';fvTitle.textContent=s.title;
+  var url=s.url;
+  [V,FV].forEach(function(el){el.src=url;el.load()});
+  var av=activeV();
+  av.play().catch(function(){});
+  pB.textContent='⏸';vo.style.display='none';fvOverlay.style.display='none';es.style.display='none';
+  if(!floatMode)V.style.display='block';
+  // 同步音量
+  [V,FV].forEach(function(el){el.volume=volBar.value/100});
+
+  var bind=function(el){
+    el.ontimeupdate=function(){if(el.duration&&isFinite(el.duration)&&!dragging){rB.value=(el.currentTime/el.duration)*1000;cT.textContent=f(el.currentTime)}};
+    el.onloadedmetadata=function(){tT.textContent=f(el.duration);up()};
+    el.ondurationchange=function(){if(isFinite(el.duration))tT.textContent=f(el.duration)};
+    el.onended=function(){rB.value=0;cT.textContent='00:00';nx()};
+    el.onerror=function(){rB.value=0;cT.textContent='00:00';nx()};
+    el.onplay=function(){pB.textContent='⏸';vo.style.display='none';fvOverlay.style.display='none'};
+    el.onpause=function(){pB.textContent='▶';vo.style.display='flex';fvOverlay.style.display='flex'};
+  };
+  bind(V);bind(FV);
+  up();
+}
+
+function togP(){if(!sg.length)return;if(ci<0){playS(0);return}
+  var av=activeV();
+  if(av.paused){av.play().catch(function(){});pB.textContent='⏸';vo.style.display='none';fvOverlay.style.display='none'}
+  else{av.pause();pB.textContent='▶';vo.style.display='flex';fvOverlay.style.display='flex'}
+}
+
+function toggleFloat(){
+  if(!sg.length||ci<0)return;
+  floatMode=!floatMode;
+  if(floatMode){
+    var t=V.currentTime,paused=V.paused;
+    FV.currentTime=t;
+    if(!paused)FV.play().catch(function(){});else FV.pause();
+    V.pause();V.style.display='none';cp.style.background='transparent';
+    fv.style.display='block';
+    if(!fv.style.left){fv.style.left=(window.innerWidth-340)+'px';fv.style.top='60px'}
+    fvBtn.classList.add('active');
+    vo.style.display='none';
+    if(paused)fvOverlay.style.display='flex';else fvOverlay.style.display='none';
+  }else{
+    var t=FV.currentTime,paused=FV.paused;
+    V.currentTime=t;
+    if(!paused)V.play().catch(function(){});else V.pause();
+    FV.pause();fv.style.display='none';cp.style.background='#000';
+    V.style.display='block';
+    fvBtn.classList.remove('active');
+    fvOverlay.style.display='none';
+    if(paused)vo.style.display='flex';else vo.style.display='none';
+  }
+}
+
+// 音量
+function setVol(){var v=volBar.value/100;[V,FV].forEach(function(el){el.volume=v});updateVolIcon()}
+function toggleMute(){var av=activeV();av.muted=!av.muted;[V,FV].forEach(function(el){el.muted=av.muted});updateVolIcon()}
+function updateVolIcon(){var av=activeV();if(av.muted||volBar.value==0)volBtn.textContent='🔇';else if(volBar.value<50)volBtn.textContent='🔉';else volBtn.textContent='🔊'}
+// 初始化音量
+[V,FV].forEach(function(el){el.volume=1});
+
+function nx(){if(!sg.length)return;var n;if(shf)do{n=Math.floor(Math.random()*sg.length)}while(n===ci&&sg.length>1);else{n=ci+1;if(n>=sg.length)n=0}playS(n)}
+function pr(){var av=activeV();if(av.currentTime>3){av.currentTime=0;return}var p=ci-1;if(p<0)p=sg.length-1;playS(p)}
+
+function toggleFS(){
+  if(isFS()){document.exitFullscreen()}else{document.documentElement.requestFullscreen().catch(function(){})}
+}
+
+var dragging=false;
+function skStart(){dragging=true}
+function skDrag(){if(!dragging)return;var av=activeV();var d=av.duration;if(!d||!isFinite(d))return;cT.textContent=f((rB.value/1000)*d)}
+function skEnd(){dragging=false;var av=activeV();var d=av.duration;if(!d||!isFinite(d))return;var t=(rB.value/1000)*d;if(t>=0&&t<=d){V.currentTime=t;FV.currentTime=t}}
+
+function f(s){if(!s||isNaN(s)||!isFinite(s))return'00:00';return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0')}
+function up(){pl.innerHTML='';sc.textContent='('+sg.length+'个)';if(!sg.length){pl.innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px;">暂无</div>';return}
+for(var i=0;i<sg.length;i++){var s=sg[i],dt=s.title,da=s.artist,di=s.title.lastIndexOf(' - ');if(di>0&&!s.artist){da=s.title.slice(0,di);dt=s.title.slice(di+3)}var r=document.createElement('div');r.className='sr'+(i===ci?' act':'');r.innerHTML='<div class="ix">'+(i+1)+'</div><div class="nf"><div class="nm">'+dt+'</div><div class="ar">'+da+'</div></div>';r.onclick=function(j){return function(){if(j===ci)togP();else playS(j)}}(i);pl.appendChild(r)}}
+document.addEventListener('keydown',function(e){if(e.key===' '){e.preventDefault();togP()}if(e.key==='f'||e.key==='F'){toggleFS()}if(e.key==='ArrowUp'){volBar.value=Math.min(100,+volBar.value+5);setVol()}if(e.key==='ArrowDown'){volBar.value=Math.max(0,+volBar.value-5);setVol()}if(e.key==='m'||e.key==='M'){toggleMute()}});
+loadList();up();
+</script>
+</body>
+</html>

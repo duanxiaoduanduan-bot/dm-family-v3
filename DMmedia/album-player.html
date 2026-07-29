@@ -1,0 +1,318 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📷 写真馆</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden}
+
+.drop-overlay{position:fixed;inset:0;z-index:999;background:rgba(108,92,231,.15);backdrop-filter:blur(8px);border:4px dashed rgba(108,92,231,.5);display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#6c5ce7}
+.drop-overlay.show{display:flex}
+
+.header{padding:12px 20px;background:rgba(0,0,0,.5);border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;gap:10px;flex-shrink:0;position:relative;z-index:10}
+.header h1{font-size:17px;font-weight:600}
+.header .st{font-size:11px;color:#888;background:rgba(255,255,255,.04);padding:2px 10px;border-radius:10px}
+.header .actions{margin-left:auto;display:flex;gap:6px}
+.header .actions button{padding:5px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#aaa;font-size:11px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.header .actions button:hover{background:rgba(255,255,255,.12);color:#fff}
+
+/* 主内容 */
+.main{flex:1;display:flex;flex-direction:column;overflow-y:auto}
+
+/* 相册选择栏 */
+.album-bar{display:flex;gap:8px;padding:12px 20px;overflow-x:auto;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.04);background:rgba(0,0,0,.2)}
+.album-bar::-webkit-scrollbar{height:3px}
+.album-bar::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.album-bar .ab{padding:7px 16px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);cursor:pointer;font-size:12px;white-space:nowrap;transition:all .2s;color:#888}
+.album-bar .ab:hover{background:rgba(255,255,255,.08);color:#ccc}
+.album-bar .ab.act{background:linear-gradient(135deg,#e17055,#fdcb6e);color:#000;border-color:transparent;font-weight:600}
+
+/* ===== 图片幻灯片区域 ===== */
+.slideshow{position:relative;flex-shrink:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:300px;max-height:65vh;overflow:hidden}
+.slideshow img{max-width:100%;max-height:100%;object-fit:contain;transition:opacity .4s}
+.slideshow .slide-counter{position:absolute;top:12px;right:16px;background:rgba(0,0,0,.6);color:#aaa;padding:4px 10px;border-radius:10px;font-size:11px;z-index:5}
+/* 幻灯片导航按钮 */
+.slideshow .slide-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.1);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;z-index:5;backdrop-filter:blur(4px)}
+.slideshow .slide-nav:hover{background:rgba(0,0,0,.7)}
+.slideshow .slide-nav.prev{left:12px}
+.slideshow .slide-nav.next{right:12px}
+/* 底部缩略图 */
+.slideshow .thumb-strip{position:absolute;bottom:0;left:0;right:0;display:flex;gap:4px;padding:8px 12px;overflow-x:auto;background:linear-gradient(transparent,rgba(0,0,0,.7));justify-content:center}
+.slideshow .thumb-strip::-webkit-scrollbar{height:2px}
+.slideshow .thumb-strip::-webkit-scrollbar-thumb{background:#555;border-radius:2px}
+.slideshow .thumb-strip .th{width:48px;height:32px;border-radius:3px;overflow:hidden;cursor:pointer;flex-shrink:0;border:2px solid transparent;transition:all .2s;opacity:.5}
+.slideshow .thumb-strip .th:hover{opacity:.8}
+.slideshow .thumb-strip .th.act{border-color:#fdcb6e;opacity:1}
+.slideshow .thumb-strip .th img{width:100%;height:100%;object-fit:cover}
+/* 无图片提示 */
+.slideshow .no-photo{color:#555;font-size:14px;text-align:center;padding:40px}
+.slideshow .no-photo .ei{font-size:48px;opacity:.4;margin-bottom:8px}
+
+/* 自动播放指示器 */
+.slideshow .auto-indicator{position:absolute;top:12px;left:16px;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:10px;font-size:10px;color:#fdcb6e;cursor:pointer;z-index:5;display:none;align-items:center;gap:4px}
+.slideshow .auto-indicator.on{display:flex}
+
+/* ===== 视频区域 ===== */
+.video-section{padding:16px 20px;flex-shrink:0;border-top:1px solid rgba(255,255,255,.04)}
+.video-section .vs-title{font-size:13px;color:#888;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.video-section .video-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.video-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;overflow:hidden;cursor:pointer;transition:all .2s}
+.video-card:hover{border-color:rgba(253,203,110,.3)}
+.video-card video{width:100%;aspect-ratio:16/9;object-fit:cover;background:#000;display:block}
+.video-card .vc-info{padding:8px 12px;font-size:11px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 视频弹窗 */
+.video-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;flex-direction:column}
+.video-modal.open{display:flex}
+.video-modal video{max-width:90vw;max-height:80vh;object-fit:contain}
+.video-modal .vm-close{position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.video-modal .vm-close:hover{background:rgba(255,255,255,.2)}
+.video-modal .vm-title{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-size:13px;color:#aaa;background:rgba(0,0,0,.6);padding:6px 16px;border-radius:10px}
+
+/* 空状态 */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#555;gap:8px;padding:60px 20px}
+.empty .ei{font-size:48px;opacity:.4}
+.empty p{font-size:13px}
+
+/* 键盘快捷键提示 */
+.key-hint{position:fixed;bottom:16px;right:16px;z-index:50;font-size:10px;color:#444;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:8px;pointer-events:none}
+
+@media(max-width:768px){
+  .slideshow{min-height:220px;max-height:50vh}
+  .slideshow .thumb-strip .th{width:36px;height:24px}
+  .slideshow .slide-nav{width:36px;height:36px;font-size:14px}
+  .video-section .video-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="drop-overlay" id="dz"><div style="font-size:48px">📷</div><p>放开添加相册文件夹</p></div>
+
+<div class="header"><h1>📷 写真馆</h1><span class="st" id="status">...</span>
+<div class="actions">
+<button onclick="document.getElementById('fi').click()">📂 选文件</button>
+<button onclick="document.getElementById('fd').click()">📁 选文件夹</button>
+<button onclick="loadAlbums()">🔄 刷新</button>
+</div>
+<input type="file" id="fi" multiple accept="image/*,video/*" style="display:none" onchange="addLocal(this.files)">
+<input type="file" id="fd" webkitdirectory multiple accept="image/*,video/*" style="display:none" onchange="addLocal(this.files)">
+</div>
+
+<div class="main" id="main">
+  <div class="empty" id="empty"><div class="ei">📷</div><p id="hint">加载中...</p></div>
+</div>
+
+<!-- 视频弹窗 -->
+<div class="video-modal" id="vModal" onclick="closeVideo()">
+  <video id="vmVid" controls autoplay playsinline></video>
+  <button class="vm-close" onclick="closeVideo()">✕</button>
+  <div class="vm-title" id="vmTitle"></div>
+</div>
+
+<div class="key-hint">← → 翻页 · Space 自动播放 · F 全屏</div>
+
+<script>
+var albums=[],curAlbum=-1,curSlide=0,autoPlay=false,autoTimer=null;
+var $=function(i){return document.getElementById(i)},
+  main=$('main'),empty=$('empty'),ht=$('hint'),st=$('status'),dz=$('dz'),
+  vModal=$('vModal'),vmVid=$('vmVid'),vmTitle=$('vmTitle');
+
+// 拖放
+document.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('show')});
+document.addEventListener('dragleave',function(){dz.classList.remove('show')});
+document.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('show');addLocal(e.dataTransfer.files)});
+
+function addLocal(fl){
+  var photos=[],videos=[];
+  for(var i=0;i<fl.length;i++){
+    var f=fl[i],ext=f.name.split('.').pop().toLowerCase();
+    if(['jpg','jpeg','png','gif','webp','bmp','svg'].indexOf(ext)>=0){
+      photos.push({name:f.name,file:'',url:URL.createObjectURL(f)});
+    }else if(['mp4','webm','mkv','mov','avi'].indexOf(ext)>=0){
+      videos.push({name:f.name,file:'',url:URL.createObjectURL(f)});
+    }
+  }
+  if(photos.length||videos.length){
+    albums.push({name:'本地导入',photos:photos,videos:videos});
+    st.textContent='📂 '+albums.length+'个相册';ht.textContent='';
+    if(curAlbum<0)selectAlbum(albums.length-1);
+    renderAlbumBar();
+  }
+}
+
+async function loadAlbums(){
+  st.textContent='加载中...';
+  try{
+    var r=await fetch('album-list.json?_='+Date.now());
+    if(!r.ok)throw Error('empty');
+    var d=await r.json();
+    if(!d||!d.length)throw Error('empty');
+    albums=d;st.textContent='📷 '+albums.length+'个相册';ht.textContent='';
+    renderAlbumBar();
+    if(curAlbum<0)selectAlbum(0);
+  }catch(e){
+    st.textContent='📂 本地模式';
+    ht.innerHTML='拖拽图片/视频到窗口<br>或点「选文件夹」';
+  }
+}
+
+function renderAlbumBar(){
+  // 移除旧 bar
+  var old=document.querySelector('.album-bar');if(old)old.remove();
+  if(!albums.length)return;
+
+  var bar=document.createElement('div');bar.className='album-bar';
+  for(var i=0;i<albums.length;i++){
+    var b=document.createElement('div');b.className='ab'+(i===curAlbum?' act':'');
+    b.textContent=albums[i].name;
+    b.onclick=function(j){return function(){selectAlbum(j)}}(i);
+    bar.appendChild(b);
+  }
+  main.insertBefore(bar,main.firstChild);
+}
+
+function selectAlbum(i){
+  if(i<0||i>=albums.length)return;curAlbum=i;curSlide=0;stopAuto();
+  renderAlbumBar();
+  renderContent();
+}
+
+function renderContent(){
+  var a=albums[curAlbum];if(!a)return;
+  // 移除旧内容
+  var old=document.querySelectorAll('.slideshow,.video-section');old.forEach(function(el){el.remove()});
+  empty.style.display='none';
+
+  var hasPhotos=a.photos&&a.photos.length>0;
+  var hasVideos=a.videos&&a.videos.length>0;
+
+  // === 幻灯片 ===
+  if(hasPhotos){
+    var ss=document.createElement('div');ss.className='slideshow';ss.id='slideshow';
+
+    // 自动播放指示
+    var ai=document.createElement('div');ai.className='auto-indicator';ai.id='autoInd';
+    ai.textContent='▶ 自动';ai.onclick=function(e){e.stopPropagation();toggleAuto()};
+    ss.appendChild(ai);
+
+    // 计数器
+    var cnt=document.createElement('div');cnt.className='slide-counter';cnt.id='slideCnt';
+    cnt.textContent='1 / '+a.photos.length;
+    ss.appendChild(cnt);
+
+    // 大图
+    var img=document.createElement('img');img.id='slideImg';img.src=a.photos[curSlide].url||a.photos[curSlide].file;
+    img.alt=a.photos[curSlide].name;
+    img.onclick=function(){nextSlide()};
+    ss.appendChild(img);
+
+    // 左右按钮
+    var prev=document.createElement('button');prev.className='slide-nav prev';prev.innerHTML='‹';
+    prev.onclick=function(e){e.stopPropagation();prevSlide()};
+    ss.appendChild(prev);
+    var next=document.createElement('button');next.className='slide-nav next';next.innerHTML='›';
+    next.onclick=function(e){e.stopPropagation();nextSlide()};
+    ss.appendChild(next);
+
+    // 缩略图条
+    var ts=document.createElement('div');ts.className='thumb-strip';ts.id='thumbStrip';
+    for(var i=0;i<a.photos.length;i++){
+      var th=document.createElement('div');th.className='th'+(i===curSlide?' act':'');
+      var ti=document.createElement('img');ti.src=a.photos[i].url||a.photos[i].file;ti.alt=i;
+      th.appendChild(ti);
+      th.onclick=function(j){return function(e){e.stopPropagation();goSlide(j)}}(i);
+      ts.appendChild(th);
+    }
+    ss.appendChild(ts);
+
+    main.appendChild(ss);
+  }
+
+  // === 视频区 ===
+  if(hasVideos){
+    var vs=document.createElement('div');vs.className='video-section';
+    vs.innerHTML='<div class="vs-title">🎬 '+a.name+' · 视频 ('+a.videos.length+'个)</div>';
+    var grid=document.createElement('div');grid.className='video-grid';
+    for(var j=0;j<a.videos.length;j++){
+      var v=a.videos[j];
+      var vc=document.createElement('div');vc.className='video-card';
+      vc.innerHTML='<video src="'+(v.url||v.file)+'" preload="metadata" muted></video><div class="vc-info">'+esc(v.name)+'</div>';
+      vc.onclick=function(k){return function(){openVideo(k)}}(j);
+      grid.appendChild(vc);
+    }
+    vs.appendChild(grid);
+    main.appendChild(vs);
+  }
+
+  if(!hasPhotos&&!hasVideos){
+    empty.style.display='flex';
+  }
+}
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ===== 幻灯片控制 =====
+function goSlide(i){
+  var a=albums[curAlbum];if(!a||!a.photos)return;
+  if(i<0)i=a.photos.length-1;
+  if(i>=a.photos.length)i=0;
+  curSlide=i;
+  var img=document.getElementById('slideImg');
+  var cnt=document.getElementById('slideCnt');
+  if(img){img.src=a.photos[i].url||a.photos[i].file;img.alt=a.photos[i].name}
+  if(cnt)cnt.textContent=(i+1)+' / '+a.photos.length;
+  // 更新缩略图高亮
+  var ths=document.querySelectorAll('.thumb-strip .th');
+  for(var j=0;j<ths.length;j++)ths[j].classList.toggle('act',j===i);
+  // 滚动缩略图
+  var actTh=document.querySelector('.thumb-strip .th.act');
+  if(actTh)actTh.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+}
+function nextSlide(){goSlide(curSlide+1)}
+function prevSlide(){goSlide(curSlide-1)}
+
+function toggleAuto(){
+  autoPlay=!autoPlay;
+  var ai=document.getElementById('autoInd');
+  if(autoPlay){ai.classList.add('on');ai.textContent='⏸ 停止';startAuto()}
+  else{ai.classList.remove('on');ai.textContent='▶ 自动';stopAuto()}
+}
+function startAuto(){stopAuto();autoTimer=setInterval(function(){nextSlide()},3000)}
+function stopAuto(){clearInterval(autoTimer);autoTimer=null}
+
+// ===== 视频弹窗 =====
+function openVideo(j){
+  var a=albums[curAlbum];if(!a||!a.videos||!a.videos[j])return;
+  var v=a.videos[j];
+  vmVid.src=v.url||v.file;vmTitle.textContent=v.name;
+  vModal.classList.add('open');vmVid.play().catch(function(){});
+}
+function closeVideo(){
+  vmVid.pause();vModal.classList.remove('open');
+}
+
+// 滑动切换（触摸）
+(function(){
+  var sx=0;
+  document.addEventListener('touchstart',function(e){sx=e.touches[0].clientX});
+  document.addEventListener('touchend',function(e){
+    var dx=e.changedTouches[0].clientX-sx;
+    if(Math.abs(dx)>60){if(dx<0)nextSlide();else prevSlide()}
+  });
+})();
+
+// 键盘
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight'){nextSlide()}
+  if(e.key==='ArrowLeft'){prevSlide()}
+  if(e.key===' '){e.preventDefault();toggleAuto()}
+  if(e.key==='f'||e.key==='F'){e.preventDefault();
+    if(document.fullscreenElement)document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(function(){});
+  }
+  if(e.key==='Escape'){closeVideo()}
+});
+
+loadAlbums();
+</script>
+</body>
+</html>

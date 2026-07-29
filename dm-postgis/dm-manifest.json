@@ -1,0 +1,9 @@
+{
+  "name": "dm-postgis",
+  "display": "PostGIS 空间数据库",
+  "type": "service",
+  "port": 5432,
+  "command": "bash dmcore-start.sh",
+  "description": "PostgreSQL 16 + PostGIS 3.4 空间数据库 — DMgeo 空间查询/大数据屏依赖",
+  "env": {}
+}
