@@ -69,6 +69,16 @@ echo ""
 info "当前状态:"
 supervisorctl -c "$SUP_CONF" status 2>&1 || true
 
+# 二次检查：刚 start 看不出的崩溃循环（uptime 永远几秒 = 反复重启）
+sleep 5
+BAD=$(supervisorctl -c "$SUP_CONF" status 2>/dev/null | grep -E "FATAL|BACKOFF|EXITED|STOPPED" || true)
+if [ -n "$BAD" ]; then
+  warn "以下程序未能稳定运行（反复重启的看日志找原因）:"
+  echo "$BAD" | sed 's/^/    /'
+  echo "    日志: supervisorctl -c $SUP_CONF tail -f <程序名>"
+  echo "    或:   tail -30 $SUP_DIR/logs/<程序名>.log"
+fi
+
 print_dm_banner
 if [ -f "$ROOT/ports.json" ]; then
   echo "📋 端口:"

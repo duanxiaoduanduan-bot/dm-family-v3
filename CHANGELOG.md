@@ -221,3 +221,21 @@ dm → postgis → apps → geodata → start
 | 跳过 | `SKIP_GEODATA=1`（兼容旧 `SKIP_DATAV=1`） |
 
 **其它**：02-postgis.sh 不再负责数据导入（时机错误已移除）；导入时若 PG 未运行会临时拉起、导完恢复；结束打印 Basemap 省/市/区行数与底图文件校验。日常导入自有数据还可用 DMgeo「数据库管理」页（`POST /api/pg/tables/:name/upload`，GeoJSON/CSV）。
+
+---
+
+## 9. Ubuntu 实机首测修复（v3.1）
+
+首次真机安装暴露的问题，已全部修复。**原则性改动：所有阶段不再"假完成"——校验不过就报错退出，状态页不再说谎。**
+
+| 症状 | 根因 | 修复 |
+|------|------|------|
+| DMcore :8088 无响应 | Ubuntu 23.04+ PEP 668 禁止 pip 直装系统 Python，Flask 安装静默失败 | `01-dm.sh` 优先 `apt install python3-flask`，pip 兜底加 `--break-system-packages`；健康检查失败则阶段报错并打印 dmcore.log 尾部 |
+| DMcore 被跳过不启动 | `pgrep -f "python3 app.py"` 误匹配机器上其他同名项目 | `common.sh` 改为只判断端口监听 |
+| postgis 阶段失败 | apt 装完 PG 集群常已自动运行，`pg_ctlcluster start` 报 "already running" 触发 `set -e` 退出；非 root 无 sudo fallback | `02-postgis.sh` start 幂等化 + sudo 自适应 + `pg_isready` 验证；结尾校验 Basemap+postgis 扩展真实可用才标记完成 |
+| dm-dm-postgis 疑似崩溃循环 | supervisord 以普通用户跑时 `su postgres` 需密码交互直接失败 | `dm-postgis/dmcore-start.sh` 自动 `sudo -n`，不可用则打印明确提示退出 |
+| geodata 显示"已完成"但库里没数据 | import 失败被 warn 吞掉仍 mark_done | `05-geodata.sh` 校验省数据行数>0 且底图文件存在，否则 error；--skip 不再写标记 |
+| start 阶段 RUNNING 假象 | start all 后 2 秒看状态，崩溃循环看不出 | `04-start.sh` 5 秒后二次检查 FATAL/BACKOFF/EXITED 并列出日志路径 |
+
+**重跑指引**（已 clone 的机器）：`git pull` 后按缺口重跑阶段即可（全部幂等）：
+`./install.sh postgis` → `./install.sh geodata` → `./install.sh dm` → `./install.sh start`。

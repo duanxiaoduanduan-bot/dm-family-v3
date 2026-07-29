@@ -40,10 +40,9 @@ done
 
 step "地图数据初始化（来源: $GEO_SOURCE）"
 
-# ── 跳过 ──
+# ── 跳过（不写完成标记——没数据就是没完成，状态页必须诚实）──
 if [ "$GEO_SOURCE" = "skip" ]; then
   warn "已跳过地图数据初始化。大屏/地图将无底图（黑屏），可随时补: ./install.sh geodata"
-  mark_done "geodata"
   exit 0
 fi
 
@@ -132,15 +131,22 @@ if [ -f "$GEO_DIR/import-world.js" ]; then
     || warn "世界国界导入失败（可稍后手动: cd DMgeo && node import-world.js）"
 fi
 
-# ── 校验输出 ──
+# ── 校验输出：数据真的进去了才准标记完成，否则阶段失败（不假完成）──
+CNT=""
 if have psql; then
   CNT=$(PGPASSWORD="$PGPASS" psql -h localhost -U "$PGUSER" -d Basemap -tA \
     -c "SELECT (SELECT count(*) FROM provinces)||' / '||(SELECT count(*) FROM cities)||' / '||(SELECT count(*) FROM districts)" 2>/dev/null || echo "")
   [ -n "$CNT" ] && ok "Basemap 省/市/区 = $CNT"
 fi
+
+PROV_COUNT="${CNT%% *}"   # "34 / 400 / 2800" → "34"
+if [ -z "$CNT" ] || [ "${PROV_COUNT:-0}" = "0" ]; then
+  error "数据校验失败：Basemap 里没有省数据（连接不上或导入被上面 warn 吞掉）。postgis 阶段必须先成功——先跑 ./install.sh postgis 看清报错"
+fi
+
 [ -f "$GEO_DIR/map-boundaries/china-provinces.geojson" ] \
   && ok "前端底图已生成: map-boundaries/china-provinces.geojson" \
-  || warn "前端底图缺失（china-provinces.geojson），大屏仍可能黑屏，请检查上面日志"
+  || error "前端底图缺失（china-provinces.geojson），大屏仍会黑屏，请检查上面 import 日志"
 
 mark_done "geodata"
 ok "地图数据阶段完成"

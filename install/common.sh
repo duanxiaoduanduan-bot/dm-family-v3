@@ -153,18 +153,16 @@ start_dmcore_processes() {
   proxy_port=$(python3 -c "import json;print(json.load(open('$ROOT/DMcore/routes.json')).get('port',8080))" 2>/dev/null || echo 8080)
 
   mkdir -p /tmp
-  # 控制台
-  if ! pgrep -f "python3.*DMcore/app.py|python3 app.py" >/dev/null 2>&1; then
-    # 更精确：在 DMcore 目录用环境变量启动
-    if ! ss -tlnp 2>/dev/null | grep -qE "[:.]${port}([[:space:]]|$)"; then
-      info "启动 DMcore 控制台 :${port} ..."
-      (
-        cd "$ROOT/DMcore"
-        export DMCORE_PORT="$port" DMCORE_HOST="$host"
-        nohup python3 app.py > /tmp/dmcore.log 2>&1 &
-      )
-      sleep 1
-    fi
+  # 控制台。判定只看端口是否监听——pgrep "python3 app.py" 会误匹配
+  # 机器上其他同名项目进程，导致 DMcore 被跳过（已踩过）。
+  if ! ss -tlnp 2>/dev/null | grep -qE "[:.]${port}([[:space:]]|$)"; then
+    info "启动 DMcore 控制台 :${port} ..."
+    (
+      cd "$ROOT/DMcore"
+      export DMCORE_PORT="$port" DMCORE_HOST="$host"
+      nohup python3 app.py > /tmp/dmcore.log 2>&1 &
+    )
+    sleep 1
   fi
 
   # 统一入口代理

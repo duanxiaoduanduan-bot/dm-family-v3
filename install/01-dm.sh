@@ -40,16 +40,23 @@ else
 fi
 
 # —— Python 依赖 ——
+# Ubuntu 23.04+ 有 PEP 668 限制（externally-managed-environment），pip 直装会被拒。
+# 策略：优先 apt 装 python3-flask（官方源，干净）；不行再 pip --break-system-packages 兜底。
 info "安装 DMcore Python 依赖 ..."
-if [ -f "$ROOT/DMcore/requirements.txt" ]; then
-  pip3 install -q -r "$ROOT/DMcore/requirements.txt" 2>/dev/null \
-    || python3 -m pip install -q -r "$ROOT/DMcore/requirements.txt" 2>/dev/null \
+if ! python3 -c "import flask" 2>/dev/null; then
+  if need_root_apt; then
+    run_apt install -y -qq python3-flask 2>/dev/null && ok "Flask 已由 apt 安装" || true
+  fi
+fi
+if ! python3 -c "import flask" 2>/dev/null; then
+  info "apt 路线不可用，尝试 pip（含 PEP 668 兼容）..."
+  pip3 install -q --break-system-packages -r "$ROOT/DMcore/requirements.txt" 2>/dev/null \
+    || python3 -m pip install -q --break-system-packages Flask 2>/dev/null \
+    || pip3 install -q --user Flask 2>/dev/null \
     || pip3 install -q Flask 2>/dev/null \
     || warn "pip 安装失败，请确认 flask 可用: python3 -c 'import flask'"
-else
-  pip3 install -q Flask 2>/dev/null || true
 fi
-python3 -c "import flask" 2>/dev/null && ok "Flask 可用" || warn "Flask 未就绪"
+python3 -c "import flask" 2>/dev/null && ok "Flask 可用" || warn "Flask 未就绪（DMcore 控制台将起不来）"
 
 # —— 配置与目录 ——
 ensure_config_json
@@ -77,14 +84,18 @@ fi
 start_dmcore_processes
 sleep 1
 
-# 健康检查
+# 健康检查（DMcore 是全家族入口，起不来必须立刻失败，不能假完成）
 PORT="${DMCORE_PORT:-8088}"
+sleep 2
 if have curl; then
   if curl -sf "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1 \
     || curl -sf "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
     ok "DMcore 响应正常 :${PORT}"
   else
-    warn "DMcore 尚未响应，查看日志: tail -f /tmp/dmcore.log"
+    echo "—— /tmp/dmcore.log 尾部 ——"
+    tail -15 /tmp/dmcore.log 2>/dev/null || echo "(无日志)"
+    echo "———————————————"
+    error "DMcore 未响应 :${PORT}（常见原因: Flask 未装上——Ubuntu 23.04+ 的 pip 有 PEP 668 限制，重跑 ./install.sh dm 会走 apt 路线）"
   fi
 fi
 
