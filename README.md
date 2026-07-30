@@ -30,6 +30,7 @@ chmod +x install.sh uninstall.sh sync-github.sh install/*.sh
 chmod +x install.sh install/*.sh
 ./install.sh dm      # 只装核心（推荐先跑）
 ./install.sh         # 全装（含地图底图数据，装完大屏不黑屏）
+sudo ./install.sh postgis   # 建 postgis 扩展需 root（普通用户建会静默失败）
 ./install.sh status
 ```
 
@@ -50,6 +51,17 @@ chmod +x install.sh install/*.sh
 
 > 数据说明：媒体文件、`DMgeo/geodata` 地图数据、`DMshow/library` 素材**不进 Git 仓库**。
 > clone 后 `./install.sh` 的 **geodata 阶段**会自动下载/导入底图数据，其余数据随使用自然积累。
+
+## 一键脚本（日常运维）
+
+安装完成后（`./install.sh` 跑过一次），日常用这两个根目录脚本，不必再记 `./install.sh` 的子命令：
+
+| 脚本 | 作用 |
+|------|------|
+| `./run.sh` | 一键启动全部服务（等价于 `./install.sh start`）。安装一次后日常起服务用这个。 |
+| `./fetch-datav.sh` | **独立刷新阿里行政区划数据**：联网拉取阿里 DataV.GeoAtlas 最新省/市/区 → upsert 入库 → 重建底图。切换网络（避开 Cloudflare 对 `geo.datav.aliyun.com` 的拦截）后纯拉数据用这个；阿里不可达会明确报错退出（exit 2），不会再像以前那样哑错把库建空。 |
+
+> 阿里数据也可走 `./install.sh fetch-datav`（等价于上面的脚本）。两个一键脚本都用 `bash` 调用 `install.sh`，不依赖 `install.sh` 的可执行位（Windows 提交常丢 exec bit）。
 
 ## 主要端口（默认）
 
@@ -75,5 +87,13 @@ chmod +x install.sh install/*.sh
 - **DMChat** — WebSocket 聊天  
 - **DMshow** — **作品集**（`library/` 自动排版）  
 - **dm-postgis** — 原生 PostgreSQL/PostGIS  
+
+## DMChat 账号（注册制）
+
+DMChat 是**注册制**，没有预置固定密码：
+
+- 首次启动若没有邀请码，会自动生成 `admin` 前缀邀请码；**第一个注册的用户自动成为管理员**。
+- 账号数据 `DMChat/users.json` / `DMChat/invites.json` 是**运行时数据，已 gitignore**，不进仓库——clone 到新机需重新注册（首个注册者为 admin）。
+- 本机（192.168.1.9）已初始化：访问 `http://192.168.1.9:8083`，昵称 `duan` / 密码 `dmchat2026`，邀请码 `dmfamily`。
 
 更细的改动说明请看 **[CHANGELOG.md](CHANGELOG.md)**。
