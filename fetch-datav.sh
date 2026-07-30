@@ -19,10 +19,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-if [ ! -x ./install.sh ]; then
+if [ ! -f "$ROOT/install.sh" ]; then
   echo -e "\033[1;31m[error]\033[0m 找不到 install.sh，无法运行 fetch-datav。" >&2
   exit 1
 fi
+# 不依赖 install.sh 的可执行位（Windows 提交常丢 exec bit），优先 chmod，最终用 bash 调
+[ -x "$ROOT/install.sh" ] || chmod +x "$ROOT/install.sh" 2>/dev/null || true
 
 # 尚未安装完整核心时给提示，但仍尝试运行（06 脚本会做实际依赖校验）
 if [ ! -f "$ROOT/.dm-install/dm.done" ]; then
@@ -32,4 +34,4 @@ if [ ! -f "$ROOT/.dm-install/dm.done" ]; then
 fi
 
 echo -e "\033[1;36m[fetch-datav]\033[0m 开始联网刷新阿里行政区划 ..."
-exec ./install.sh fetch-datav "$@"
+exec bash "$ROOT/install.sh" fetch-datav "$@"

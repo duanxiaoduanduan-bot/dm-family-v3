@@ -28,9 +28,11 @@ if [ "${1:-}" = "status" ]; then
   if [ -x ./install.sh ]; then exec ./install.sh status; fi
 fi
 
-if [ -x ./install.sh ]; then
+if [ -f "$ROOT/install.sh" ]; then
+  # 不依赖 install.sh 的可执行位（Windows 提交常丢 exec bit），用 bash 直接调
+  [ -x "$ROOT/install.sh" ] || chmod +x "$ROOT/install.sh" 2>/dev/null || true
   # 直接调 start 阶段：只起服务（dm.done 已存在，不会误触发安装）
-  exec ./install.sh start "$@"
+  exec bash "$ROOT/install.sh" start "$@"
 fi
 
 echo -e "\033[1;31m[error]\033[0m 找不到 install.sh，无法启动。" >&2
