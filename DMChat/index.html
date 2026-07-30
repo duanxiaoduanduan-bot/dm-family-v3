@@ -263,6 +263,7 @@ input { font-family: inherit; }
 </div>
 
 <div class="video-container" id="videoContainer"><video id="remoteVideo" autoplay playsinline></video><video id="localVideo" class="local-video" autoplay playsinline muted></video><button class="hangup-btn" onclick="hangupCall()">📞 挂断</button></div>
+<audio id="roomAudio" autoplay playsinline style="display:none"></audio>
 
 <div class="incoming-dialog" id="incomingDialog"><div class="incoming-box"><div style="font-size:40px" id="incomingIcon">📹</div><div class="caller" id="incomingCaller"></div><div class="call-type" id="incomingType"></div><div class="actions"><button style="background:var(--red);color:#fff" onclick="rejectCall()">❌ 拒绝</button><button style="background:var(--green);color:#fff" onclick="acceptCall()">✅ 接听</button></div></div></div>
 
@@ -312,6 +313,7 @@ const avatarColors=['#58a6ff','#3fb950','#d2991d','#f85149','#a371f7','#f778ba',
 let videoOwner=null, isVideoOwner=false, videoSyncing=false;
 let castTimer=null, castCanvas=null, castCtx=null;
 let screenStream=null, screenPeerConns=[], screenReceiverPC=null;
+let voiceStream=null, voicePeerConns=[], voiceReceiverPC=null;
 let peerConn=null, localStream=null, pendingCall=null, callTarget=null, callType='';
 let mdCurrentPath='', mdCurrentName='', mdEditTimer=null, mdReceiving=false;
 let fileStore={}, fileIdCounter=0;
@@ -344,14 +346,14 @@ function handleMsg(msg){
       if(currentSpeaker) updateSpeakerBar();
       addSystemMsg('✅ '+myName+'，欢迎！');
       break;
-    case 'user-join': if(!users.find(u=>u.id===msg.user.id)) users.push(msg.user); renderAll(); addSystemMsg('👋 '+msg.user.name+' 加入了聊天'); break;
+    case 'user-join': if(!users.find(u=>u.id===msg.user.id)) users.push(msg.user); renderAll(); addSystemMsg('👋 '+msg.user.name+' 加入了聊天'); if(currentSpeaker===myId) sendVoiceOfferTo(msg.user.id); break;
     case 'user-leave': users=users.filter(u=>u.id!==msg.user.id); if(msg.queue) speakQueue=msg.queue; if(msg.currentSpeaker!==undefined) currentSpeaker=msg.currentSpeaker; renderAll(); updateButtonStates(); if(currentSpeaker) updateSpeakerBar(); else clearSpeakerBar(); addSystemMsg('👋 '+msg.user.name+' 离开了聊天'); break;
     case 'chat': addChatMsg(msg); autoEmbedIfMd(msg); break;
     case 'md-open': case 'md-edit': case 'md-close': handleMdMsg(msg); break;
     case 'queue-updated': speakQueue=msg.queue||[]; if(msg.currentSpeaker!==undefined) currentSpeaker=msg.currentSpeaker; renderQueue(); updateButtonStates(); if(currentSpeaker) updateSpeakerBar(); else clearSpeakerBar(); break;
-    case 'speaker-changed': currentSpeaker=msg.currentSpeaker||null; speakQueue=msg.queue||[]; speakerStartTime=msg.startTime||Date.now(); renderAll(); updateButtonStates(); if(currentSpeaker) updateSpeakerBar(); else clearSpeakerBar(); break;
-    case 'speak-start': speakerStartTime=Date.now(); updateButtonStates(); updateSpeakerBar(); document.getElementById('speakNotify').classList.add('show'); break;
-    case 'speak-end': currentSpeaker=null; speakerStartTime=0; updateButtonStates(); clearSpeakerBar(); break;
+    case 'speaker-changed': currentSpeaker=msg.currentSpeaker||null; speakQueue=msg.queue||[]; speakerStartTime=msg.startTime||Date.now(); renderAll(); updateButtonStates(); if(currentSpeaker) updateSpeakerBar(); else clearSpeakerBar(); if(msg.currentSpeaker===null) stopVoiceReceive(); else if(msg.currentSpeaker===myId) startVoiceBroadcast(); break;
+    case 'speak-start': speakerStartTime=Date.now(); updateButtonStates(); updateSpeakerBar(); document.getElementById('speakNotify').classList.add('show'); if(currentSpeaker===myId) startVoiceBroadcast(); break;
+    case 'speak-end': if(currentSpeaker===myId) stopVoiceBroadcast(); stopVoiceReceive(); currentSpeaker=null; speakerStartTime=0; updateButtonStates(); clearSpeakerBar(); break;
     case 'system-msg': addSystemMsg(msg.text); break;
     case 'video-sync': handleVideoSync(msg); break;
     case 'video-frame': handleVideoFrame(msg); break;
@@ -360,7 +362,20 @@ function handleMsg(msg){
     case 'call-ice': if(peerConn&&msg.candidate) peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)); break;
     case 'call-hangup': endCall(); addSystemMsg('📞 '+msg.fromName+' 挂断了通话'); break;
     case 'screen-offer': handleScreenOffer(msg); break;
-    case 'screen-ice': if(msg.candidate) screenReceiverPC?.addIceCandidate(new RTCIceCandidate(msg.candidate)); break;
+    case 'screen-answer': { const pc=screenPeerConns.find(p=>p._target===msg.from); if(pc&&pc.signalingState!=='stable') pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)).catch(()=>{}); break; }
+    case 'screen-ice': {
+      if(screenStream){ const pc=screenPeerConns.find(p=>p._target===msg.from); if(pc&&msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
+      else if(screenReceiverPC){ if(msg.candidate) screenReceiverPC.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
+      break;
+    }
+    case 'audio-offer': handleAudioOffer(msg); break;
+    case 'audio-answer': { const pc=voicePeerConns.find(p=>p._target===msg.from); if(pc) pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)).catch(()=>{}); break; }
+    case 'audio-ice': {
+      const pc=voicePeerConns.find(p=>p._target===msg.from);
+      if(pc&&msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+      else if(voiceReceiverPC&&msg.candidate) voiceReceiverPC.addIceCandidate(new RTCIceCandidate(msg.candidate));
+      break;
+    }
   }
 }
 
@@ -461,11 +476,41 @@ async function startScreenShareReal(){
   screenStream=stream;
   if(stream.getAudioTracks().length===0) toast('未捕获到系统声音：请在共享选择框里勾选“共享音频/系统声音”','info');
   ws.send(JSON.stringify({type:'video-load',url:'__screenshare__',isPlatform:false,isScreenShare:true}));
-  for(const u of users){ if(u.id===myId) continue; try{ const pc=new RTCPeerConnection(rtcConfig); screenStream.getTracks().forEach(t=>pc.addTrack(t,screenStream)); pc.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'screen-ice',target:u.id,candidate:e.candidate})); }; const offer=await pc.createOffer(); await pc.setLocalDescription(offer); ws.send(JSON.stringify({type:'screen-offer',target:u.id,sdp:offer})); screenPeerConns.push(pc); }catch(e){} }
+  for(const u of users){ if(u.id===myId) continue; try{ const pc=new RTCPeerConnection(rtcConfig); pc._target=u.id; screenStream.getTracks().forEach(t=>pc.addTrack(t,screenStream)); pc.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'screen-ice',target:u.id,candidate:e.candidate})); }; const offer=await pc.createOffer(); await pc.setLocalDescription(offer); ws.send(JSON.stringify({type:'screen-offer',target:u.id,sdp:offer})); screenPeerConns.push(pc); }catch(e){} }
   const v=document.getElementById('syncVideo'); v.style.display=''; document.getElementById('syncIframe').style.display='none'; document.getElementById('syncImage').style.display='none'; v.srcObject=screenStream; v.play(); document.getElementById('videoPlayerWrap').style.display=''; document.getElementById('videoCtrls').style.display='none'; document.getElementById('vOwner').textContent='投屏中: '+myName; videoOwner=myId; isVideoOwner=true; screenStream.getVideoTracks()[0].onended=()=>stopScreenShare();
 }
 function stopScreenShare(){ if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; } for(const pc of screenPeerConns) pc.close(); screenPeerConns=[]; const v=document.getElementById('syncVideo'); v.srcObject=null; v.src=''; document.getElementById('videoSection').classList.remove('show'); videoOwner=null; isVideoOwner=false; ws.send(JSON.stringify({type:'video-end'})); }
 async function handleScreenOffer(msg){ if(screenReceiverPC){ try{screenReceiverPC.close()}catch(_){} screenReceiverPC=null; } screenReceiverPC=new RTCPeerConnection(rtcConfig); screenReceiverPC.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'screen-ice',target:msg.from,candidate:e.candidate})); }; screenReceiverPC.ontrack=(e)=>{ const v=document.getElementById('syncVideo'); v.style.display=''; document.getElementById('syncIframe').style.display='none'; document.getElementById('syncImage').style.display='none'; v.srcObject=e.streams[0]; v.muted=false; v.play().catch(()=>toast('浏览器拦截了自动播放，点一下画面即可播放声音','info')); }; await screenReceiverPC.setRemoteDescription(new RTCSessionDescription(msg.sdp)); const answer=await screenReceiverPC.createAnswer(); await screenReceiverPC.setLocalDescription(answer); ws.send(JSON.stringify({type:'screen-answer',target:msg.from,sdp:answer})); }
+
+// ===== 轮麦语音广播（拿到麦的人把麦克风 P2P 广播给所有人）=====
+function stopVoiceReceive(){ if(voiceReceiverPC){ try{voiceReceiverPC.close()}catch(_){} voiceReceiverPC=null; } const a=document.getElementById('roomAudio'); if(a) a.srcObject=null; }
+async function sendVoiceOfferTo(uid){
+  if(!voiceStream) return;
+  try{
+    const pc=new RTCPeerConnection(rtcConfig); pc._target=uid;
+    voiceStream.getTracks().forEach(t=>pc.addTrack(t,voiceStream));
+    pc.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'audio-ice',target:uid,candidate:e.candidate})); };
+    const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
+    ws.send(JSON.stringify({type:'audio-offer',target:uid,sdp:offer}));
+    voicePeerConns.push(pc);
+  }catch(e){}
+}
+async function startVoiceBroadcast(){
+  if(voiceStream) return;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('语音需要安全上下文（HTTPS 或 localhost）','error'); return; }
+  try{ voiceStream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ toast('无法访问麦克风（请检查浏览器权限）','error'); return; }
+  for(const u of users){ if(u.id===myId) continue; await sendVoiceOfferTo(u.id); }
+}
+function stopVoiceBroadcast(){ if(voiceStream){ voiceStream.getTracks().forEach(t=>t.stop()); voiceStream=null; } for(const pc of voicePeerConns) pc.close(); voicePeerConns=[]; }
+async function handleAudioOffer(msg){
+  stopVoiceReceive();
+  voiceReceiverPC=new RTCPeerConnection(rtcConfig);
+  voiceReceiverPC.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'audio-ice',target:msg.from,candidate:e.candidate})); };
+  voiceReceiverPC.ontrack=(e)=>{ const a=document.getElementById('roomAudio'); a.srcObject=e.streams[0]; a.muted=false; a.play().catch(()=>toast('点一下页面任意位置即可播放发言声音','info')); };
+  await voiceReceiverPC.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+  const answer=await voiceReceiverPC.createAnswer(); await voiceReceiverPC.setLocalDescription(answer);
+  ws.send(JSON.stringify({type:'audio-answer',target:msg.from,sdp:answer}));
+}
 
 function toggleVPlay(){ if(!isVideoOwner) return; const v=document.getElementById('syncVideo'); if(v.paused) v.play(); else v.pause(); }
 function onVideoPlay(){ if(!isVideoOwner||videoSyncing) return; ws.send(JSON.stringify({type:'video-play',time:document.getElementById('syncVideo').currentTime})); }
@@ -536,6 +581,7 @@ document.getElementById('loginName').addEventListener('keydown',(e)=>{if(e.key==
 document.getElementById('loginPass').addEventListener('keydown',(e)=>{if(e.key==='Enter'){ if(authMode==='register') document.getElementById('loginInvite').focus(); else doAuth(); }});
 document.getElementById('loginInvite').addEventListener('keydown',(e)=>{if(e.key==='Enter') doAuth();});
 document.getElementById('msgInput').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';});
+document.body.addEventListener('click',function(){ const a=document.getElementById('roomAudio'); if(a && a.srcObject && a.paused) a.play().catch(()=>{}); });
 </script>
 </body>
 </html>

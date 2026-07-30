@@ -645,6 +645,18 @@ wss.on('connection', (ws) => {
           }
         }
         break;
+
+      // --- 轮麦语音信令 ---
+      case 'audio-offer':
+      case 'audio-answer':
+      case 'audio-ice':
+        {
+          const target = [...clients.keys()].find(cw => clients.get(cw).id === msg.target);
+          if (target && target.readyState === 1) {
+            target.send(JSON.stringify({ ...msg, from: info.id, fromName: info.name }));
+          }
+        }
+        break;
     }
   });
 
