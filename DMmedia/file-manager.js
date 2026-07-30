@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const PORT = process.env.FILE_PORT ? Number(process.env.FILE_PORT) : 8087;
 const PAGE_DIR = __dirname;
@@ -283,6 +284,61 @@ function scanMounts() {
   }
 
   return { mounts, scanDirs: ['/media', '/mnt', '/run/media', '/storage', 'Windows 盘符 A-Z'] };
+}
+
+// === 启动端口服务时自动挂载数据盘（确保服务能读能写）===
+// 用 lsblk 动态发现“未挂载的数据分区”，挂到 /run/media/duan/<盘名>：
+//   - 不写死设备，换电脑/换盘通用；
+//   - 已挂载的跳过，绝不重复挂载造成死循环；
+//   - 不动系统根分区/交换分区（有挂载点或 fstype=swap 会被过滤）；
+//   - 服务以 root 运行，挂载后 root 可读写；NTFS/exFAT 额外给 duan(uid1000) 读写权限；
+//   - 不主动卸载任何盘，桌面自己挂的盘保持原样。
+function getUnmountedDataPartitions() {
+  try {
+    const out = execSync('lsblk -J -o NAME,PATH,TYPE,FSTYPE,MOUNTPOINT,LABEL,UUID 2>/dev/null', { encoding: 'utf8' });
+    const json = JSON.parse(out);
+    const result = [];
+    const walk = (nodes) => {
+      for (const n of (nodes || [])) {
+        if (n.type === 'part' && n.fstype && n.fstype !== 'swap') {
+          if (!n.mountpoint) result.push({ dev: n.path, fstype: n.fstype, label: n.label || '', uuid: n.uuid || '' });
+        }
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(json.blockdevices);
+    return result;
+  } catch (e) { return []; }
+}
+
+function isAlreadyMounted(dev) {
+  try {
+    const mp = execSync(`findmnt -n -o TARGET ${dev} 2>/dev/null`).toString().trim();
+    return !!mp;
+  } catch (_) { return false; }
+}
+
+function mountDataDisks() {
+  if (process.platform === 'win32') return; // Windows 盘符由 scanMounts 直接列，不需要 mount
+  const parts = getUnmountedDataPartitions();
+  for (const p of parts) {
+    try {
+      if (isAlreadyMounted(p.dev)) continue; // 已挂载则跳过，避免重复挂载死循环
+      const safe = (p.label && /^[A-Za-z0-9_.\\-]+$/.test(p.label))
+        ? p.label
+        : (p.uuid || p.dev.replace(/[\\/\\\\]/g, '_'));
+      const target = '/run/media/duan/' + safe;
+      fs.mkdirSync(target, { recursive: true });
+      let opts = 'defaults';
+      if (p.fstype === 'ntfs' || p.fstype === 'ntfs-3g' || p.fstype === 'exfat') {
+        opts = 'defaults,uid=1000,gid=1000,umask=022'; // NTFS/exFAT 让 duan 也能读写
+      }
+      execSync(`mount -t ${p.fstype} -o ${opts} ${p.dev} ${target} 2>&1`);
+      console.log(`[mountDataDisks] mounted ${p.dev} (${p.fstype}) -> ${target}`);
+    } catch (e) {
+      console.warn(`[mountDataDisks] skip ${p.dev}: ${(e.message || '').split('\\n')[0]}`);
+    }
+  }
 }
 
 const MIME = {
@@ -845,6 +901,7 @@ const server = http.createServer((req, res) => {
   // === API: 动态检测挂载点（U盘/移动硬盘/盘符） ===
   if (reqPath === '/api/mounts' && method === 'GET') {
     shortcuts = loadShortcuts();
+    mountDataDisks();
     const result = scanMounts();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify(result));
@@ -876,6 +933,7 @@ server.keepAliveTimeout = 120000;
 
 server.listen(PORT, '0.0.0.0', () => {
   const { execSync } = require('child_process');
+  mountDataDisks();
   let ips = [];
 
   const ifaces = os.networkInterfaces();
