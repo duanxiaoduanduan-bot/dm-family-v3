@@ -77,8 +77,9 @@ body.fullscreen .pb.show{transform:translateY(0);opacity:1}
 body.fullscreen .header{display:none}
 body.fullscreen .main{padding:0;flex:1;align-items:stretch}
 body.fullscreen .side{display:none}
-body.fullscreen .cp{border-radius:0;border:none;min-width:0;max-width:80vw;max-height:80vh;aspect-ratio:16/9;margin:auto}
-body.fullscreen .cp video{object-fit:contain}
+/* 全屏：视频框铺满整屏，交给 object-fit:contain 保比例+最小黑边 */
+body.fullscreen .cp{position:fixed;inset:0;border-radius:0;border:none;min-width:0;margin:0;z-index:1}
+body.fullscreen .cp video{width:100%;height:100%;object-fit:contain;background:#000}
 body.fullscreen{padding-bottom:0;background:#000;overflow:hidden}
 
 @media(max-width:768px){
