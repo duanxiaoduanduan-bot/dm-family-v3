@@ -52,6 +52,10 @@ DMChat/files/
 DMChat/mdfiles/
 DMChat/videos/
 
+# ── 用户数据: 聊天账号(运行时注册生成, 不进库, 避免各机账号互串/密码哈希入库) ──
+DMChat/users.json
+DMChat/invites.json
+
 # ── 用户数据: 作品集素材(保留目录约定文档) ──
 DMshow/library/*
 !DMshow/library/README.md
