@@ -30,14 +30,34 @@ if ! have supervisord; then
   exit 0
 fi
 
-# 确保 supervisord 实例
-if [ ! -S "$SUP_DIR/supervisor.sock" ]; then
-  info "拉起 supervisord ..."
-  supervisorctl -c "$SUP_CONF" shutdown 2>/dev/null || true
-  rm -f "$SUP_DIR/supervisor.sock" "$SUP_DIR/supervisord.pid"
-  supervisord -c "$SUP_CONF"
-  sleep 2
-fi
+# 确保 supervisord 实例。dm-postgis 需要 root 才能 su postgres / pg_ctlcluster 起 PG，
+# 因此 supervisord 必须以 root 运行；若它已在跑但属主非 root（例如之前非 sudo 启动的残留），
+# 这里重启为 root，否则 dm-postgis 程序无法提权（user=root 在非 root 上下文无效）。
+ensure_supervisord_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    warn "当前非 root，dm-postgis 可能需要 root。建议: sudo ./install.sh start"
+    [ -S "$SUP_DIR/supervisor.sock" ] || { supervisord -c "$SUP_CONF" && sleep 2; }
+    return 0
+  fi
+  if [ ! -S "$SUP_DIR/supervisor.sock" ]; then
+    info "拉起 supervisord (root) ..."
+    supervisord -c "$SUP_CONF"
+    sleep 2
+    return 0
+  fi
+  # sock 存在：检查属主是否非 root，是则重启为 root
+  local sock_uid
+  sock_uid=$(stat -c '%u' "$SUP_DIR/supervisor.sock" 2>/dev/null || echo 0)
+  if [ "$sock_uid" -ne 0 ]; then
+    info "supervisord 当前非 root，重启为 root（dm-postgis 需要）..."
+    supervisorctl -c "$SUP_CONF" shutdown 2>/dev/null || true
+    sleep 1
+    rm -f "$SUP_DIR/supervisor.sock" "$SUP_DIR/supervisord.pid"
+    supervisord -c "$SUP_CONF"
+    sleep 2
+  fi
+}
+ensure_supervisord_root
 
 # reread programs
 supervisorctl -c "$SUP_CONF" reread 2>/dev/null || true

@@ -95,19 +95,23 @@ write_supervisor_programs() {
   local node_bin
   node_bin="$(command -v node 2>/dev/null || echo /usr/bin/node)"
 
-  # 服务名|目录|额外环境变量
+  # 服务名|目录|运行用户(supervisor user,空=随 supervisord)|额外环境变量
+  # 注意：dm-postgis 必须 root——它要 su postgres / pg_ctlcluster 起 PG，
+  # 非 root 且无 NOPASSWD sudo 时会失败。其余服务随 supervisord 身份即可。
   local specs=(
-    "DMmedia|DMmedia|DM_PORT=\"8081\""
-    "DMgeo|DMgeo|PGHOST=\"localhost\""
-    "DMpageo|DMpageo|"
-    "DMChat|DMChat|"
-    "DMshow|DMshow|"
-    "dm-postgis|dm-postgis|DM_PORT=\"5432\""
+    "DMmedia|DMmedia||DM_PORT=\"8081\""
+    "DMgeo|DMgeo||PGHOST=\"localhost\""
+    "DMpageo|DMpageo||"
+    "DMChat|DMChat||"
+    "DMshow|DMshow||"
+    "dm-postgis|dm-postgis|root|DM_PORT=\"5432\""
   )
-  local entry name dir extra
+  local entry name dir puser extra
   for entry in "${specs[@]}"; do
-    IFS='|' read -r name dir extra <<< "$entry"
+    IFS='|' read -r name dir puser extra <<< "$entry"
     [ -d "$ROOT/$dir" ] || continue
+    local user_line=""
+    [ -n "$puser" ] && user_line=$'\n'"user=$puser"
     cat > "$SUP_DIR/programs/dm-${name}.conf" <<PROGCONF
 [program:dm-${name}]
 command=bash dmcore-start.sh
@@ -119,7 +123,7 @@ startretries=3
 stopsignal=INT
 stopwaitsecs=10
 stopasgroup=true
-killasgroup=true
+killasgroup=true${user_line}
 stdout_logfile=${SUP_DIR}/logs/dm-${name}.log
 stderr_logfile=${SUP_DIR}/logs/dm-${name}.log
 redirect_stderr=true
