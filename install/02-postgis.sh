@@ -52,8 +52,13 @@ for db in trip Basemap; do
   su postgres -c "psql -c \"CREATE DATABASE \\\"$db\\\" OWNER $PGUSER\"" 2>/dev/null \
     || sudo -u postgres psql -c "CREATE DATABASE \"$db\" OWNER $PGUSER" 2>/dev/null \
     || true
-  info "  postgis 扩展 → $db"
-  PGPASSWORD="$PGPASS" psql -h localhost -U "$PGUSER" -d "$db" -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
+  # postgis 扩展只能由超级用户创建。$PGUSER 仅 CREATEDB 非超级用户，CREATE EXTENSION 必失败，
+  # 之前被 2>/dev/null 静默吞掉 → 建库"成功"但空间表/geometry 全挂(geodata 拉阿里数据写不进)。
+  # 改用 postgres 超级用户创建；失败则明确报错，不再静默。
+  info "  postgis 扩展 → $db (需超级用户)"
+  su postgres -c "psql -d \"$db\" -c \"CREATE EXTENSION IF NOT EXISTS postgis;\"" 2>/dev/null \
+    || sudo -u postgres psql -d "$db" -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null \
+    || error "postgis 扩展创建失败: $db（需 root/sudo: sudo ./install.sh postgis）"
 done
 
 info "创建 features 表 ..."

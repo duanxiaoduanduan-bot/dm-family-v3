@@ -15,4 +15,8 @@ echo "  访问地址: http://${HOST}:${PORT}  (本机请用 http://127.0.0.1:${P
 echo "  停止: 按 Ctrl+C"
 echo
 
-DMCORE_PORT="$PORT" DMCORE_HOST="$HOST" python3 app.py
+# 优先使用仓库 venv（由 ./install.sh 自动创建），否则回退系统 python3。
+# 必须 venv/bin/pip 也存在才算真正可用——避免 venv 创建失败时残留的"假 venv"软链误导。
+PY="../venv/bin/python"
+if [ -x "$PY" ] && [ -x "../venv/bin/pip" ]; then :; else PY="python3"; fi
+DMCORE_PORT="$PORT" DMCORE_HOST="$HOST" "$PY" app.py

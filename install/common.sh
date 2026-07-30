@@ -157,10 +157,15 @@ start_dmcore_processes() {
   # 机器上其他同名项目进程，导致 DMcore 被跳过（已踩过）。
   if ! ss -tlnp 2>/dev/null | grep -qE "[:.]${port}([[:space:]]|$)"; then
     info "启动 DMcore 控制台 :${port} ..."
+    # 优先使用 install 阶段自动创建的 venv python；不存在则回退系统 python3。
+    # 必须 venv/bin/pip 也存在才算真正可用——python3 -m venv 失败可能残留指向系统的
+    # bin/python 软链但无 pip，这种"假 venv"会隔离系统 site-packages 导致 flask 找不到。
+    local py="$ROOT/venv/bin/python"
+    [ -x "$py" ] && [ -x "$ROOT/venv/bin/pip" ] || py="python3"
     (
       cd "$ROOT/DMcore"
       export DMCORE_PORT="$port" DMCORE_HOST="$host"
-      nohup python3 app.py > /tmp/dmcore.log 2>&1 &
+      nohup "$py" app.py > /tmp/dmcore.log 2>&1 &
     )
     sleep 1
   fi

@@ -8,6 +8,10 @@ node_modules/
 __pycache__/
 *.pyc
 
+# ── Python 虚拟环境(跨机不可复用, 由 ./install.sh 自动重建, 不进库) ──
+venv/
+*/venv/
+
 # ── AI 助手工作区(不随仓库分发) ──
 .workbuddy/
 

@@ -39,24 +39,42 @@ else
   have node || warn "未找到 node，proxy 将不可用"
 fi
 
-# —— Python 依赖 ——
-# Ubuntu 23.04+ 有 PEP 668 限制（externally-managed-environment），pip 直装会被拒。
-# 策略：优先 apt 装 python3-flask（官方源，干净）；不行再 pip --break-system-packages 兜底。
-info "安装 DMcore Python 依赖 ..."
-if ! python3 -c "import flask" 2>/dev/null; then
+# —— Python 依赖（venv 优先，clone 到新机一键建好，不用手动）——
+# 之前是手动建 venv 再装、没写进仓库；换机 clone 后 venv 缺失、DMcore 起不来。
+# 现由本阶段自动创建 venv 并装 DMcore 依赖；DMcore 启动改走 venv python(见 common.sh/run.sh)。
+VENV="$ROOT/venv"
+info "准备 Python 虚拟环境(venv) → $VENV"
+# 仅当 venv/bin/python 与 venv/bin/pip 都存在才算真正可用；
+# python3 -m venv 失败时可能残留 bin/python 软链(指向系统 python)但无 pip，
+# 这种"假 venv"会隔离系统 site-packages 导致 flask 找不到，必须清理重来。
+if [ ! -x "$VENV/bin/python" ] || [ ! -x "$VENV/bin/pip" ]; then
+  rm -rf "$VENV" 2>/dev/null
+  python3 -m venv "$VENV" 2>/dev/null \
+    || python3 -m venv "$VENV" 2>/dev/null \
+    || warn "venv 创建失败（是否缺 python3-venv?），将退回到系统 python"
+fi
+if [ -x "$VENV/bin/python" ] && [ -x "$VENV/bin/pip" ]; then
+  info "在 venv 中安装 DMcore 依赖 ..."
+  "$VENV/bin/python" -m pip install -q -U pip 2>/dev/null || true
+  "$VENV/bin/pip" install -q -r "$ROOT/DMcore/requirements.txt" 2>&1 | tail -3 \
+    || warn "venv 内 pip 安装出现警告，稍后检查"
+  PYCHECK="$VENV/bin/python"
+  ok "venv 就绪: $VENV/bin/python"
+else
+  # 兜底：系统 python + PEP668 兼容（会污染系统环境，不推荐；仅当 venv 不可用，如缺 python3-venv 且无网）
+  info "venv 不可用，退回系统 python 安装 Flask ..."
   if need_root_apt; then
     run_apt install -y -qq python3-flask 2>/dev/null && ok "Flask 已由 apt 安装" || true
   fi
+  if ! python3 -c "import flask" 2>/dev/null; then
+    pip3 install -q --break-system-packages -r "$ROOT/DMcore/requirements.txt" 2>/dev/null \
+      || python3 -m pip install -q --break-system-packages Flask 2>/dev/null \
+      || warn "pip 安装失败，请确认 flask 可用: python3 -c 'import flask'"
+  fi
+  PYCHECK="python3"
 fi
-if ! python3 -c "import flask" 2>/dev/null; then
-  info "apt 路线不可用，尝试 pip（含 PEP 668 兼容）..."
-  pip3 install -q --break-system-packages -r "$ROOT/DMcore/requirements.txt" 2>/dev/null \
-    || python3 -m pip install -q --break-system-packages Flask 2>/dev/null \
-    || pip3 install -q --user Flask 2>/dev/null \
-    || pip3 install -q Flask 2>/dev/null \
-    || warn "pip 安装失败，请确认 flask 可用: python3 -c 'import flask'"
-fi
-python3 -c "import flask" 2>/dev/null && ok "Flask 可用" || warn "Flask 未就绪（DMcore 控制台将起不来）"
+"$PYCHECK" -c "import flask,sys;print('Flask',flask.__version__)" 2>/dev/null \
+  && ok "Flask 可用 (venv)" || { "$PYCHECK" -c "import flask" 2>/dev/null && ok "Flask 可用" || warn "Flask 未就绪（DMcore 控制台将起不来）"; }
 
 # —— 配置与目录 ——
 ensure_config_json
@@ -95,7 +113,7 @@ if have curl; then
     echo "—— /tmp/dmcore.log 尾部 ——"
     tail -15 /tmp/dmcore.log 2>/dev/null || echo "(无日志)"
     echo "———————————————"
-    error "DMcore 未响应 :${PORT}（常见原因: Flask 未装上——Ubuntu 23.04+ 的 pip 有 PEP 668 限制，重跑 ./install.sh dm 会走 apt 路线）"
+    error "DMcore 未响应 :${PORT}（常见原因: Flask 未装上——重跑 ./install.sh dm 会重建 venv 并重装）"
   fi
 fi
 
