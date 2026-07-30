@@ -434,7 +434,7 @@ function openVideo(){ document.getElementById('videoSection').classList.add('sho
 function closeVideo(){ stopCasting(); if(isVideoOwner&&videoOwner===myId) ws.send(JSON.stringify({type:'video-end'})); document.getElementById('videoSection').classList.remove('show'); const v=document.getElementById('syncVideo'); v.pause(); v.src=''; v.srcObject=null; document.getElementById('syncIframe').src=''; document.getElementById('syncImage').src=''; document.getElementById('syncVideo').style.display='none'; document.getElementById('syncIframe').style.display='none'; document.getElementById('syncImage').style.display='none'; isVideoOwner=false; }
 function isPlatformUrl(url){ return /bilibili\.com|youtube\.com|youtu\.be|vimeo\.com|qq\.com\/video|iqiyi\.com|youku\.com/i.test(url); }
 function getEmbedUrl(url){ const bv=url.match(/BV[\w]+/); if(bv) return 'https://player.bilibili.com/player.html?bvid='+bv[0]+'&autoplay=1'; const yt=url.match(/(?:v=|youtu\.be\/)([\w-]+)/); if(yt) return 'https://www.youtube.com/embed/'+yt[1]+'?autoplay=1'; return url; }
-function loadVideoUrl(){ const url=document.getElementById('videoUrlInput').value.trim(); if(!url) return; ws.send(JSON.stringify({type:'video-load',url,isPlatform:isPlatformUrl(url)})); setTimeout(()=>{ if(isVideoOwner && users.length>1) startScreenShareReal(); }, 1500); }
+function loadVideoUrl(){ const url=document.getElementById('videoUrlInput').value.trim(); if(!url) return; ws.send(JSON.stringify({type:'video-load',url,isPlatform:isPlatformUrl(url)})); }
 async function uploadVideo(input){ const file=input.files[0]; if(!file) return; const form=new FormData(); form.append('video',file); const r=await fetch('/api/upload-video',{method:'POST',body:form}); const data=await r.json(); if(data.ok){ document.getElementById('videoUrlInput').value=data.url; loadVideoUrl(); } else toast('上传失败','error'); input.value=''; }
 
 function handleVideoSync(msg){
@@ -445,7 +445,7 @@ function handleVideoSync(msg){
     case 'play': if(!msg.isPlatform){ v.currentTime=msg.time||0; v.play().catch(()=>{}); } document.getElementById('btnVPlay').textContent='⏸ 暂停'; break;
     case 'pause': if(!msg.isPlatform){ v.currentTime=msg.time||0; v.pause(); } document.getElementById('btnVPlay').textContent='▶ 播放'; break;
     case 'seek': if(!msg.isPlatform) v.currentTime=msg.time||0; break;
-    case 'end': stopCasting(); v.pause(); v.src=''; v.srcObject=null; ifr.src=''; img.src=''; document.getElementById('videoSection').classList.remove('show'); videoOwner=null; isVideoOwner=false; break;
+    case 'end': stopCasting(); if(screenReceiverPC){ try{screenReceiverPC.close()}catch(_){} screenReceiverPC=null; } v.pause(); v.src=''; v.srcObject=null; ifr.src=''; img.src=''; document.getElementById('videoSection').classList.remove('show'); videoOwner=null; isVideoOwner=false; break;
   }
   setTimeout(()=>{videoSyncing=false;},500);
 }
@@ -455,13 +455,17 @@ function handleVideoFrame(msg){ if(isVideoOwner) return; const img=document.getE
 
 async function startScreenShareReal(){
   if(screenStream) return;
-  try{ screenStream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:true}); } catch(e){ toast('已取消投屏','error'); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){ toast('投屏/通话需要安全上下文（HTTPS 或 localhost）。当前用 http://IP 访问时浏览器会禁用摄像头与屏幕共享权限。','error'); return; }
+  let stream;
+  try{ stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:true}); } catch(e){ toast('已取消或无权限投屏','error'); return; }
+  screenStream=stream;
+  if(stream.getAudioTracks().length===0) toast('未捕获到系统声音：请在共享选择框里勾选“共享音频/系统声音”','info');
   ws.send(JSON.stringify({type:'video-load',url:'__screenshare__',isPlatform:false,isScreenShare:true}));
   for(const u of users){ if(u.id===myId) continue; try{ const pc=new RTCPeerConnection(rtcConfig); screenStream.getTracks().forEach(t=>pc.addTrack(t,screenStream)); pc.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'screen-ice',target:u.id,candidate:e.candidate})); }; const offer=await pc.createOffer(); await pc.setLocalDescription(offer); ws.send(JSON.stringify({type:'screen-offer',target:u.id,sdp:offer})); screenPeerConns.push(pc); }catch(e){} }
   const v=document.getElementById('syncVideo'); v.style.display=''; document.getElementById('syncIframe').style.display='none'; document.getElementById('syncImage').style.display='none'; v.srcObject=screenStream; v.play(); document.getElementById('videoPlayerWrap').style.display=''; document.getElementById('videoCtrls').style.display='none'; document.getElementById('vOwner').textContent='投屏中: '+myName; videoOwner=myId; isVideoOwner=true; screenStream.getVideoTracks()[0].onended=()=>stopScreenShare();
 }
 function stopScreenShare(){ if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; } for(const pc of screenPeerConns) pc.close(); screenPeerConns=[]; const v=document.getElementById('syncVideo'); v.srcObject=null; v.src=''; document.getElementById('videoSection').classList.remove('show'); videoOwner=null; isVideoOwner=false; ws.send(JSON.stringify({type:'video-end'})); }
-async function handleScreenOffer(msg){ screenReceiverPC=new RTCPeerConnection(rtcConfig); screenReceiverPC.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'screen-ice',target:msg.from,candidate:e.candidate})); }; screenReceiverPC.ontrack=(e)=>{ const v=document.getElementById('syncVideo'); v.style.display=''; document.getElementById('syncIframe').style.display='none'; document.getElementById('syncImage').style.display='none'; v.srcObject=e.streams[0]; v.play(); }; await screenReceiverPC.setRemoteDescription(new RTCSessionDescription(msg.sdp)); const answer=await screenReceiverPC.createAnswer(); await screenReceiverPC.setLocalDescription(answer); ws.send(JSON.stringify({type:'screen-answer',target:msg.from,sdp:answer})); }
+async function handleScreenOffer(msg){ if(screenReceiverPC){ try{screenReceiverPC.close()}catch(_){} screenReceiverPC=null; } screenReceiverPC=new RTCPeerConnection(rtcConfig); screenReceiverPC.onicecandidate=(e)=>{ if(e.candidate) ws.send(JSON.stringify({type:'screen-ice',target:msg.from,candidate:e.candidate})); }; screenReceiverPC.ontrack=(e)=>{ const v=document.getElementById('syncVideo'); v.style.display=''; document.getElementById('syncIframe').style.display='none'; document.getElementById('syncImage').style.display='none'; v.srcObject=e.streams[0]; v.muted=false; v.play().catch(()=>toast('浏览器拦截了自动播放，点一下画面即可播放声音','info')); }; await screenReceiverPC.setRemoteDescription(new RTCSessionDescription(msg.sdp)); const answer=await screenReceiverPC.createAnswer(); await screenReceiverPC.setLocalDescription(answer); ws.send(JSON.stringify({type:'screen-answer',target:msg.from,sdp:answer})); }
 
 function toggleVPlay(){ if(!isVideoOwner) return; const v=document.getElementById('syncVideo'); if(v.paused) v.play(); else v.pause(); }
 function onVideoPlay(){ if(!isVideoOwner||videoSyncing) return; ws.send(JSON.stringify({type:'video-play',time:document.getElementById('syncVideo').currentTime})); }
