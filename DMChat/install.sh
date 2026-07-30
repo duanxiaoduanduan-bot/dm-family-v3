@@ -68,6 +68,29 @@ else
 fi
 echo "[OK] 依赖安装完成"
 
+# === 2.5 签发自签 HTTPS 证书（屏幕共享/通话需要安全上下文）===
+echo "[*] 准备 HTTPS 证书..."
+mkdir -p "$SCRIPT_DIR/certs"
+CERT_KEY="$SCRIPT_DIR/certs/dmchat.key"
+CERT_CRT="$SCRIPT_DIR/certs/dmchat.crt"
+if [ -f "$CERT_KEY" ] && [ -f "$CERT_CRT" ]; then
+  echo "[OK] 证书已存在，跳过"
+else
+  CERT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+  [ -z "$CERT_IP" ] && CERT_IP=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v 127.0.0.1 | head -1 | awk '{print $2}' | cut -d/ -f1)
+  [ -z "$CERT_IP" ] && CERT_IP="127.0.0.1"
+  if command -v openssl &>/dev/null; then
+    openssl req -x509 -newkey rsa:2048 -nodes \
+      -keyout "$CERT_KEY" -out "$CERT_CRT" -days 3650 \
+      -subj "/CN=dmchat" \
+      -addext "subjectAltName=IP:$CERT_IP,IP:127.0.0.1,DNS:localhost" 2>/dev/null \
+      && echo "[OK] 自签证书已生成 (certs/dmchat.crt)，浏览器首次访问需手动信任" \
+      || echo "[warn] 证书生成失败，屏幕共享/通话将不可用（仍可用 HTTP 聊天）"
+  else
+    echo "[warn] 未找到 openssl，跳过证书生成。屏幕共享/通话需 HTTPS，可手动放置 certs/dmchat.key+crt"
+  fi
+fi
+
 # === 3. 启动服务 ===
 echo "[*] 停止旧服务..."
 pkill -f "node server.js.*8083" 2>/dev/null || true
@@ -131,6 +154,9 @@ echo "========================================"
 echo "  ✅ 安装完成！"
 echo ""
 echo "  💬 DMChat:  http://$IP:8083"
+if [ -f "$SCRIPT_DIR/certs/dmchat.crt" ]; then
+echo "  💬 DMChat:  https://$IP:8443  (屏幕共享/通话请走这个)"
+fi
 echo ""
 if $IS_TERMUX; then
   echo "  下次打开 Termux 自动启动"

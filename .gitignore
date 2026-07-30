@@ -56,6 +56,9 @@ DMChat/videos/
 DMChat/users.json
 DMChat/invites.json
 
+# ── 自签 HTTPS 证书(本机生成, 不进库) ──
+DMChat/certs/
+
 # ── 用户数据: 作品集素材(保留目录约定文档) ──
 DMshow/library/*
 !DMshow/library/README.md

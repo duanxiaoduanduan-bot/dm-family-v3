@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
@@ -156,7 +157,7 @@ function getSpeakerName() {
 }
 
 // ===== HTTP 服务器 =====
-const server = http.createServer((req, res) => {
+const requestHandler = (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let reqPath = decodeURIComponent(url.pathname);
 
@@ -453,7 +454,9 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': mimeType });
     res.end(data);
   });
-});
+};
+
+const server = http.createServer(requestHandler);
 
 // ===== WebSocket =====
 const wss = new WebSocketServer({ server });
@@ -669,9 +672,9 @@ wss.on('connection', (ws) => {
 });
 
 // ===== 启动 =====
-server.listen(PORT, '0.0.0.0', () => {
-  const os = require('os');
-  const { execSync } = require('child_process');
+const os = require('os');
+const { execSync } = require('child_process');
+function detectIps() {
   let ips = [];
   const ifaces = os.networkInterfaces();
   for (const name of Object.keys(ifaces)) {
@@ -690,12 +693,43 @@ server.listen(PORT, '0.0.0.0', () => {
     } catch (_) {}
   }
   if (ips.length === 0) ips.push('0.0.0.0');
+  return ips;
+}
+
+// ===== HTTPS（可选，启用屏幕共享/通话需要安全上下文）=====
+const HTTPS_PORT = process.env.HTTPS_PORT ? Number(process.env.HTTPS_PORT) : 8443;
+const CERT_KEY = path.join(ROOT, 'certs', 'dmchat.key');
+const CERT_CRT = path.join(ROOT, 'certs', 'dmchat.crt');
+if (fs.existsSync(CERT_KEY) && fs.existsSync(CERT_CRT)) {
+  try {
+    const tlsOpts = { key: fs.readFileSync(CERT_KEY), cert: fs.readFileSync(CERT_CRT) };
+    const httpsServer = https.createServer(tlsOpts, requestHandler);
+    new WebSocketServer({ server: httpsServer }); // 复用同一逻辑，wss:// 自动可用
+    httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
+      const ips = detectIps();
+      console.log('  🔒 DMChat HTTPS 已启用: https://' + (ips[0] || '0.0.0.0') + ':' + HTTPS_PORT + '  （屏幕共享/通话请走这个地址）');
+    });
+  } catch (e) {
+    console.log('  [warn] HTTPS 证书加载失败，仅启用 HTTP: ' + e.message);
+  }
+} else {
+  console.log('  [info] 未找到 certs/dmchat.key+crt，仅 HTTP。运行 DMChat/install.sh 可自动签发自签证书以启用屏幕共享/通话。');
+}
+
+server.listen(PORT, '0.0.0.0', () => {
+  const ips = detectIps();
   console.log('');
   console.log('  ╔══════════════════════════════════════╗');
   console.log('  ║     💬 DMChat 多人聊天+一起看       ║');
   for (const ip of ips) {
     const u = 'http://' + ip + ':' + PORT;
     console.log('  ║     ' + u + ' '.repeat(34 - u.length) + '║');
+  }
+  if (fs.existsSync(CERT_KEY) && fs.existsSync(CERT_CRT)) {
+    for (const ip of ips) {
+      const u = 'https://' + ip + ':' + HTTPS_PORT;
+      console.log('  ║     ' + u + ' '.repeat(34 - u.length) + '║');
+    }
   }
   console.log('  ║                                      ║');
   console.log('  ║  开机自启: systemctl enable dm-chat  ║');
