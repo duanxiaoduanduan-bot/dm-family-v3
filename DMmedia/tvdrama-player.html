@@ -1,5 +1,5 @@
 <!DOCTYPE html><html lang="zh-CN"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>📺 电视剧</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -78,9 +78,11 @@ body.fullscreen .header{display:none}
 body.fullscreen .main{padding:0;flex:1;align-items:stretch}
 body.fullscreen .side{display:none}
 /* 全屏：视频框铺满整屏，交给 object-fit:contain 保比例+最小黑边 */
-body.fullscreen .cp{position:fixed;inset:0;border-radius:0;border:none;min-width:0;margin:0;z-index:1}
+body.fullscreen{position:fixed;inset:0;width:100%;height:100dvh;padding-bottom:0;background:#000;overflow:hidden;overscroll-behavior:none}
+body.fullscreen .cp{position:fixed;inset:0;width:100vw;height:100dvh;border-radius:0;border:none;min-width:0;margin:0;z-index:1}
 body.fullscreen .cp video{width:100%;height:100%;object-fit:contain;background:#000}
-body.fullscreen{padding-bottom:0;background:#000;overflow:hidden}
+/* 选集条置于播放栏上方，避免被遮挡 */
+body.fullscreen .ep-list{bottom:76px}
 
 @media(max-width:768px){
   .main{flex-direction:column;align-items:stretch;gap:12px;padding:10px}
@@ -89,6 +91,10 @@ body.fullscreen{padding-bottom:0;background:#000;overflow:hidden}
   .pb{height:56px;padding:0 8px;gap:8px}
   .pb .ti{width:90px}.pb .ti .nm{font-size:11px}
   .vol-wrap input[type=range]{width:40px}
+  /* 全屏：铺满 + 播放栏/选集条避开底部安全区(刘海/Home条) */
+  body.fullscreen .cp{height:100dvh}
+  body.fullscreen .ep-list{bottom:calc(56px + 12px + env(safe-area-inset-bottom,0))}
+  body.fullscreen .pb{bottom:env(safe-area-inset-bottom,0);padding-bottom:env(safe-area-inset-bottom,0)}
 }
 </style>
 </head>
@@ -152,11 +158,12 @@ function showPb(){
 document.addEventListener('mousemove',function(){if(isFS())showPb()});
 document.addEventListener('touchmove',function(){if(isFS())showPb()});
 document.addEventListener('click',function(){if(isFS())showPb()});
-function isFS(){return !!document.fullscreenElement}
-document.addEventListener('fullscreenchange',function(){
-  if(isFS()){body.classList.add('fullscreen');pb.classList.remove('show');showPb()}
+function isFS(){return !!document.fullscreenElement || document.body.classList.contains('fullscreen')}
+function setFsClass(on){
+  if(on){body.classList.add('fullscreen');pb.classList.remove('show');showPb()}
   else{body.classList.remove('fullscreen');pb.classList.add('show');clearTimeout(fsHideTimer)}
-});
+}
+document.addEventListener('fullscreenchange',function(){ setFsClass(!!document.fullscreenElement); });
 
 cp.addEventListener('click',function(e){if(e.target===cp||e.target===vo||e.target.closest('.voverlay'))togP()});
 
@@ -238,7 +245,16 @@ function nextEp(){
 function togP(){if(!curEp()){if(curSeries()&&curSeries().episodes.length)playEp(0);return}if(V.paused){V.play().catch(function(){});pB.textContent='⏸';vo.style.display='none'}else{V.pause();pB.textContent='▶';vo.style.display='flex'}}
 function nx(){if(!sg.length)return;var n;if(shf)do{n=Math.floor(Math.random()*sg.length)}while(n===ci&&sg.length>1);else{n=ci+1;if(n>=sg.length)n=0}selectSeries(n)}
 function pr(){if(V.currentTime>3){V.currentTime=0;return}if(ci>0)selectSeries(ci-1);else selectSeries(sg.length-1)}
-function toggleFS(){if(isFS()){document.exitFullscreen()}else{document.documentElement.requestFullscreen().catch(function(){})}}
+function toggleFS(){
+  if(isFS()){
+    if(document.fullscreenElement){document.exitFullscreen().catch(function(){})}
+    else{document.body.classList.remove('fullscreen')}
+    return;
+  }
+  var req=document.documentElement.requestFullscreen?document.documentElement.requestFullscreen():null;
+  if(req&&req.then){req.catch(function(){setFsClass(true)})}
+  else{setFsClass(true)}
+}
 
 // 音量
 function setVol(){var v=volBar.value/100;V.volume=v;updateVolIcon()}
