@@ -47,6 +47,7 @@ dm-family 分阶段安装
   apps [名..]  只装业务 Node 依赖（可指定 DMmedia DMgeo ...）
   geodata      地图底图数据：行政区划(阿里DataV) + 世界国界(Natural Earth)
                选项: --local <目录> 本地导入 | --skip 跳过
+  fetch-datav   联网刷新阿里行政区划（切换网络后可纯拉最新数据 + upsert 入库）
   start [名..] 启动服务（可指定 DMmedia / postgis ...）
   uninstall    一键卸载（停服务+清标记；选项见 ./uninstall.sh help）
   list         列出安装阶段
@@ -66,6 +67,8 @@ dm-family 分阶段安装
   ./install.sh dm              # 先只起控制台
   ./install.sh postgis && ./install.sh apps && ./install.sh geodata && ./install.sh start
   ./install.sh geodata --local /mnt/usb/geodata   # 用 U 盘/旧机数据导入
+  ./fetch-datav.sh              # 独立一键刷新阿里数据（切换网络后纯拉最新）
+
 EOF
 }
 
@@ -89,6 +92,8 @@ list_stages() {
               → 行政区划(阿里 DataV) + 世界国界(Natural Earth) → Basemap
               → 生成前端底图 map-boundaries/（缺了会黑屏）
               → 支持 --local <目录> 本地导入 / --skip 跳过
+  4b. fetch-datav  $INSTALL_DIR/06-fetch-datav.sh
+              → 联网拉取阿里 DataV 最新行政区划 + upsert 入库（刷新用）
 
   5. start    $INSTALL_DIR/04-start.sh
               → 确保 DM 在跑
@@ -139,6 +144,7 @@ run_stage() {
     postgis) script="$INSTALL_DIR/02-postgis.sh" ;;
     apps)    script="$INSTALL_DIR/03-apps.sh" ;;
     geodata) script="$INSTALL_DIR/05-geodata.sh" ;;
+    fetch-datav) script="$INSTALL_DIR/06-fetch-datav.sh" ;;
     start)   script="$INSTALL_DIR/04-start.sh" ;;
     *) error "未知阶段: $name（用 ./install.sh list 查看）" ;;
   esac
@@ -220,6 +226,13 @@ case "$CMD" in
       run_stage apps DMgeo
     fi
     run_stage geodata "$@"
+    ;;
+  fetch-datav|fetch|datav)
+    if ! is_done apps; then
+      warn "业务依赖未装（需要 DMgeo 的 pg 包），先执行 apps ..."
+      run_stage apps DMgeo
+    fi
+    run_stage fetch-datav "$@"
     ;;
   start|up)
     run_stage start "$@"

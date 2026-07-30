@@ -119,8 +119,12 @@ if have psql; then
     || warn "连不上 Basemap 库（$PGUSER@localhost）。若 postgis 阶段未跑，导入会失败"
 fi
 
-# ── 中国行政区划（阿里 DataV，脚本内离线优先）──
+# ── 中国行政区划（阿里 DataV）──
+# 先联网拉取最新（fetch-datav.js，被代理拦截时失败不致命，回落已有缓存），
+# 再由 import-datav.js 离线 upsert 入库（与 fetch-datav.js 解耦）。
 info "[1/2] 行政区划 → Basemap（阿里 DataV.GeoAtlas）..."
+(cd "$GEO_DIR" && node fetch-datav.js 2>&1 | tail -5) \
+  || warn "联网拉取失败（将使用已有缓存）。可稍后切换网络再跑: ./install.sh fetch-datav"
 (cd "$GEO_DIR" && node import-datav.js 2>&1 | tail -8) \
   || warn "行政区划导入失败（可稍后手动: cd DMgeo && node import-datav.js）"
 
