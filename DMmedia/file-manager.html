@@ -1003,12 +1003,14 @@ function uploadOneFile(file, itemEl) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     // 原始 body，服务端边收边写，不整包进内存
+    // 文件夹上传时用 webkitRelativePath 保留层级（"选中的文件夹/子目录/文件"），普通文件退回 file.name
+    const relPath = file.webkitRelativePath || file.name;
     const url = API + '/upload?dir=' + encodeURIComponent(currentPath)
-      + '&name=' + encodeURIComponent(file.name);
+      + '&name=' + encodeURIComponent(relPath);
     xhr.open('POST', url);
     xhr.timeout = 0; // 不限制大文件
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(relPath));
 
     let lastLoaded = 0;
     let lastTs = performance.now();

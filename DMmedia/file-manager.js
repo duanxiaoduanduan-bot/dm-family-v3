@@ -396,6 +396,32 @@ const server = http.createServer((req, res) => {
   }
 
   // === API: 下载文件（支持 Range，大文件可断点/边下边用）===
+  // === 目录打包下载：优先 zip(UTF-8 文件名)，无 zip 则回退 tar.gz ===
+  function streamDirAsArchive(dir, res, baseName) {
+    const { spawnSync, spawn } = require('child_process');
+    const safeAscii = String(baseName).replace(/[\\"\r\n]/g, '_').replace(/[^\x20-\x7E]/g, '_').replace(/_+/g, '_') || 'folder';
+    const utfName = encodeURIComponent(baseName);
+    const zipProbe = spawnSync('zip', ['--version'], { stdio: 'ignore' });
+    let proc, contentType, fileExt;
+    if (zipProbe.status === 0) {
+      proc = spawn('zip', ['-r', '-', '-UN=UTF8', '.'], { cwd: dir });
+      contentType = 'application/zip';
+      fileExt = 'zip';
+    } else {
+      proc = spawn('tar', ['-czf', '-', '-C', dir, '.'], {});
+      contentType = 'application/gzip';
+      fileExt = 'tar.gz';
+    }
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${safeAscii}.${fileExt}"; filename*=UTF-8''${utfName}.${fileExt}`,
+      'Cache-Control': 'private, max-age=0',
+    });
+    proc.stdout.pipe(res);
+    proc.on('error', () => { if (!res.writableEnded) res.end(); });
+    proc.on('close', () => { if (!res.writableEnded) res.end(); });
+  }
+
   if (reqPath === '/api/download' && method === 'GET') {
     const filePath = url.searchParams.get('path');
     if (!filePath) {
@@ -410,8 +436,7 @@ const server = http.createServer((req, res) => {
     try {
       const stat = fs.statSync(resolved);
       if (stat.isDirectory()) {
-        res.writeHead(400);
-        return res.end('Cannot download directory');
+        return streamDirAsArchive(resolved, res, path.basename(resolved) || 'folder');
       }
       const filename = path.basename(resolved);
       const ext = path.extname(filename).toLowerCase();
@@ -490,18 +515,25 @@ const server = http.createServer((req, res) => {
         filename = url.searchParams.get('name') || '';
       }
       if (!filename) filename = 'upload.bin';
-      // 只取 basename，防路径穿越；保留 Unicode 文件名
-      filename = path.basename(filename).replace(/[\\\/:*?"<>|\x00-\x1f]/g, '_');
-      if (!filename || filename === '.' || filename === '..') filename = 'upload.bin';
+      // 支持相对路径子目录（文件夹上传保留层级），同时防路径穿越
+      // 拆段 → 过滤非法段(. / ..) → 末段为文件名，其余为子目录
+      const rawParts = String(filename).split(/[\\/]+/).filter(Boolean);
+      const safeParts = rawParts.filter(p => p !== '.' && p !== '..');
+      let finalBase = safeParts.length ? safeParts[safeParts.length - 1] : 'upload.bin';
+      // 文件名非法字符清理（保留中文/空格，去掉 \ / : * ? " < > | 及控制字符）
+      finalBase = finalBase.replace(/[\\\/:*?"<>|\x00-\x1f]/g, '_');
+      if (!finalBase || finalBase === '.' || finalBase === '..') finalBase = 'upload.bin';
+      const subDir = safeParts.slice(0, -1).join(path.sep);
+      fs.mkdirSync(path.join(resolved, subDir), { recursive: true });
 
-      let finalName = filename;
+      let finalName = finalBase;
       let counter = 1;
-      const base = path.basename(filename, path.extname(filename));
-      const ext = path.extname(filename);
-      while (fs.existsSync(path.join(resolved, finalName))) {
+      const base = path.basename(finalBase, path.extname(finalBase));
+      const ext = path.extname(finalBase);
+      while (fs.existsSync(path.join(resolved, subDir, finalName))) {
         finalName = base + '_' + (counter++) + ext;
       }
-      const filePath = path.join(resolved, finalName);
+      const filePath = path.join(resolved, subDir, finalName);
       const ws = fs.createWriteStream(filePath, { highWaterMark: 1024 * 1024 });
       let written = 0;
       let finished = false;
