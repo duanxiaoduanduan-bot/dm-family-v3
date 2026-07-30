@@ -16,16 +16,14 @@ ensure_supervisord_conf
 # 目录可能搬迁过，启动前重建 program 配置（幂等）
 write_supervisor_programs
 
-# 始终先保证 DM 核心在跑
-if [ ! -f "$MARKER_DIR/dm.done" ]; then
-  warn "尚未执行 DM 核心安装，先跑 01-dm ..."
-  bash "$INSTALL_DIR/01-dm.sh"
-else
-  start_dmcore_processes
-fi
-
 if ! have supervisord; then
-  warn "无 supervisord：仅保证 DMcore 已启动，业务服务请手动 node/python 启动"
+  # 无 supervisord：仅保证 DMcore 已启动(或先装核心)，业务服务请手动 node/python 启动
+  if [ ! -f "$MARKER_DIR/dm.done" ]; then
+    warn "尚未执行 DM 核心安装，先跑 01-dm ..."
+    bash "$INSTALL_DIR/01-dm.sh"
+  else
+    start_dmcore_processes
+  fi
   mark_done "start"
   exit 0
 fi
@@ -59,7 +57,14 @@ ensure_supervisord_root() {
 }
 ensure_supervisord_root
 
-# reread programs
+# DMcore 现已由 supervisord 托管(dm-DMcore, autostart=true)。
+# 若它因故未随 supervisord 启动(端口空)，这里用 supervisorctl 兜底拉起。
+if ! ss -tlnp 2>/dev/null | grep -qE "[:.]8088([[:space:]]|$)"; then
+  info "兜底拉起 DMcore 控制台 ..."
+  supervisorctl -c "$SUP_CONF" start dm-DMcore 2>&1 || true
+fi
+
+# reread programs（含新增/变更的 program 配置）
 supervisorctl -c "$SUP_CONF" reread 2>/dev/null || true
 supervisorctl -c "$SUP_CONF" update 2>/dev/null || true
 
@@ -70,6 +75,7 @@ else
   for t in "$@"; do
     # 允许短名
     case "$t" in
+      core|DMcore)        t=dm-DMcore ;;
       postgis|dm-postgis) t=dm-dm-postgis ;;
       media|DMmedia)      t=dm-DMmedia ;;
       geo|DMgeo)          t=dm-DMgeo ;;

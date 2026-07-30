@@ -105,10 +105,11 @@ write_supervisor_programs() {
     "DMChat|DMChat||"
     "DMshow|DMshow||"
     "dm-postgis|dm-postgis|root|DM_PORT=\"5432\""
+    "DMcore|DMcore||DMCORE_PORT=\"8088\"|true"
   )
-  local entry name dir puser extra
+  local entry name dir puser extra auto
   for entry in "${specs[@]}"; do
-    IFS='|' read -r name dir puser extra <<< "$entry"
+    IFS='|' read -r name dir puser extra auto <<< "$entry"
     [ -d "$ROOT/$dir" ] || continue
     local user_line=""
     [ -n "$puser" ] && user_line=$'\n'"user=$puser"
@@ -116,7 +117,7 @@ write_supervisor_programs() {
 [program:dm-${name}]
 command=bash dmcore-start.sh
 directory=${ROOT}/${dir}
-autostart=false
+autostart=${auto:-false}
 autorestart=true
 startsecs=2
 startretries=3
@@ -155,6 +156,14 @@ start_dmcore_processes() {
   local port="${DMCORE_PORT:-8088}"
   local proxy_port
   proxy_port=$(python3 -c "import json;print(json.load(open('$ROOT/DMcore/routes.json')).get('port',8080))" 2>/dev/null || echo 8080)
+
+  # DMcore 现已由 supervisord 托管（见 write_supervisor_programs 的 dm-DMcore，autostart=true）。
+  # 若 supervisord 已在运行，控制台会由其 autostart 拉起，这里不能再 nohup，
+  # 否则与 supervisor 争抢 8088 端口导致反复重启(BACKOFF)。
+  if [ -S "$SUP_DIR/supervisor.sock" ]; then
+    info "DMcore 由 supervisord 托管(dm-DMcore)，交由它 autostart 拉起"
+    return 0
+  fi
 
   mkdir -p /tmp
   # 控制台。判定只看端口是否监听——pgrep "python3 app.py" 会误匹配
