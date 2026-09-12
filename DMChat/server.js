@@ -178,7 +178,8 @@ const requestHandler = (req, res) => {
 
         const userId = 'u' + Date.now().toString(36);
         const isAdmin = Object.keys(users).length === 0;
-        users[userId] = { name, password: sha256(password), isAdmin, createdAt: Date.now() };
+        const recoveryCode = 'rc' + crypto.randomBytes(4).toString('hex');
+        users[userId] = { name, password: sha256(password), isAdmin, recoveryCode: sha256(recoveryCode), createdAt: Date.now() };
         invites[invite].used = true;
         invites[invite].usedBy = userId;
         saveUsers(users); saveInvites(invites);
@@ -186,7 +187,7 @@ const requestHandler = (req, res) => {
         const token = crypto.randomBytes(16).toString('hex');
         tokens.set(token, userId);
         res.writeHead(200, ctJson);
-        res.end(JSON.stringify({ ok: true, token, userId, name, isAdmin }));
+        res.end(JSON.stringify({ ok: true, token, userId, name, isAdmin, recoveryCode }));
       } catch (e) {
         res.writeHead(400, ctJson); res.end(JSON.stringify({ error: e.message }));
       }
@@ -205,13 +206,107 @@ const requestHandler = (req, res) => {
         if (!user || user[1].password !== sha256(password)) {
           res.writeHead(401, ctJson); return res.end(JSON.stringify({ error: '昵称或密码错误' }));
         }
+        // 老账号没有恢复码的，登录时自动补发（仅本次响应返回，请用户保存）
+        let recoveryCode;
+        if (!user[1].recoveryCode) {
+          recoveryCode = 'rc' + crypto.randomBytes(4).toString('hex');
+          user[1].recoveryCode = sha256(recoveryCode);
+          saveUsers(users);
+        }
         const token = crypto.randomBytes(16).toString('hex');
         tokens.set(token, user[0]);
         res.writeHead(200, ctJson);
-        res.end(JSON.stringify({ ok: true, token, userId: user[0], name: user[1].name, isAdmin: user[1].isAdmin }));
+        res.end(JSON.stringify({ ok: true, token, userId: user[0], name: user[1].name, isAdmin: user[1].isAdmin, ...(recoveryCode ? { recoveryCode } : {}) }));
       } catch (e) {
         res.writeHead(400, ctJson); res.end(JSON.stringify({ error: e.message }));
       }
+    });
+    return;
+  }
+
+  // === 修改密码（已登录：验证旧密码）===
+  if (reqPath === '/api/change-password' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { token, oldPassword, newPassword } = JSON.parse(body);
+        const userId = tokens.get(token);
+        const user = users[userId];
+        if (!user) { res.writeHead(401, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
+        if (user.password !== sha256(oldPassword)) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '旧密码错误' })); }
+        if (!newPassword || newPassword.length < 4) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '新密码至少4位' })); }
+        user.password = sha256(newPassword);
+        saveUsers(users);
+        res.writeHead(200, ctJson);
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) { res.writeHead(400, ctJson); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
+  // === 忘记密码：昵称 + 恢复码 自助重置（无需登录）===
+  if (reqPath === '/api/reset-password' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { name, recoveryCode, newPassword } = JSON.parse(body);
+        if (!name || !recoveryCode || !newPassword) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '缺少参数' })); }
+        if (newPassword.length < 4) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '新密码至少4位' })); }
+        const user = Object.values(users).find(u => u.name === name);
+        if (!user) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '用户不存在' })); }
+        if (!user.recoveryCode || user.recoveryCode !== sha256(recoveryCode)) {
+          res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '恢复码错误' }));
+        }
+        user.password = sha256(newPassword);
+        saveUsers(users);
+        res.writeHead(200, ctJson);
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) { res.writeHead(400, ctJson); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
+  // === 重新生成恢复码（已登录；旧码立即失效，新码仅此一次返回）===
+  if (reqPath === '/api/recovery-code' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { token } = JSON.parse(body);
+        const userId = tokens.get(token);
+        const user = users[userId];
+        if (!user) { res.writeHead(401, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
+        const recoveryCode = 'rc' + crypto.randomBytes(4).toString('hex');
+        user.recoveryCode = sha256(recoveryCode);
+        saveUsers(users);
+        res.writeHead(200, ctJson);
+        res.end(JSON.stringify({ ok: true, recoveryCode }));
+      } catch (e) { res.writeHead(400, ctJson); res.end(JSON.stringify({ error: e.message })); }
+    });
+    return;
+  }
+
+  // === 管理员：重置任意用户密码（其旧登录态作废）===
+  if (reqPath === '/api/admin-reset-password' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { token, userId: targetId, newPassword } = JSON.parse(body);
+        const adminId = tokens.get(token);
+        const admin = users[adminId];
+        if (!admin || !admin.isAdmin) { res.writeHead(403, ctJson); return res.end(JSON.stringify({ error: '无权限' })); }
+        const target = users[targetId];
+        if (!target) { res.writeHead(404, ctJson); return res.end(JSON.stringify({ error: '用户不存在' })); }
+        if (!newPassword || newPassword.length < 4) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '新密码至少4位' })); }
+        target.password = sha256(newPassword);
+        for (const [t, uid] of tokens) { if (uid === targetId) tokens.delete(t); }
+        saveUsers(users);
+        res.writeHead(200, ctJson);
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) { res.writeHead(400, ctJson); res.end(JSON.stringify({ error: e.message })); }
     });
     return;
   }

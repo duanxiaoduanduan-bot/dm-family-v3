@@ -76,9 +76,16 @@ CERT_CRT="$SCRIPT_DIR/certs/dmchat.crt"
 if [ -f "$CERT_KEY" ] && [ -f "$CERT_CRT" ]; then
   echo "[OK] 证书已存在，跳过"
 else
-  CERT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-  [ -z "$CERT_IP" ] && CERT_IP=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v 127.0.0.1 | head -1 | awk '{print $2}' | cut -d/ -f1)
+  # Termux 的 hostname 不支持 -I，先试 ip addr 再回落 hostname
+  CERT_IP=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v 127.0.0.1 | head -1 | awk '{print $2}' | cut -d/ -f1)
+  [ -z "$CERT_IP" ] && CERT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
   [ -z "$CERT_IP" ] && CERT_IP="127.0.0.1"
+  # Termux 默认不带 openssl CLI（只带 libssl），缺则从 termux 官方源补装，
+  # 否则证书静默生成不了 → 8443 HTTPS 起不来 → 通话/投屏因非安全上下文被浏览器禁用。
+  if ! command -v openssl &>/dev/null && $IS_TERMUX; then
+    echo "[*] Termux 缺少 openssl，安装 openssl-tool（签发 HTTPS 证书用）..."
+    pkg install -y openssl-tool
+  fi
   if command -v openssl &>/dev/null; then
     openssl req -x509 -newkey rsa:2048 -nodes \
       -keyout "$CERT_KEY" -out "$CERT_CRT" -days 3650 \

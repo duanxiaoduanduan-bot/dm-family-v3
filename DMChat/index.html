@@ -177,8 +177,10 @@ input { font-family: inherit; }
     <input type="text" id="loginName" placeholder="昵称" maxlength="20" autofocus>
     <input type="password" id="loginPass" placeholder="密码（至少4位）">
     <input type="text" id="loginInvite" placeholder="邀请码（注册时需要）" style="display:none">
+    <input type="text" id="loginRecovery" placeholder="恢复码（如 rc3f8a2b1c）" style="display:none" autocomplete="off">
     <button class="btn-go" id="btnGo" onclick="doAuth()">登 录</button>
     <div class="switch" id="switchMode" onclick="toggleAuthMode()">没有账号？点击注册</div>
+    <div class="switch" id="switchReset" onclick="toggleResetMode()">忘记密码？用恢复码重置</div>
   </div>
 </div>
 
@@ -190,7 +192,7 @@ input { font-family: inherit; }
   </div>
   <div class="user-list" id="userList"></div>
   <div class="user-list" id="queueList" style="display:none"></div>
-  <div class="sidebar-foot"><div class="my-avatar" id="myAvatar">我</div><span id="myName">未登录</span></div>
+  <div class="sidebar-foot"><div class="my-avatar" id="myAvatar">我</div><span id="myName">未登录</span><button onclick="showSettings()" title="我的设置" style="margin-left:auto;background:none;border:none;color:var(--text2);font-size:16px;cursor:pointer;padding:4px">⚙️</button></div>
 </aside>
 <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
@@ -271,21 +273,36 @@ input { font-family: inherit; }
 
 <div class="incoming-dialog" id="adminPanel"><div class="incoming-box" style="text-align:left;max-width:500px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b>⚙️ 管理员面板</b><button onclick="closeAdminPanel()" style="background:var(--red);color:#fff;border:none;padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer">关闭</button></div><div style="margin-bottom:12px"><button onclick="genInvite()" style="padding:8px 16px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer">🎫 生成邀请码</button></div><div style="font-size:12px;color:var(--text2);margin-bottom:8px">已有邀请码：</div><div id="inviteList" style="max-height:200px;overflow:auto;font-size:12px"></div></div></div>
 
+<div class="incoming-dialog" id="settingsPanel"><div class="incoming-box" style="text-align:left;max-width:420px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b>🔧 我的设置</b><button onclick="closeSettings()" style="background:var(--red);color:#fff;border:none;padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer">关闭</button></div>
+<div style="font-size:13px;font-weight:600;margin-bottom:6px">🔑 修改密码</div>
+<input type="password" id="oldPass" placeholder="旧密码" style="width:100%;padding:10px 12px;margin:4px 0;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;box-sizing:border-box">
+<input type="password" id="newPass" placeholder="新密码（至少4位）" style="width:100%;padding:10px 12px;margin:4px 0;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;box-sizing:border-box">
+<button onclick="changePassword()" style="padding:8px 16px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;margin-top:4px">修改</button>
+<span id="pwMsg" style="font-size:12px;margin-left:8px"></span>
+<div style="font-size:13px;font-weight:600;margin:18px 0 6px">🆘 恢复码</div>
+<div style="font-size:12px;color:var(--text2);margin-bottom:8px">忘记密码时，用「昵称 + 恢复码」即可在登录页自助重置。恢复码只在生成时显示一次；重新生成后旧码立即失效，请妥善保存。</div>
+<button onclick="regenRecoveryCode()" style="padding:8px 16px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;cursor:pointer">🔄 重新生成恢复码</button>
+</div></div>
+
 <input type="file" id="chatFileInput" accept="image/*,.pdf,.md,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv" style="display:none" onchange="uploadChatFile(this)">
 
 <script>
 // ===== 认证 =====
 let authMode='login', myToken='', isAdmin=false;
 
-function toggleAuthMode(){
-  authMode=authMode==='login'?'register':'login';
-  document.getElementById('loginTitle').textContent=authMode==='login'?'💬 DMChat 登录':'💬 DMChat 注册';
-  document.getElementById('loginSub').textContent=authMode==='login'?'请输入昵称和密码':'请填写信息并输入邀请码';
-  document.getElementById('loginInvite').style.display=authMode==='login'?'none':'';
-  document.getElementById('btnGo').textContent=authMode==='login'?'登 录':'注 册';
+function setAuthUI(){
+  const t={login:['💬 DMChat 登录','请输入昵称和密码','登 录'],register:['💬 DMChat 注册','请填写信息并输入邀请码','注 册'],reset:['💬 找回密码','输入昵称和恢复码即可重置密码','重置密码']}[authMode];
+  document.getElementById('loginTitle').textContent=t[0];
+  document.getElementById('loginSub').textContent=t[1];
+  document.getElementById('btnGo').textContent=t[2];
+  document.getElementById('loginInvite').style.display=authMode==='register'?'':'none';
+  document.getElementById('loginRecovery').style.display=authMode==='reset'?'':'none';
   document.getElementById('switchMode').textContent=authMode==='login'?'没有账号？点击注册':'已有账号？点击登录';
+  document.getElementById('switchReset').style.display=authMode==='login'?'':'none';
   document.getElementById('loginErr').textContent='';
 }
+function toggleAuthMode(){ authMode=authMode==='login'?'register':'login'; setAuthUI(); }
+function toggleResetMode(){ authMode=authMode==='reset'?'login':'reset'; setAuthUI(); }
 
 async function doAuth(){
   const name=document.getElementById('loginName').value.trim();
@@ -294,6 +311,22 @@ async function doAuth(){
   const err=document.getElementById('loginErr');
   if(!name||!pass){ err.textContent='请填写昵称和密码'; return; }
 
+  if(authMode==='reset'){
+    const recoveryCode=document.getElementById('loginRecovery').value.trim();
+    if(!name||!recoveryCode||!pass){ err.textContent='请填写昵称、恢复码和新密码'; return; }
+    if(pass.length<4){ err.textContent='新密码至少4位'; return; }
+    try{
+      const r=await fetch('/api/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,recoveryCode,newPassword:pass})});
+      const d=await r.json();
+      if(d.error){ err.textContent=d.error; return; }
+      err.textContent='';
+      alert('✅ 密码已重置，请用新密码登录');
+      authMode='login'; setAuthUI();
+      document.getElementById('loginPass').value='';
+      document.getElementById('loginRecovery').value='';
+    }catch(e){ err.textContent='网络错误'; }
+    return;
+  }
   const url=authMode==='login'?'/api/login':'/api/register';
   const body=authMode==='login'?{name,password:pass}:{name,password:pass,invite};
 
@@ -302,6 +335,7 @@ async function doAuth(){
     const d=await r.json();
     if(d.error){ err.textContent=d.error; return; }
     myToken=d.token; isAdmin=d.isAdmin;
+    if(d.recoveryCode){ alert('🆘 请立即保存你的恢复码（仅此一次显示）：\n\n'+d.recoveryCode+'\n\n忘记密码时，在登录页点「忘记密码」，输入昵称+恢复码即可自助重置，不用找管理员。'); }
     connectWS(d.name);
   }catch(e){ err.textContent='网络错误'; }
 }
@@ -395,7 +429,7 @@ async function showAdminPanel(){
   if(usersData.error) html+=usersData.error;
   else html+=usersData.map(u=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
     <span>${esc(u.name)} ${u.isAdmin?'<span style="color:var(--orange);font-size:10px">[管理员]</span>':''}</span>
-    ${!u.isAdmin?`<button onclick="deleteUser('${u.id}')" style="background:var(--red);color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer">删除</button>`:''}
+    <span>${u.id===myId?'':`<button onclick="adminResetPassword('${u.id}')" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">重置密码</button>`}${!u.isAdmin?`<button onclick="deleteUser('${u.id}')" style="background:var(--red);color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer">删除</button>`:''}</span>
   </div>`).join('');
 
   document.getElementById('inviteList').innerHTML=html;
@@ -422,6 +456,34 @@ async function deleteUser(userId){
   const d=await r.json();
   if(d.ok){ toast('已删除','info'); showAdminPanel(); }
   else toast(d.error,'error');
+}
+
+async function adminResetPassword(userId){
+  const newPassword=prompt('输入该用户的新密码（至少4位）：');
+  if(newPassword===null) return;
+  if(newPassword.length<4){ toast('新密码至少4位','error'); return; }
+  const r=await fetch('/api/admin-reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:myToken,userId,newPassword})});
+  const d=await r.json();
+  if(d.ok) toast('已重置（该用户需重新登录）','success'); else toast(d.error||'失败','error');
+}
+
+// ===== 我的设置：修改密码 / 恢复码 =====
+function showSettings(){ document.getElementById('settingsPanel').classList.add('show'); document.getElementById('pwMsg').textContent=''; }
+function closeSettings(){ document.getElementById('settingsPanel').classList.remove('show'); }
+async function changePassword(){
+  const oldPassword=document.getElementById('oldPass').value, newPassword=document.getElementById('newPass').value, msg=document.getElementById('pwMsg');
+  if(!oldPassword||!newPassword){ msg.textContent='请填写旧密码和新密码'; msg.style.color='var(--red)'; return; }
+  const r=await fetch('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:myToken,oldPassword,newPassword})});
+  const d=await r.json();
+  if(d.ok){ msg.textContent='✅ 已修改'; msg.style.color='var(--green)'; document.getElementById('oldPass').value=''; document.getElementById('newPass').value=''; toast('密码已修改','success'); }
+  else { msg.textContent=d.error||'修改失败'; msg.style.color='var(--red)'; }
+}
+async function regenRecoveryCode(){
+  if(!confirm('重新生成后旧恢复码立即失效，确定？')) return;
+  const r=await fetch('/api/recovery-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:myToken})});
+  const d=await r.json();
+  if(d.ok){ alert('🆘 你的新恢复码（仅此一次显示，请立即保存）：\n\n'+d.recoveryCode); closeSettings(); }
+  else toast(d.error||'生成失败','error');
 }
 
 // ===== 其余全部函数保持不变 =====
