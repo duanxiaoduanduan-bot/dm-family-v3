@@ -1,7 +1,8 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
+const os = require('os');
+const { Pool, Client } = require('pg');
 
 const PORT = process.env.PORT || 8084;
 const ROOT = __dirname;
@@ -26,6 +27,174 @@ const adminPool = new Pool({
   password: 'dmpageo123',
   max: 3
 });
+
+// ===== 要素库连接池缓存 =====
+// 之前多处 `new Pool({database:dbName})` 每请求新建且不 end，既泄漏连接，
+// 又出现 `db=Basemap` 误落到 pgPool(trip) 的写库事故。统一走这里。
+const _featPools = { trip: pgPool, Basemap: basemapPool };
+function getFeaturePool(dbName) {
+  const db = dbName || 'trip';
+  if (!_featPools[db]) _featPools[db] = new Pool({ database: db, user: 'dmuser', password: 'dmpageo123', max: 3 });
+  return _featPools[db];
+}
+// 库名/标识符加引号（库名可能含空格，如 "Financial Assets"）
+const qIdent = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+
+// ===== 超级用户探测 =====
+// dmuser 只有 LOGIN+CREATEDB，没有 SUPERUSER，`CREATE EXTENSION postgis` 必然失败。
+// 新建库时该失败被 catch 吞掉，导致库建出来了却既无 postgis 也无 features 表
+// （表现为“新库的数据不进统计”）。这里探测一个真正的超级用户来做扩展/授权。
+let _superUser; // undefined=未探测 / string=用户名 / false=没有可用超级用户
+async function resolveSuperUser() {
+  if (_superUser !== undefined) return _superUser;
+  const cands = [];
+  if (process.env.PGSUPERUSER) cands.push(process.env.PGSUPERUSER);
+  try { cands.push(os.userInfo().username); } catch (_) {}
+  cands.push('postgres');
+  for (const u of cands.filter(Boolean)) {
+    const c = new Client({ database: 'postgres', user: u });
+    try {
+      await c.connect();
+      const r = await c.query('SELECT rolsuper FROM pg_roles WHERE rolname = current_user');
+      if (r.rows[0] && r.rows[0].rolsuper) { _superUser = u; console.log('  🔑 PG 超级用户:', u); return u; }
+    } catch (_) { /* 换下一个候选 */ }
+    finally { try { await c.end(); } catch (_) {} }
+  }
+  _superUser = false;
+  console.warn('  ⚠️  未找到 PG 超级用户，新建库可能缺少 postgis 扩展');
+  return false;
+}
+
+// ===== 库结构自愈：确保目标库有 postgis 扩展 + 标准 features 表 + dmuser 权限 =====
+// 既用于新建库，也用于修复历史上“建了但没建全”的库（首次访问时自动补齐）。
+const _ensuredDbs = new Set();
+async function ensureFeatureStore(dbName, force) {
+  const db = dbName || 'trip';
+  if (!force && _ensuredDbs.has(db)) return { ok: true, cached: true };
+  const notes = [];
+  const su = await resolveSuperUser();
+  const DDL_TABLE = `CREATE TABLE IF NOT EXISTS features (
+    id SERIAL PRIMARY KEY,
+    name TEXT,
+    type TEXT DEFAULT 'point',
+    geom geometry(Geometry,4326),
+    properties JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW()
+  )`;
+  const DDL_INDEX = 'CREATE INDEX IF NOT EXISTS idx_features_geom ON features USING GIST (geom)';
+  if (su) {
+    const c = new Client({ database: db, user: su });
+    try {
+      await c.connect();
+      await c.query('CREATE EXTENSION IF NOT EXISTS postgis');
+      await c.query(DDL_TABLE);
+      await c.query(DDL_INDEX);
+      // dmuser 是各服务的运行账号，必须能读写；否则 regional-stats/列要素会 permission denied
+      await c.query('GRANT ALL ON SCHEMA public TO dmuser');
+      await c.query('GRANT ALL ON ALL TABLES IN SCHEMA public TO dmuser');
+      await c.query('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO dmuser');
+      await c.query('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO dmuser');
+      await c.query('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO dmuser');
+      _ensuredDbs.add(db);
+      return { ok: true, superuser: su };
+    } catch (e) {
+      notes.push('超级用户初始化失败: ' + e.message);
+    } finally { try { await c.end(); } catch (_) {} }
+  }
+  // 降级：用 dmuser 尽力而为（postgis 可能已由 template1 继承而来）
+  try {
+    const p = getFeaturePool(db);
+    try { await p.query('CREATE EXTENSION IF NOT EXISTS postgis'); }
+    catch (e) { notes.push('postgis 扩展需超级用户: ' + e.message); }
+    await p.query(DDL_TABLE);
+    await p.query(DDL_INDEX);
+    _ensuredDbs.add(db);
+    return { ok: true, degraded: true, notes };
+  } catch (e) {
+    notes.push(e.message);
+    return { ok: false, notes };
+  }
+}
+
+// 统计镜像表：**必须独立于 Basemap.features**。
+// 早期把镜像直接写进 Basemap.features，导致 Basemap 自己被选为数据库时形成自引用——
+// 源表就是镜像表，读到的是“上一次查询的那个库”的残留，选 Basemap 时统计会跟着别的库变。
+// 独立成 Basemap.stats_features 后：Basemap.features 只代表 Basemap 自己的要素（源），
+// stats_features 只做镜像（目标），任何库（含 Basemap）都严格按库独立统计。
+const STATS_MIRROR = 'stats_features';
+let _mirrorReady = false;
+async function ensureStatsMirror() {
+  if (_mirrorReady) return;
+  await basemapPool.query(`CREATE TABLE IF NOT EXISTS ${STATS_MIRROR} (
+    id SERIAL PRIMARY KEY,
+    name TEXT,
+    type TEXT DEFAULT 'point',
+    geom geometry(Geometry,4326),
+    properties JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW()
+  )`);
+  await basemapPool.query(`CREATE INDEX IF NOT EXISTS idx_${STATS_MIRROR}_geom ON ${STATS_MIRROR} USING GIST (geom)`);
+  // 边界表 GIST 索引：regional-stats 的空间 JOIN(ST_Contains) 依赖它才能走索引，
+  // 否则退化为“要素数 × 边界数”的全表扫描，几百要素就分钟级卡死。
+  await basemapPool.query(`CREATE INDEX IF NOT EXISTS idx_provinces_geom ON provinces USING GIST (geom)`);
+  await basemapPool.query(`CREATE INDEX IF NOT EXISTS idx_cities_geom ON cities USING GIST (geom)`);
+  await basemapPool.query(`CREATE INDEX IF NOT EXISTS idx_districts_geom ON districts USING GIST (geom)`);
+  await basemapPool.query(`CREATE INDEX IF NOT EXISTS idx_countries_geom ON countries USING GIST (geom)`);
+  _mirrorReady = true;
+}
+
+// 串行化“选中库要素 → Basemap.stats_features”的同步：regional-stats 是 GET 但有清写副作用，
+// 并发调用（切库/多面板重渲）可能互相覆盖或重复清写；用模块级 promise 链串行化，
+// 任一同步失败不影响后续调用链。
+let _statsSyncChain = Promise.resolve();
+async function syncFeaturesToBasemap(featPool, dbName) {
+  const run = _statsSyncChain.then(async () => {
+    await ensureStatsMirror();
+    let rows = [];
+    try {
+      // “放进来”：把选中库的要素同步进 Basemap.stats_features（统计镜像表），
+      // 统计统一从镜像读——对应“trip/其他数据库放进来会点亮底图并统计”的架构。
+      rows = (await featPool.query(
+        "SELECT name, type, COALESCE(properties,'{}'::jsonb) AS properties, ST_AsGeoJSON(geom) AS geom FROM features"
+      )).rows;
+    } catch (e) {
+      // 源库没有 features 表（新建库常见）→ 先自愈补建，再重试一次
+      console.warn('[regional-stats] 读取源库要素失败，尝试补建 features 表:', e.message);
+      try {
+        await ensureFeatureStore(dbName);
+        rows = (await featPool.query(
+          "SELECT name, type, COALESCE(properties,'{}'::jsonb) AS properties, ST_AsGeoJSON(geom) AS geom FROM features"
+        )).rows;
+      } catch (e2) {
+        // 仍失败：视为“该库无要素”。**不能沿用上一个库的镜像**，否则切库后统计显示的是
+        // 别的库的数据（新建库“数据不进统计”的直接原因）。按库独立 → 同步为空集。
+        console.warn('[regional-stats] 源库无可用要素，按空集统计:', e2.message);
+        rows = [];
+      }
+    }
+    // 镜像写入（含空集：空集即代表“该库没有要素”，必须真的把镜像清空）
+    const bc = await basemapPool.connect();
+    try {
+      await bc.query('BEGIN');
+      await bc.query(`DELETE FROM ${STATS_MIRROR}`);
+      for (const sf of rows) {
+        await bc.query(
+          `INSERT INTO ${STATS_MIRROR} (name, type, geom, properties) VALUES ($1,$2,ST_SetSRID(ST_GeomFromGeoJSON($3),4326),$4)`,
+          [sf.name, sf.type, sf.geom, sf.properties]
+        );
+      }
+      await bc.query('COMMIT');
+    } catch (e) {
+      try { await bc.query('ROLLBACK'); } catch (_) {}
+      console.warn(`[regional-stats] 写入 Basemap.${STATS_MIRROR} 镜像失败:`, e.message);
+    } finally {
+      bc.release();
+    }
+  });
+  // 吞掉链内错误，保证后续同步可继续；run 本身仍反映本次是否成功
+  _statsSyncChain = run.then(() => {}, () => {});
+  return run;
+}
 
 // 启动时测试连接
 pgPool.query('SELECT PostGIS_version()').then(r => {
@@ -158,13 +327,8 @@ function sendJson(res, code, data) {
 async function handlePgApi(req, res, reqPath, method) {
   const url = new URL(req.url, 'http://localhost');
   const dbName = url.searchParams.get('db') || 'trip';
-  // 按数据库名缓存连接池
-  const _pools = { trip: pgPool, Basemap: basemapPool };
-  const getPool = () => {
-    if (!_pools[dbName]) _pools[dbName] = new Pool({ database: dbName, user: 'dmuser', password: 'dmpageo123', max: 3 });
-    return _pools[dbName];
-  };
-  const pool = () => getPool();
+  // 按数据库名缓存连接池（统一走模块级缓存，避免每请求新建 Pool 泄漏连接）
+  const pool = () => getFeaturePool(dbName);
   const pathParts = reqPath.replace('/api/pg/', '').split('/').filter(Boolean);
   // 规范化: /api/pg/tables/xxx → /api/pg/xxx
   if (pathParts[0] === 'tables') pathParts.shift();
@@ -186,22 +350,15 @@ async function handlePgApi(req, res, reqPath, method) {
     try {
       const body = JSON.parse(await getBody());
       if (!body.name) throw new Error('缺少数据库名');
-      await adminPool.query(`CREATE DATABASE "${body.name}" OWNER dmuser`);
-      // 新建后自动启用 PostGIS
-      const newPool = new Pool({ database: body.name, user: 'dmuser', password: 'dmpageo123', max: 3 });
-      await newPool.query('CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_topology;');
-      // 自动建标准要素表
-      await newPool.query(`CREATE TABLE IF NOT EXISTS features (
-        id SERIAL PRIMARY KEY,
-        name TEXT,
-        type TEXT DEFAULT 'point',
-        geom geometry(Geometry,4326),
-        properties JSONB DEFAULT '{}',
-        created_at TIMESTAMP DEFAULT NOW()
-      )`);
-      await newPool.query('CREATE INDEX IF NOT EXISTS idx_features_geom ON features USING GIST (geom)');
-      await newPool.end();
-      return sendJson(res, 200, { ok: true, message: `数据库 ${body.name} 已创建(含 PostGIS)` });
+      await adminPool.query(`CREATE DATABASE ${qIdent(body.name)} OWNER dmuser`);
+      // 建库后补齐 postgis 扩展 + 标准 features 表 + dmuser 授权。
+      // 注意：CREATE EXTENSION 必须超级用户，dmuser 干不了 —— 旧代码在这里静默失败，
+      // 结果库建出来却没有 features 表，该库的数据永远进不了统计。
+      const st = await ensureFeatureStore(body.name, true);
+      if (!st.ok) {
+        return sendJson(res, 200, { ok: true, warning: true, message: `数据库 ${body.name} 已创建，但初始化不完整: ${(st.notes || []).join('; ')}` });
+      }
+      return sendJson(res, 200, { ok: true, message: `数据库 ${body.name} 已创建(含 PostGIS + features 表)` });
     } catch(e) { return sendJson(res, 400, { error: e.message }); }
   }
 
@@ -370,8 +527,11 @@ async function handlePgApi(req, res, reqPath, method) {
       if (!body.data) throw new Error('缺少 data');
       const entries = Object.entries(body.data);
       const sets = entries.map(([k, v], i) => {
-        if (v && typeof v === 'object' && v.type === 'Point' && v.coordinates)
-          return `"${k}" = ST_SetSRID(ST_GeomFromGeoJSON('${JSON.stringify(v)}'), 4326)`;
+        if (v && typeof v === 'object') {
+          if (v.type === 'Point' && v.coordinates)
+            return `"${k}" = ST_SetSRID(ST_GeomFromGeoJSON('${JSON.stringify(v)}'), 4326)`;
+          return `"${k}" = '${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+        }
         return `"${k}" = '${String(v).replace(/'/g, "''")}'`;
       });
       await pool().query(`UPDATE "${tableName}" SET ${sets.join(', ')} WHERE id = $1`, [pathParts[2]]);
@@ -572,7 +732,7 @@ const server = http.createServer((req, res) => {
     (async () => {
       try {
         const featDb = url.searchParams.get('db') || 'trip';
-        const featPool = featDb === 'trip' ? pgPool : featDb === 'Basemap' ? basemapPool : new Pool({ database: featDb, user: 'dmuser', password: 'dmpageo123', max: 3 });
+        const featPool = getFeaturePool(featDb);
         const filter = url.searchParams.get('type');
         let sql = 'SELECT id, name, type, ST_AsGeoJSON(geom)::json AS geometry, properties FROM features';
         const params = [];
@@ -680,7 +840,7 @@ const server = http.createServer((req, res) => {
     (async () => {
       try {
         const dbName = url.searchParams.get('db') || 'trip';
-        const p = dbName === 'trip' ? pgPool : dbName === 'Basemap' ? basemapPool : new Pool({ database: dbName, user: 'dmuser', password: 'dmpageo123', max: 3 });
+        const p = getFeaturePool(dbName);
         const id = parseInt(markerId.replace('f_',''));
         if (isNaN(id)) throw new Error('无效ID');
         await p.query('DELETE FROM features WHERE id=$1', [id]);
@@ -1102,39 +1262,57 @@ const server = http.createServer((req, res) => {
     (async () => {
     try {
       const featDb = url.searchParams.get('db') || 'trip';
-      const featPool = featDb === 'trip' ? pgPool : featDb === 'Basemap' ? basemapPool : new Pool({ database: featDb, user: 'dmuser', password: 'dmpageo123', max: 3 });
-      // 读要素(来自选的库)
-      const feats = await featPool.query("SELECT id, name, type, ST_X(ST_Centroid(geom)) AS lng, ST_Y(ST_Centroid(geom)) AS lat FROM features");
-      // 边界始终从 Basemap 读
-      const provs = await basemapPool.query("SELECT name, geom FROM provinces");
-      const cities = await basemapPool.query("SELECT name, geom FROM cities");
-      const dists = await basemapPool.query("SELECT name, geom FROM districts");
+      const featPool = getFeaturePool(featDb);
+      // “放进来”：把选中库的要素同步进 Basemap.stats_features（统计镜像表），
+      // 统计统一从镜像表读（精密后端统计源）。串行锁+容错已封装在辅助函数内。
+      await syncFeaturesToBasemap(featPool, featDb);
+      // 统计要素统一读镜像表（与 Basemap.features 分离，避免选 Basemap 时自引用串库），边界几何仍从 Basemap 读
+      const feats = await basemapPool.query(`SELECT id, name, type, ST_X(ST_Centroid(geom)) AS lng, ST_Y(ST_Centroid(geom)) AS lat FROM ${STATS_MIRROR}`);
 
-      const pMap = {};
+      const pMap = {};   // 中国省/市/区层级
+      const cMap = {};   // 海外国家层级
+      // —— 性能修复：原实现对每个要素 × 每张边界表逐行发 ST_Contains 往返(≈要素数×3500 次 SQL)，
+      // 32 个要素就 55s。改为用空间 JOIN 一次性算出每个要素的省/市/区县/国家归属(共 4 次 SQL)，
+      // 边界表 GIST 索引见 ensureStatsMirror。判定点与原逻辑一致：均取要素质心 ST_Centroid(geom)。
+      const joinSql = (table, alias) => `SELECT DISTINCT ON (s.id) s.id, ${alias}.name AS bname
+        FROM ${STATS_MIRROR} s
+        JOIN ${table} ${alias} ON ST_Contains(${alias}.geom, ST_Centroid(s.geom))`;
+      const [provR, cityR, distR, countryR] = await Promise.all([
+        basemapPool.query(joinSql('provinces', 'p')),
+        basemapPool.query(joinSql('cities', 'c')),
+        basemapPool.query(joinSql('districts', 'd')),
+        basemapPool.query(`SELECT DISTINCT ON (s.id) s.id,
+          CASE WHEN c.name = 'Taiwan' THEN 'China' ELSE c.name END AS bname
+          FROM ${STATS_MIRROR} s
+          JOIN countries c ON ST_Contains(c.geom, ST_Centroid(s.geom))`)
+      ]);
+      const provMap = new Map(provR.rows.map(r => [r.id, r.bname]));
+      const cityMap = new Map(cityR.rows.map(r => [r.id, r.bname]));
+      const distMap = new Map(distR.rows.map(r => [r.id, r.bname]));
+      const countryMap = new Map(countryR.rows.map(r => [r.id, r.bname]));
+
       for (const f of feats.rows) {
-        // 找省
-        let pn = '海外/未知', cn = '海外/未知', dn = '海外/未知';
-        for (const p of provs.rows) {
-          const r = await basemapPool.query("SELECT ST_Contains($1, ST_SetSRID(ST_MakePoint($2,$3),4326)) AS ok", [p.geom, f.lng, f.lat]);
-          if (r.rows[0].ok) { pn = p.name; break; }
+        const pn = provMap.get(f.id);   // 境内：落在某省多边形内
+        if (pn) {
+          const cn = cityMap.get(f.id) || '海外/未知';
+          const dn = distMap.get(f.id) || '海外/未知';
+          if (!pMap[pn]) pMap[pn] = {};
+          if (!pMap[pn][cn]) pMap[pn][cn] = {};
+          if (!pMap[pn][cn][dn]) pMap[pn][cn][dn] = { points:0, lines:0, polygons:0, timePaths:0, total:0, coords:[] };
+          const rc = pMap[pn][cn][dn];
+          if (f.type === 'point') rc.points++; else if (f.type === 'line') rc.lines++; else if (f.type === 'polygon') rc.polygons++;
+          rc.total++;
+          if (f.lng) rc.coords.push({lng: Math.round(f.lng*10000)/10000, lat: Math.round(f.lat*10000)/10000, name: f.name});
+        } else {
+          const countryName = countryMap.get(f.id);
+          if (countryName) {
+            if (!cMap[countryName]) cMap[countryName] = { points:0, lines:0, polygons:0, total:0, coords:[] };
+            const rc = cMap[countryName];
+            if (f.type === 'point') rc.points++; else if (f.type === 'line') rc.lines++; else if (f.type === 'polygon') rc.polygons++;
+            rc.total++;
+            if (f.lng) rc.coords.push({lng: Math.round(f.lng*10000)/10000, lat: Math.round(f.lat*10000)/10000, name: f.name});
+          }
         }
-        // 找市
-        for (const c of cities.rows) {
-          const r = await basemapPool.query("SELECT ST_Contains($1, ST_SetSRID(ST_MakePoint($2,$3),4326)) AS ok", [c.geom, f.lng, f.lat]);
-          if (r.rows[0].ok) { cn = c.name; break; }
-        }
-        // 找区县
-        for (const d of dists.rows) {
-          const r = await basemapPool.query("SELECT ST_Contains($1, ST_SetSRID(ST_MakePoint($2,$3),4326)) AS ok", [d.geom, f.lng, f.lat]);
-          if (r.rows[0].ok) { dn = d.name; break; }
-        }
-        if (!pMap[pn]) pMap[pn] = {};
-        if (!pMap[pn][cn]) pMap[pn][cn] = {};
-        if (!pMap[pn][cn][dn]) pMap[pn][cn][dn] = { points:0, lines:0, polygons:0, timePaths:0, total:0, coords:[] };
-        const rc = pMap[pn][cn][dn];
-        if (f.type === 'point') rc.points++; else if (f.type === 'line') rc.lines++; else if (f.type === 'polygon') rc.polygons++;
-        rc.total++;
-        if (f.lng) rc.coords.push({lng: Math.round(f.lng*10000)/10000, lat: Math.round(f.lat*10000)/10000, name: f.name});
       }
 
       const provinces = [];
@@ -1142,15 +1320,22 @@ const server = http.createServer((req, res) => {
         const cityList = [];
         for (const cn of Object.keys(pMap[pn]).sort()) {
           const distList = [];
+          const buckets = Object.values(pMap[pn][cn]);
+          // 城市总数按全市点计算(含落在"未知区"的点)；否则无区级多边形的市
+          // (如省直辖县级市济源) 会被整市隐藏 —— 见济源建点不显示 bug
+          const cityTotal = buckets.reduce((s,d)=>s+(d.total||0),0);
+          const cityPoints = buckets.reduce((s,d)=>s+(d.points||0),0);
+          const cityLines = buckets.reduce((s,d)=>s+(d.lines||0),0);
+          const cityPolys = buckets.reduce((s,d)=>s+(d.polygons||0),0);
+          const cityCoords = buckets.flatMap(d=>d.coords||[]);
           for (const dn of Object.keys(pMap[pn][cn]).sort()) {
             const d = pMap[pn][cn][dn];
-            if (dn === '海外/未知') continue;
+            if (dn === '海外/未知') continue;   // 不把"未知区"当成区列出
             if (d.total === 0) continue;
             distList.push({name:dn, points:d.points, lines:d.lines, polygons:d.polygons, timePaths:d.timePaths, total:d.total, coords:d.coords});
           }
-          const ct = distList.reduce((s,x)=>s+x.total,0);
-          if (cn !== '海外/未知' && ct > 0)
-            cityList.push({name:cn, points:distList.reduce((s,x)=>s+x.points,0), lines:distList.reduce((s,x)=>s+x.lines,0), polygons:distList.reduce((s,x)=>s+x.polygons,0), timePaths:0, total:ct, coords:distList.flatMap(x=>x.coords), districts:distList});
+          if (cn !== '海外/未知' && cityTotal > 0)
+            cityList.push({name:cn, points:cityPoints, lines:cityLines, polygons:cityPolys, timePaths:0, total:cityTotal, coords:cityCoords, districts:distList});
         }
         const ct2 = cityList.reduce((s,x)=>s+x.total,0);
         if (pn !== '海外/未知' && ct2 > 0)
@@ -1158,6 +1343,29 @@ const server = http.createServer((req, res) => {
       }
       provinces.sort((a,b)=>b.total-a.total);
       const countries = [];
+      let chinaTotal = 0;
+      for (const p of provinces) chinaTotal += (p.total||0);
+      const taiwanAdd = cMap['China'] ? cMap['China'].total : 0;
+      if (chinaTotal + taiwanAdd > 0) {
+        // 分类计数要与 total 对得上：汇总各省 + 直接落在 China 面内但没落进任何省的要素。
+        // 旧版硬编码 points/lines/polygons 全 0，世界层级点开中国分类明细全是 0，
+        // 而 total 却有值——看着像“统计没算进去”。
+        const cnExtra = cMap['China'] || { points:0, lines:0, polygons:0 };
+        countries.push({
+          name:'China',
+          total: chinaTotal + taiwanAdd,
+          points:   provinces.reduce((s,p)=>s+(p.points||0),0)   + (cnExtra.points||0),
+          lines:    provinces.reduce((s,p)=>s+(p.lines||0),0)    + (cnExtra.lines||0),
+          polygons: provinces.reduce((s,p)=>s+(p.polygons||0),0) + (cnExtra.polygons||0),
+          cities:[],
+          coords: (cMap['China']?cMap['China'].coords:[])
+        });
+      }
+      for (const cn of Object.keys(cMap).sort()) {
+        if (cn === 'China') continue; // 已与省级合计合并
+        const c = cMap[cn];
+        if (c.total > 0) countries.push({ name: cn, total: c.total, points: c.points, lines: c.lines, polygons: c.polygons, cities: [], coords: c.coords });
+      }
       const coveredProvs = provinces.filter(p=>p.total>0);
       const coveredCities = new Set(), coveredDistricts = new Set();
       for (const p of coveredProvs) {
@@ -1198,37 +1406,52 @@ const server = http.createServer((req, res) => {
     req.on('end', async () => {
       try {
         const dbName = url.searchParams.get('db') || 'trip';
-        const p = dbName === 'trip' ? pgPool : dbName === 'Basemap' ? pgPool : new Pool({ database: dbName, user: 'dmuser', password: 'dmpageo123', max: 3 });
+        const p = getFeaturePool(dbName);
         const geojson = JSON.parse(body);
         if (!geojson.features) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ ok: false, error: '缺少 features 数组' }));
         }
+        await ensureFeatureStore(dbName);
+        // 整表覆盖是破坏性操作，必须显式声明 ?mode=replace。
+        // 历史 bug：前端自动保存时先发一个空 features 数组“清库”再全量写，
+        // 一旦此时内存快照不完整（加载失败/只画了一个面/照片视频不参与回写），
+        // 库里的旧数据就被永久抹掉 —— 这是“新写入替掉旧数据”的根因。
+        const replaceMode = url.searchParams.get('mode') === 'replace';
+        let added = 0, removed = 0;
+        if (replaceMode) {
+          const r = await p.query('DELETE FROM features');
+          removed += r.rowCount || 0;
+        } else if (geojson.features.length === 0 && !Array.isArray(geojson.deleted)) {
+          // 非 replace 模式下的空提交 = 无事发生（绝不再清库）
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ ok: true, added: 0, removed: 0, skipped: 'empty payload ignored (use ?mode=replace to wipe)' }));
+        }
+        // 显式删除同步：前端把删掉的要素 clientId 放进 deleted 数组，只删这些
+        if (Array.isArray(geojson.deleted) && geojson.deleted.length) {
+          const r = await p.query("DELETE FROM features WHERE properties->>'clientId' = ANY($1::text[])", [geojson.deleted.map(String)]);
+          removed += r.rowCount || 0;
+        }
         // 按 clientId 做 UPSERT（兼容旧数据无 clientId 时用 name+type 匹配）
-        let added = 0;
-        if (geojson.features.length === 0) {
-          // 空数组 → 全量清空
-          await p.query('DELETE FROM features');
-        } else {
-          for (const f of geojson.features) {
-            const props = f.properties || {};
-            const cid = props.clientId;
-            const type = props.type || (f.geometry.type === 'Point' ? 'point' : f.geometry.type === 'LineString' ? 'line' : 'polygon');
-            if (cid) {
-              await p.query("DELETE FROM features WHERE properties->>'clientId' = $1", [cid]);
-            } else {
-              // 无 clientId 的旧数据：按 name + type 去重
-              await p.query("DELETE FROM features WHERE properties->>'name' = $1 AND type = $2", [props.name || '', type]);
-            }
-            await p.query(
-              'INSERT INTO features (name, type, geom, properties) VALUES ($1, $2, ST_Multi(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))), $4)',
-              [props.name || '', type, JSON.stringify(f.geometry), JSON.stringify(props)]
-            );
-            added++;
+        for (const f of geojson.features) {
+          if (!f || !f.geometry) continue;
+          const props = f.properties || {};
+          const cid = props.clientId;
+          const type = props.type || (f.geometry.type === 'Point' ? 'point' : f.geometry.type === 'LineString' ? 'line' : 'polygon');
+          if (cid) {
+            await p.query("DELETE FROM features WHERE properties->>'clientId' = $1", [cid]);
+          } else {
+            // 无 clientId 的旧数据：按 name + type 去重
+            await p.query("DELETE FROM features WHERE properties->>'name' = $1 AND type = $2", [props.name || '', type]);
           }
+          await p.query(
+            'INSERT INTO features (name, type, geom, properties) VALUES ($1, $2, ST_Multi(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))), $4)',
+            [props.name || '', type, JSON.stringify(f.geometry), JSON.stringify(props)]
+          );
+          added++;
         }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ ok: true, added, total: added }));
+        res.end(JSON.stringify({ ok: true, added, removed, total: added }));
       } catch(e) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: false, error: e.message }));

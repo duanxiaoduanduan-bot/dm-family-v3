@@ -104,6 +104,25 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 .badge-photo{background:rgba(253,121,168,.15);color:#fd79a8}
 .badge-video{background:rgba(162,155,254,.15);color:#a29bfe}
 
+/* 路径总览折叠 */
+.path-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:10px;margin-bottom:8px;overflow:hidden}
+.path-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;transition:background .2s}
+.path-head:hover{background:rgba(255,255,255,.04)}
+.path-chevron{color:#666;font-size:11px;transition:transform .2s;flex-shrink:0}
+.path-card.open .path-chevron{transform:rotate(90deg);color:#6c5ce7}
+.path-name{flex:1;font-size:13px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.path-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:#888;flex-shrink:0}
+.path-detail{max-height:0;overflow:hidden;transition:max-height .3s ease;background:rgba(0,0,0,.18)}
+.path-card.open .path-detail{max-height:440px}
+.path-detail-inner{padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.04)}
+.path-detail-inner .pd-row{display:flex;align-items:center;gap:8px;font-size:11px;color:#888;margin-bottom:6px}
+.path-detail-inner .pd-label{color:#777;min-width:46px;flex-shrink:0}
+.path-pts{font-family:monospace;font-size:10px;color:#777;line-height:1.7;max-height:300px;overflow-y:auto;padding-right:4px}
+.path-pts .pt{display:block;white-space:nowrap}
+.path-pts .st-name{color:#cdb4ff;font-weight:600}
+.path-pts .st-coord{color:#666;font-size:9px;margin-left:8px}
+.path-pts .st-plain{color:#777}
+
 /* 进度条 */
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .bar-label{width:80px;font-size:12px;color:#888;text-align:right;flex-shrink:0}
@@ -170,8 +189,8 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
     <div class="stat-card stat-timepath"><div class="sc-icon">🕐</div><div class="sc-value" id="cntTimePaths">—</div><div class="sc-label">时间路径</div></div>
     <div class="stat-card stat-photos"><div class="sc-icon">🖼️</div><div class="sc-value" id="cntPhotos">—</div><div class="sc-label">地理照片</div></div>
     <div class="stat-card stat-videos"><div class="sc-icon">🎬</div><div class="sc-value" id="cntVideos">—</div><div class="sc-label">地理视频</div></div>
-    <div class="stat-card stat-media"><div class="sc-icon">📀</div><div class="sc-value" id="cntMedia">—</div><div class="sc-label">媒体总数</div></div>
-    <div class="stat-card stat-total"><div class="sc-icon">📦</div><div class="sc-value" id="cntTotal">—</div><div class="sc-label">全部要素</div></div>
+    <div class="stat-card stat-media"><div class="sc-icon">📀</div><div class="sc-value" id="cntMedia">—</div><div class="sc-label">媒体库 · 全局</div></div>
+    <div class="stat-card stat-total"><div class="sc-icon">📦</div><div class="sc-value" id="cntTotal">—</div><div class="sc-label">全部要素 · <span id="curDbTag">—</span></div></div>
     <div class="stat-card stat-region-prov"><div class="sc-icon">🗺️</div><div class="sc-value" id="cntProv">—</div><div class="sc-label">覆盖省份/国家</div></div>
     <div class="stat-card stat-region-city"><div class="sc-icon">🏙️</div><div class="sc-value" id="cntCity">—</div><div class="sc-label">覆盖城市</div></div>
     <div class="stat-card stat-region-dist"><div class="sc-icon">📍</div><div class="sc-value" id="cntDist">—</div><div class="sc-label">覆盖区/县</div></div>
@@ -252,7 +271,9 @@ var $=function(i){return document.getElementById(i)};
   }
 })();
 
-// 加载 geodata 统计数据
+// 加载 geodata 统计数据（geodata-list.json 是**全局静态**素材清单，不属于任何数据库，
+// 仅用于时间线展示。要素维度的照片/视频计数一律改从当前库的 features 统计，
+// 见 countFeatures()——否则切库后这些数字不变，违背“选哪个库就只统计哪个库”。）
 async function loadGeodataStats(){
   try{
     var r=await fetch('geodata-list.json?_='+Date.now());
@@ -276,6 +297,28 @@ async function loadGeodataStats(){
     }
     return {photoCount:photoCount,videoCount:videoCount,groupCount:data.filter(function(d){return d.type==='photo_group'}).length};
   }catch(e){return null}
+}
+
+// 按 properties.type 对**当前库**的要素分类计数（唯一的要素统计口径）。
+// type 取值与 map-player 落库一致：point / line / polygon / timePath / photo / video。
+// 缺 type 的历史数据回落到几何类型判断。
+function countFeatures(mapData){
+  var c={points:0,lines:0,polygons:0,timePaths:0,photos:0,videos:0,total:0};
+  if(!mapData||!mapData.features)return c;
+  for(var i=0;i<mapData.features.length;i++){
+    var f=mapData.features[i];
+    if(!f||!f.geometry)continue;
+    var t=(f.properties&&f.properties.type)||'';
+    var g=f.geometry.type;
+    if(t==='photo')c.photos++;
+    else if(t==='video')c.videos++;
+    else if(t==='timePath')c.timePaths++;
+    else if(t==='point'||g==='Point'||g==='MultiPoint')c.points++;
+    else if(t==='line'||t==='path'||g==='LineString'||g==='MultiLineString')c.lines++;
+    else if(t==='polygon'||g==='Polygon'||g==='MultiPolygon')c.polygons++;
+    c.total++;
+  }
+  return c;
 }
 
 // 加载要素数据（从 PostGIS API）
@@ -332,23 +375,14 @@ async function refreshAll(){
   var mediaStats=await loadMediaStats();
   var regionalStats=await loadRegionalStats();
 
-  var pointCount=0,lineCount=0,polygonCount=0,timePathCount=0;
-  if(mapData&&mapData.features){
-    for(var i=0;i<mapData.features.length;i++){
-      var f=mapData.features[i];
-      if(!f.geometry)continue;
-      var t=(f.properties&&f.properties.type)||'point';
-      if(f.geometry.type==='Point'||f.geometry.type==='MultiPoint')pointCount++;
-      else if(t==='timePath')timePathCount++;
-      else if(f.geometry.type==='LineString'||f.geometry.type==='MultiLineString')lineCount++;
-      else if(f.geometry.type==='Polygon'||f.geometry.type==='MultiPolygon')polygonCount++;
-    }
-  }
-
-  var photoCount=geostats?geostats.photoCount:0;
-  var videoCount=geostats?geostats.videoCount:0;
+  // 要素口径：只统计当前选中库（mapData 来自 dbUrl('api/geo') → 带 ?db=currentDb）
+  var fc=countFeatures(mapData);
+  var pointCount=fc.points,lineCount=fc.lines,polygonCount=fc.polygons,timePathCount=fc.timePaths;
+  var photoCount=fc.photos,videoCount=fc.videos;
+  // 媒体库（电视剧/音乐/MV/写真/书籍/有声书）是**全局静态资源**，不属于任何数据库，
+  // 因此不计入“全部要素”，否则每个库都会被加上同样的几百条、切库数字纹丝不动。
   var mediaTotal=mediaStats.reduce(function(s,m){return s+m.count},0);
-  var totalAll=pointCount+lineCount+polygonCount+timePathCount+photoCount+videoCount+mediaTotal;
+  var totalAll=fc.total;
 
   // 更新统计卡片
   $('cntPoints').textContent=pointCount;
@@ -359,9 +393,11 @@ async function refreshAll(){
   $('cntVideos').textContent=videoCount;
   $('cntMedia').textContent=mediaTotal;
   $('cntTotal').textContent=totalAll;
-  // 区域覆盖卡片
+  var dbTag=$('curDbTag');if(dbTag)dbTag.textContent=currentDb;
+  // 区域覆盖卡片：省份 + 海外国家（countries 里 China 已与省级合并，故只加非 China 项）
   if(regionalStats&&regionalStats.summary){
-    $('cntProv').textContent=regionalStats.summary.totalProvinces;
+    var overseas=(regionalStats.countries||[]).filter(function(c){return c.name!=='China'}).length;
+    $('cntProv').textContent=(regionalStats.summary.totalProvinces||0)+overseas;
     $('cntCity').textContent=regionalStats.summary.totalCities;
     $('cntDist').textContent=regionalStats.summary.totalDistricts||0;
   }else{
@@ -388,33 +424,45 @@ async function refreshAll(){
   $('refreshTime').textContent=new Date().toLocaleTimeString();
 }
 
+// 分布图分两段各算各的百分比：
+//   ① 当前库要素（点/线/面/时间路径/地理照片/地理视频）——随选中库变化
+//   ② 媒体库（全局静态资源）——与数据库无关
+// 旧版把两者塞进同一个分母，媒体库几百条会把当前库那几个要素压成 0.x%，看着像“没统计到”。
 function renderMediaDist(mediaStats,photoCount,videoCount,pointCount,lineCount,polygonCount,timePathCount){
-  var total=mediaStats.reduce(function(s,m){return s+m.count},0)+photoCount+videoCount+pointCount+lineCount+polygonCount+timePathCount;
-  if(total===0){$('mediaDist').innerHTML='<div class="empty">暂无数据</div>';return}
+  var geoItems=[];
+  if(pointCount>0)geoItems.push({label:'点要素',count:pointCount,color:'#e17055'});
+  if(lineCount>0)geoItems.push({label:'线要素',count:lineCount,color:'#00cec9'});
+  if(polygonCount>0)geoItems.push({label:'面要素',count:polygonCount,color:'#f39c12'});
+  if(timePathCount>0)geoItems.push({label:'时间路径',count:timePathCount,color:'#9b59b6'});
+  if(photoCount>0)geoItems.push({label:'地理照片',count:photoCount,color:'#fd79a8'});
+  if(videoCount>0)geoItems.push({label:'地理视频',count:videoCount,color:'#a29bfe'});
 
-  var items=[];
+  var mediaItems=[];
   for(var i=0;i<mediaStats.length;i++){
-    items.push({label:mediaStats[i].name,count:mediaStats[i].count,color:['#e74c3c','#00cec9','#fdcb6e','#fd79a8','#c49a2a','#00b894'][i%6]});
+    mediaItems.push({label:mediaStats[i].name,count:mediaStats[i].count,color:['#e74c3c','#00cec9','#fdcb6e','#fd79a8','#c49a2a','#00b894'][i%6]});
   }
-  if(photoCount>0)items.push({label:'地理照片',count:photoCount,color:'#e17055'});
-  if(videoCount>0)items.push({label:'地理视频',count:videoCount,color:'#a29bfe'});
-  if(pointCount>0)items.push({label:'点要素',count:pointCount,color:'#e17055'});
-  if(lineCount>0)items.push({label:'线要素',count:lineCount,color:'#00cec9'});
-  if(polygonCount>0)items.push({label:'面要素',count:polygonCount,color:'#f39c12'});
-  if(timePathCount>0)items.push({label:'时间路径',count:timePathCount,color:'#9b59b6'});
 
-  var html='';
-  for(var j=0;j<items.length;j++){
-    var pct=total>0?(items[j].count/total*100).toFixed(1):0;
-    html+='<div class="bar-row"><span class="bar-label">'+items[j].label+'</span>'+
-      '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+items[j].color+'"></div></div>'+
-      '<span class="bar-val">'+items[j].count+' ('+pct+'%)</span></div>';
+  if(!geoItems.length&&!mediaItems.length){$('mediaDist').innerHTML='<div class="empty">暂无数据</div>';return}
+
+  function section(title,sub,items){
+    var sum=items.reduce(function(s,x){return s+x.count},0);
+    var h='<div style="font-size:11px;color:#888;margin:2px 0 8px;display:flex;justify-content:space-between;align-items:baseline">'+
+      '<span style="color:#bbb;font-weight:600">'+title+'</span><span style="font-size:10px">'+sub+' · 共 '+sum+'</span></div>';
+    if(!items.length){h+='<div class="empty" style="padding:8px 0;font-size:11px">该库暂无要素</div>';return h}
+    for(var j=0;j<items.length;j++){
+      var pct=sum>0?(items[j].count/sum*100).toFixed(1):0;
+      h+='<div class="bar-row"><span class="bar-label">'+items[j].label+'</span>'+
+        '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+items[j].color+'"></div></div>'+
+        '<span class="bar-val">'+items[j].count+' ('+pct+'%)</span></div>';
+    }
+    return h;
   }
-  html+='<div class="pie-legend">';
-  for(var k=0;k<items.length;k++){
-    html+='<div class="pl-item"><div class="pl-dot" style="background:'+items[k].color+'"></div>'+items[k].label+'</div>';
+
+  var html=section('地理要素','🗄 '+currentDb,geoItems);
+  if(mediaItems.length){
+    html+='<div style="height:1px;background:rgba(255,255,255,.07);margin:14px 0 10px"></div>';
+    html+=section('媒体库','全局 · 与数据库无关',mediaItems);
   }
-  html+='</div>';
   $('mediaDist').innerHTML=html;
 }
 
@@ -439,6 +487,19 @@ function renderLatestMarkers(mapData){
   $('latestMarkers').innerHTML=html;
 }
 
+// 把任意几何展平成 [lon,lat] 顶点数组
+function flatCoords(geom){
+  if(!geom)return [];
+  var t=geom.type;
+  if(t==='Point')return [geom.coordinates];
+  if(t==='MultiPoint')return geom.coordinates;
+  if(t==='LineString')return geom.coordinates;
+  if(t==='MultiLineString'){var a=[];geom.coordinates.forEach(function(s){a=a.concat(s);});return a;}
+  if(t==='Polygon')return geom.coordinates[0]||[];
+  if(t==='MultiPolygon'){var b=[];(geom.coordinates[0]||[]).forEach(function(r){b=b.concat(r);});return b;}
+  return [];
+}
+
 function renderPathsOverview(mapData){
   if(!mapData||!mapData.features){
     $('pathsOverview').innerHTML='<div class="empty">暂无路径数据</div>';return;
@@ -446,12 +507,27 @@ function renderPathsOverview(mapData){
   var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='Polygon'||f.geometry.type==='MultiLineString'||f.geometry.type==='MultiPolygon')});
   if(!paths.length){$('pathsOverview').innerHTML='<div class="empty">暂无路径</div>';return}
 
-  var html='<table class="data-table"><thead><tr><th>名称</th><th>类型</th><th>点数</th><th>长度/面积</th></tr></thead><tbody>';
+  // 建立 坐标 -> 站点名 索引（同库里有名字的点要素）
+  var stationIdx={};
+  mapData.features.forEach(function(f){
+    if(!f.geometry)return;
+    if(f.geometry.type==='Point'||f.geometry.type==='MultiPoint'){
+      var nm=f.properties&&f.properties.name;
+      if(!nm)return;
+      var cs=f.geometry.type==='Point'?[f.geometry.coordinates]:f.geometry.coordinates;
+      cs.forEach(function(c){stationIdx[c[1].toFixed(5)+','+c[0].toFixed(5)]=nm;});
+    }
+  });
+
+  var html='';
   for(var i=0;i<paths.length;i++){
     var p=paths[i],props=p.properties||{};
-    var coords=p.geometry.type==='Polygon'?p.geometry.coordinates[0]:p.geometry.coordinates;
-    var len='';
-    if(p.geometry.type==='LineString'){
+    var coords=flatCoords(p.geometry);
+    var isLine=p.geometry.type==='LineString'||p.geometry.type==='MultiLineString';
+    var typeBadge=isLine?'<span class="badge badge-path">路径</span>':'<span class="badge badge-photo">区域</span>';
+
+    var metric,metricLabel;
+    if(isLine){
       var d=0;
       for(var j=1;j<coords.length;j++){
         var lat1=coords[j-1][1],lon1=coords[j-1][0],lat2=coords[j][1],lon2=coords[j][0];
@@ -459,27 +535,71 @@ function renderPathsOverview(mapData){
         var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
         d+=6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
       }
-      len=d<1?(d*1000).toFixed(0)+'m':d.toFixed(2)+'km';
+      metric=d<1?(d*1000).toFixed(0)+'m':d.toFixed(2)+'km';
+      metricLabel='长度';
     }else{
-      len=coords.length+' 顶点';
+      metric=coords.length+' 顶点';
+      metricLabel='顶点';
     }
-    var typeBadge=p.geometry.type==='Polygon'?'<span class="badge badge-photo">区域</span>':'<span class="badge badge-path">路径</span>';
-    html+='<tr><td>'+esc(props.name||'未命名')+'</td><td>'+typeBadge+'</td><td>'+coords.length+'</td><td>'+len+'</td></tr>';
+
+    // 途经站点（每条最多渲染前 300 个点；有名字的点要素显示站点名，否则退化为坐标）
+    var ptsHtml='';
+    var shown=Math.min(coords.length,300);
+    var namedCount=0;
+    for(var k=0;k<shown;k++){
+      var c=coords[k];
+      var key=c[1].toFixed(5)+','+c[0].toFixed(5);
+      var st=stationIdx[key];
+      if(st)namedCount++;
+      if(st){
+        ptsHtml+='<span class="pt"><b class="st-name">'+esc(st)+'</b><span class="st-coord">'+Number(c[1]).toFixed(5)+', '+Number(c[0]).toFixed(5)+'</span></span>';
+      }else{
+        ptsHtml+='<span class="pt st-plain">'+Number(c[1]).toFixed(5)+', '+Number(c[0]).toFixed(5)+'</span>';
+      }
+    }
+    if(coords.length>shown)ptsHtml+='<span class="pt st-plain">… 其余 '+(coords.length-shown)+' 点</span>';
+
+    var stationLabel=namedCount>0?('途经站点 ('+namedCount+')'):'轨迹点';
+    var mediaRow=props&&props.media?'<div class="pd-row"><span class="pd-label">媒体</span><span>'+esc(String(props.media))+'</span></div>':'';
+
+    var detail='<div class="path-detail"><div class="path-detail-inner">'+
+      '<div class="pd-row"><span class="pd-label">类型</span>'+typeBadge+'</div>'+
+      '<div class="pd-row"><span class="pd-label">'+metricLabel+'</span><span>'+metric+'</span></div>'+
+      '<div class="pd-row"><span class="pd-label">顶点数</span><span>'+coords.length+'</span></div>'+
+      mediaRow+
+      (props&&props.created?'<div class="pd-row"><span class="pd-label">创建</span><span>'+esc(String(props.created))+'</span></div>':'')+
+      '<div class="pd-label" style="margin:8px 0 2px">'+stationLabel+'</div>'+
+      '<div class="path-pts">'+ptsHtml+'</div>'+
+      '</div></div>';
+
+    html+='<div class="path-card" id="pathCard'+i+'">'+
+      '<div class="path-head" onclick="togglePath('+i+')">'+
+      '<span class="path-chevron">▶</span>'+
+      '<span class="path-name">'+esc(props.name||'未命名')+'</span>'+
+      typeBadge+
+      '<span class="path-meta">'+coords.length+'点 · '+metric+'</span>'+
+      '</div>'+detail+'</div>';
   }
-  html+='</tbody></table>';
   $('pathsOverview').innerHTML=html;
+}
+
+// 路径总览：折叠/展开单条线路明细
+function togglePath(i){
+  var el=document.getElementById('pathCard'+i);
+  if(el)el.classList.toggle('open');
 }
 
 function renderTimeline(mapData,geostats){
   var items=[];
+  // 当前库的要素（口径与统计卡片一致，photo/video 单列不混进标记点）
+  var fc=countFeatures(mapData);
+  if(fc.points)items.push({date:'🗄 '+currentDb,text:fc.points+' 个标记点'});
+  if(fc.lines||fc.polygons)items.push({date:'🗄 '+currentDb,text:fc.lines+' 条线 · '+fc.polygons+' 个面'});
+  if(fc.timePaths)items.push({date:'🗄 '+currentDb,text:fc.timePaths+' 条时间路径'});
+  if(fc.photos||fc.videos)items.push({date:'🗄 '+currentDb,text:fc.photos+' 张地理照片 · '+fc.videos+' 个地理视频'});
+  // 全局静态素材清单（geodata-list.json），与选中数据库无关，单独标注避免误读
   if(geostats){
-    items.push({date:'当前',text:'地理数据: '+geostats.photoCount+'张照片 + '+geostats.videoCount+'个视频 · '+geostats.groupCount+'个分组'});
-  }
-  if(mapData&&mapData.features){
-    var markers=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='Point'||f.geometry.type==='MultiPoint')});
-    var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='Polygon'||f.geometry.type==='MultiLineString'||f.geometry.type==='MultiPolygon')});
-    if(markers.length)items.push({date:'已保存',text:markers.length+'个标记点'});
-    if(paths.length)items.push({date:'已保存',text:paths.length+'条路径/区域'});
+    items.push({date:'全局',text:'素材库: '+geostats.photoCount+'张照片 + '+geostats.videoCount+'个视频 · '+geostats.groupCount+'个分组'});
   }
 
   if(!items.length){$('timeline').innerHTML='<div class="empty">暂无活动记录</div>';return}
@@ -527,6 +647,8 @@ function renderBreadcrumb(rv){
 
 function goRegionLevel(level,countryName,provIdx,cityIdx){
   _regionView={level:level,countryName:countryName||null,provIdx:provIdx!=null?provIdx:null,cityIdx:cityIdx!=null?cityIdx:null};
+  _mapHovered=null; // 切换层级清空悬停，避免旧层级残留的 hovered 触发误下钻(如点到别的省)
+  _mapGeoData=null; // 待新层级几何加载完成再赋值，避免用旧几何做点击命中
   _mapUserPanned=false; // 新层级进入，允许自动适配画布
   // 回到世界时自动复位缩放
   if(level===0){
@@ -758,13 +880,11 @@ function drawRegionChart(data,level){
   var W=rect.width,H=rect.height;
   ctx.clearRect(0,0,W,H);
 
-  // 地图用边界数据(loadWorldGeo/loadProvGeo)独立于统计面板渲染,
-  // 因此只判断 data 是否加载(非 null), 不因 provinces/countries 为空就跳过绘图。
+  // 地图用边界数据(loadWorldGeo/loadProvGeo)独立于统计面板渲染：
+  // 即便 regional-stats 失败(data=null)也照常加载并绘制底图边界，仅不发光/不上统计色。
+  // 对应“底图=Basemap 独立”架构——统计挂了不应连底图一起消失（之前 if(!data)return 的 bug）。
   if(!data){
-    ctx.fillStyle='#555';ctx.font='14px sans-serif';ctx.textAlign='center';
-    ctx.fillText('暂无数据',W/2,H/2);
-    $('regionChartLegend').innerHTML='';
-    return;
+    data = { countries:[], provinces:[], cities:[], districts:[] };
   }
 
   var rv=_regionView;
@@ -874,19 +994,21 @@ function drawWorldMap(ctx,W,H,worldGeo,data){
   // Build country name -> total map
   var totalMap={};
   var maxTotal=0;
-  // 用 provinces 聚合到国家(china provinces → China)
-  var srcList=data.provinces||[];
+  // 直接用 regional-stats 返回的 countries 数组（含 China 与海外国家）取每国总量
+  var srcList=data.countries||[];
   for(var i=0;i<srcList.length;i++){
-    var p=srcList[i];
-    var countryName=p.name;
-    if(isChinaProvince(p.name))countryName='China';
-    var t=parseInt(p.total)||0;
-    totalMap[countryName]=(totalMap[countryName]||0)+t;
-    if(totalMap[countryName]>maxTotal)maxTotal=totalMap[countryName];
+    var c=srcList[i];
+    var t=parseInt(c.total)||0;
+    if(!t)continue;
+    totalMap[c.name]=(totalMap[c.name]||0)+t;
+    if(totalMap[c.name]>maxTotal)maxTotal=totalMap[c.name];
   }
 
-  // Draw world countries — Taiwan drawn as part of China
-  // First pass: draw glow for countries with data
+  // 底图：所有国家先画“正常基底”(可见，世界国界始终清晰)
+  for(var i=0;i<worldGeo.features.length;i++){
+    paintBase(ctx,worldGeo.features[i],W,H,scale,ox,oy);
+  }
+  // 实心蓝：有数据的国家叠加实心蓝选中填充(非光晕)
   for(var i=0;i<worldGeo.features.length;i++){
     var f=worldGeo.features[i];
     var name=f.properties.name;
@@ -894,45 +1016,29 @@ function drawWorldMap(ctx,W,H,worldGeo,data){
     var lookupName=(name==='Taiwan')?'China':name;
     var total=totalMap[lookupName]||0;
     if(total===0)continue;
-    var intensity=total/maxTotal;
-    ctx.lineWidth=2+intensity*4;
-    ctx.strokeStyle='rgba(140,210,255,'+(0.08+intensity*0.1)+')';
-    ctx.fillStyle='rgba(140,210,255,'+(0.12+intensity*0.15)+')';
-    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
-  }
-  // Second pass: draw all countries normally
-  for(var i=0;i<worldGeo.features.length;i++){
-    var f=worldGeo.features[i];
-    var name=f.properties.name;
-    // Treat Taiwan as China
-    var lookupName=(name==='Taiwan')?'China':name;
-    var total=totalMap[lookupName]||0;
-    if(total>0){
-      var intensity=total/maxTotal;
-      ctx.lineWidth=0.8;
-      ctx.fillStyle='rgba(140,220,255,'+(0.6+intensity*0.35)+')';
-      ctx.strokeStyle='rgba(190,245,255,'+(0.9+intensity*0.1)+')';
-    } else {
-      ctx.lineWidth=0.7;
-      ctx.fillStyle='rgba(35,45,80,.65)';
-      ctx.strokeStyle='rgba(75,120,190,.75)';
-    }
-    ctx.globalAlpha=1;
-    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+    paintSolid(ctx,f,W,H,scale,ox,oy,total/maxTotal);
   }
 
-  // Country labels (only those with data)
+  // 实心蓝标记点 — 城市国家(新加坡等)几何极小，用实心点保证可见(非光晕)
   for(var i=0;i<worldGeo.features.length;i++){
     var f=worldGeo.features[i];
     var name=f.properties.name;
     var total=totalMap[name]||0;
     if(total===0)continue;
+    var intensity=total/maxTotal;
     var centroid=getCentroid(f);
+    if(!centroid)continue;
     var pt=project(centroid[0],centroid[1],W,H,scale,ox,oy);
     if(pt.x<0||pt.x>W||pt.y<0||pt.y>H)continue;
-    ctx.fillStyle='#aaa';ctx.font='6px sans-serif';ctx.textAlign='center';
-    ctx.fillText(name.substring(0,10),pt.x,pt.y);
-    ctx.fillText(total,pt.x,pt.y+8);
+    var r=3+intensity*5;
+    // 实心蓝点 + 亮边(选中效果)
+    ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,Math.PI*2);
+    ctx.fillStyle='rgba(40,140,255,0.92)';ctx.fill();
+    ctx.lineWidth=1.2;ctx.strokeStyle='rgba(200,248,255,0.95)';ctx.stroke();
+    // 标签
+    ctx.fillStyle='#fff';ctx.font='bold 7px sans-serif';ctx.textAlign='center';
+    ctx.fillText(name.substring(0,12),pt.x,pt.y-r-4);
+    ctx.fillText(total,pt.x,pt.y-r+4);
   }
 
   // Hover highlight
@@ -1115,36 +1221,23 @@ function drawCountryMap(ctx,W,H,provGeo,data){
     if(p.total>maxTotal)maxTotal=p.total;
   }
 
-  // Draw provinces — first pass glow, second pass fill
+  // 底图：所有省份先画“正常基底”(可见，中国矢量始终清晰)
+  for(var i=0;i<provGeo.features.length;i++){
+    paintBase(ctx,provGeo.features[i],W,H,scale,ox,oy);
+  }
+  // 实心蓝：有数据的省份叠加实心蓝选中填充(非光晕)
   for(var i=0;i<provGeo.features.length;i++){
     var f=provGeo.features[i];
     var name=f.properties.name;
     var total=totalMap[name]||0;
     if(total===0)continue;
-    var intensity=total/maxTotal;
-    ctx.lineWidth=2+intensity*4;
-    ctx.strokeStyle='rgba(140,210,255,'+(0.08+intensity*0.1)+')';
-    ctx.fillStyle='rgba(140,210,255,'+(0.12+intensity*0.15)+')';
-    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+    paintSolid(ctx,f,W,H,scale,ox,oy,total/maxTotal);
   }
+  // 有数据省份的标签
   for(var i=0;i<provGeo.features.length;i++){
     var f=provGeo.features[i];
     var name=f.properties.name;
     var total=totalMap[name]||0;
-    if(total>0){
-      var intensity=total/maxTotal;
-      ctx.lineWidth=0.8;
-      ctx.fillStyle='rgba(140,220,255,'+(0.6+intensity*0.35)+')';
-      ctx.strokeStyle='rgba(190,245,255,'+(0.9+intensity*0.1)+')';
-    } else {
-      ctx.lineWidth=0.8;
-      ctx.fillStyle='rgba(40,60,110,.50)';
-      ctx.strokeStyle='rgba(90,145,210,.70)';
-    }
-    ctx.globalAlpha=1;
-    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
-
-    // Label for provinces with data
     if(total>0){
       var centroid=getCentroid(f);
       var pt=project(centroid[0],centroid[1],W,H,scale,ox,oy);
@@ -1152,7 +1245,7 @@ function drawCountryMap(ctx,W,H,provGeo,data){
         var label=name.replace(/省|市|自治区|维吾尔|回族|壮族/g,'').substring(0,4);
         ctx.fillStyle='#fff';ctx.font='bold 8px sans-serif';ctx.textAlign='center';
         ctx.fillText(label,pt.x,pt.y-2);
-        ctx.fillStyle='#aaa';ctx.font='7px sans-serif';
+        ctx.fillStyle='#cfe6ff';ctx.font='7px sans-serif';
         ctx.fillText(total,pt.x,pt.y+8);
       }
     }
@@ -1196,34 +1289,17 @@ function drawProvinceMap(ctx,W,H,geo,prov){
     if(c.total>maxTotal)maxTotal=c.total;
   }
 
-  // Draw cities — first pass glow, second pass fill
+  // 底图：所有城市先画“正常基底”(可见)
+  for(var i=0;i<geo.features.length;i++){
+    paintBase(ctx,geo.features[i],W,H,scale,ox,oy);
+  }
+  // 实心蓝：有数据的城市叠加实心蓝选中填充(非光晕)
   for(var i=0;i<geo.features.length;i++){
     var f=geo.features[i];
     var name=f.properties.name;
     var total=totalMap[name]||0;
     if(total===0)continue;
-    var intensity=total/maxTotal;
-    ctx.lineWidth=2+intensity*4;
-    ctx.strokeStyle='rgba(140,210,255,'+(0.08+intensity*0.1)+')';
-    ctx.fillStyle='rgba(140,210,255,'+(0.12+intensity*0.15)+')';
-    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
-  }
-  for(var i=0;i<geo.features.length;i++){
-    var f=geo.features[i];
-    var name=f.properties.name;
-    var total=totalMap[name]||0;
-    if(total>0){
-      var intensity=total/maxTotal;
-      ctx.lineWidth=0.7;
-      ctx.fillStyle='rgba(140,220,255,'+(0.6+intensity*0.35)+')';
-      ctx.strokeStyle='rgba(190,245,255,'+(0.9+intensity*0.1)+')';
-    } else {
-      ctx.lineWidth=0.5;
-      ctx.fillStyle='rgba(30,40,70,.45)';
-      ctx.strokeStyle='rgba(70,115,180,.65)';
-    }
-    ctx.globalAlpha=1;
-    drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+    paintSolid(ctx,f,W,H,scale,ox,oy,total/maxTotal);
   }
 
   // City labels (only for cities with data)
@@ -1271,7 +1347,31 @@ function renderProvinceLegend(prov){
 }
 
 // ====== 绘制 GeoJSON Feature ======
+// 正常基底：无数据区域也清晰可见（保证中国矢量/世界国界始终在场）
+function paintBase(ctx,f,W,H,scale,ox,oy){
+  ctx.save();
+  ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(72,98,152,.34)';
+  ctx.strokeStyle='rgba(132,172,232,.58)';
+  ctx.lineWidth=0.7;
+  drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+  ctx.restore();
+}
+// 发光填充：有数据的区域叠发光（半透填充 + 光晕 + 亮边），不再整面实蓝
+// 实心蓝“选中”填充：有数据的区域用实心蓝 + 亮边(非光晕)，即用户要的“选中类发光”效果
+function paintSolid(ctx,f,W,H,scale,ox,oy,intensity){
+  intensity=intensity||0;
+  ctx.save();
+  ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(40,140,255,'+(0.60+intensity*0.35)+')';
+  ctx.strokeStyle='rgba(170,225,255,'+(0.85+intensity*0.15)+')';
+  ctx.lineWidth=0.9+intensity*1.5;
+  drawGeoFeature(ctx,f,W,H,scale,ox,oy);
+  ctx.restore();
+}
+
 function drawGeoFeature(ctx,f,W,H,scale,ox,oy){
+  if(!f||!f.geometry||!f.geometry.type)return; // 跳过无几何 feature(微型国家 geom 为 null)
   var geom=f.geometry;
   if(geom.type==='Polygon'){
     for(var i=0;i<geom.coordinates.length;i++){
@@ -1515,6 +1615,7 @@ function setupMapEvents(W,H){
 }
 
 function pointInFeature(px,py,f,W,H){
+  if(!f||!f.geometry||!f.geometry.type)return false; // 跳过无几何 feature, 防止遍历崩溃导致点击命中全乱
   var geom=f.geometry;
   var scale=_mapView.scale,ox=_mapView.offsetX,oy=_mapView.offsetY;
   var rings=[];

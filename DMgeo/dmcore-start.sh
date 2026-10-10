@@ -19,4 +19,6 @@ d['DMgeo']={port:Number(process.env.PORT)};
 fs.writeFileSync(f,JSON.stringify(d,null,2));
 " 2>/dev/null || true
 
-"$NODE_BIN" server.js
+# 必须 exec：否则 node 只是本脚本的子进程，`sv restart` 只终止 bash，
+# node 会变成孤儿继续占着端口，新进程起不来 —— 表现为"改了代码却没生效"。
+exec "$NODE_BIN" server.js
