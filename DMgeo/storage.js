@@ -8,9 +8,9 @@ const ROOT = __dirname;
 
 const DEFAULTS = {
   paths: {
-    geodata:    { dir: './geodata' },
-    boundaries: { dir: './map-boundaries' },
-    album:      { dir: './album' }
+    data:       { dir: './data' },
+    boundaries: { dir: './data/boundaries' },
+    database:   { dir: './data/database' }
   },
   database: {
     host: 'localhost',

@@ -63,32 +63,31 @@ ok "DMgeo 依赖就绪"
 if [ "$GEO_SOURCE" = "local" ]; then
   [ -n "$GEO_LOCAL_DIR" ] && [ -d "$GEO_LOCAL_DIR" ] || error "本地数据目录不存在: ${GEO_LOCAL_DIR:-（未指定，用 --local <目录>）}"
   info "从本地导入（不覆盖已有文件）: $GEO_LOCAL_DIR"
-  mkdir -p "$GEO_DIR/geodata"
-  # a) 完整缓存布局（china/provinces 等）
+  mkdir -p "$GEO_DIR/data" "$GEO_DIR/data/boundaries"
+  # a) 完整缓存布局（china/provinces 等）→ 边界目录
   if [ -d "$GEO_LOCAL_DIR/china" ]; then
-    cp -rn "$GEO_LOCAL_DIR/china" "$GEO_DIR/geodata/" 2>/dev/null || cp -r "$GEO_LOCAL_DIR/china" "$GEO_DIR/geodata/"
+    cp -rn "$GEO_LOCAL_DIR/china" "$GEO_DIR/data/boundaries/" 2>/dev/null || cp -r "$GEO_LOCAL_DIR/china" "$GEO_DIR/data/boundaries/"
     ok "  已拷入 china/ 缓存"
   fi
   # a2) 直接就是 provinces/cities/districts 布局
   for sub in provinces cities districts; do
     if [ -d "$GEO_LOCAL_DIR/$sub" ]; then
-      mkdir -p "$GEO_DIR/geodata/china"
-      cp -rn "$GEO_LOCAL_DIR/$sub" "$GEO_DIR/geodata/china/" 2>/dev/null || cp -r "$GEO_LOCAL_DIR/$sub" "$GEO_DIR/geodata/china/"
+      mkdir -p "$GEO_DIR/data/boundaries/china"
+      cp -rn "$GEO_LOCAL_DIR/$sub" "$GEO_DIR/data/boundaries/china/" 2>/dev/null || cp -r "$GEO_LOCAL_DIR/$sub" "$GEO_DIR/data/boundaries/china/"
       ok "  已拷入 $sub/"
     fi
   done
-  # b) 散装 geojson/json/gpx → geodata 根（server 会扫描进 geodata-list）
+  # b) 散装 geojson/json/gpx → data 根（server 会扫描进 geodata-list）
   shopt -s nullglob
   loose=("$GEO_LOCAL_DIR"/*.geojson "$GEO_LOCAL_DIR"/*.json "$GEO_LOCAL_DIR"/*.gpx)
   if [ "${#loose[@]}" -gt 0 ]; then
-    cp -n "${loose[@]}" "$GEO_DIR/geodata/" 2>/dev/null || cp "${loose[@]}" "$GEO_DIR/geodata/"
+    cp -n "${loose[@]}" "$GEO_DIR/data/" 2>/dev/null || cp "${loose[@]}" "$GEO_DIR/data/"
     ok "  已拷入 ${#loose[@]} 个散装数据文件"
   fi
   shopt -u nullglob
-  # c) 前端边界文件
+  # c) 前端边界文件 → 边界目录
   if [ -d "$GEO_LOCAL_DIR/map-boundaries" ]; then
-    mkdir -p "$GEO_DIR/map-boundaries"
-    cp -rn "$GEO_LOCAL_DIR/map-boundaries/." "$GEO_DIR/map-boundaries/" 2>/dev/null || cp -r "$GEO_LOCAL_DIR/map-boundaries/." "$GEO_DIR/map-boundaries/"
+    cp -rn "$GEO_LOCAL_DIR/map-boundaries/." "$GEO_DIR/data/boundaries/" 2>/dev/null || cp -r "$GEO_LOCAL_DIR/map-boundaries/." "$GEO_DIR/data/boundaries/"
     ok "  已拷入 map-boundaries/"
   fi
 fi
@@ -148,8 +147,8 @@ if [ -z "$CNT" ] || [ "${PROV_COUNT:-0}" = "0" ]; then
   error "数据校验失败：Basemap 里没有省数据（连接不上或导入被上面 warn 吞掉）。postgis 阶段必须先成功——先跑 ./install.sh postgis 看清报错"
 fi
 
-[ -f "$GEO_DIR/map-boundaries/china-provinces.geojson" ] \
-  && ok "前端底图已生成: map-boundaries/china-provinces.geojson" \
+[ -f "$GEO_DIR/data/boundaries/china-provinces.geojson" ] \
+  && ok "前端底图已生成: data/boundaries/china-provinces.geojson" \
   || error "前端底图缺失（china-provinces.geojson），大屏仍会黑屏，请检查上面 import 日志"
 
 mark_done "geodata"

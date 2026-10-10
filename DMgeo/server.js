@@ -257,7 +257,7 @@ const NO_CACHE_HEADERS = {
 };
 
 function scanGeodataWithCache() {
-  const cfg = config.paths.geodata;
+  const cfg = config.paths.data;
   const dir = resolveDir(cfg);
   const mediaPrefix = 'media/geodata/';
   const now = getDirMtime(dir);
@@ -728,11 +728,11 @@ const server = http.createServer((req, res) => {
   //  支持：标记点 CRUD、路径 CRUD、照片定位、批量操作、导入导出
   // ============================================================
 
-  const geodataDir = resolveDir(config.paths.geodata);
-  const MAP_DATA_FILE = path.join(geodataDir, 'map-data.geojson');
+  const dataRoot = resolveDir(config.paths.data);
+  const MAP_DATA_FILE = path.join(dataRoot, 'map-data.geojson');
 
   // 确保 geodata 目录存在
-  if (!fs.existsSync(geodataDir)) fs.mkdirSync(geodataDir, { recursive: true });
+  if (!fs.existsSync(dataRoot)) fs.mkdirSync(dataRoot, { recursive: true });
 
   // 读取完整数据库
   function loadMapDB() {
@@ -988,8 +988,8 @@ const server = http.createServer((req, res) => {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ ok: false, error: '缺少 photo 参数' }));
     }
-    // 在 album 目录中搜索照片
-    const cfg = config.paths.album;
+    // 在 data 目录中搜索照片（含各库要素媒体）
+    const cfg = config.paths.data;
     const albumDir = resolveDir(cfg);
     let foundPath = null;
     try {
@@ -1255,7 +1255,7 @@ const server = http.createServer((req, res) => {
 
     // 也统计 geodata 目录里的媒体文件
     try {
-      if (fs.existsSync(geodataDir)) {
+      if (fs.existsSync(dataRoot)) {
         const scanDir = (dir) => {
           const entries = fs.readdirSync(dir, { withFileTypes: true });
           for (const e of entries) {
@@ -1264,7 +1264,7 @@ const server = http.createServer((req, res) => {
             else if (/\.(mp4|webm|mkv|mov|avi)$/i.test(e.name)) stats.videos++;
           }
         };
-        scanDir(geodataDir);
+        scanDir(dataRoot);
       }
     } catch(_) {}
 
@@ -1549,8 +1549,8 @@ const server = http.createServer((req, res) => {
       if (p.mediaType === 'video') stats.videos++;
     }
     try {
-      if (fs.existsSync(geodataDir)) {
-        const entries = fs.readdirSync(geodataDir, { withFileTypes: true });
+      if (fs.existsSync(dataRoot)) {
+        const entries = fs.readdirSync(dataRoot, { withFileTypes: true });
         for (const e of entries) {
           if (e.isDirectory()) { stats.groups++; continue; }
           if (/\.(geojson|json|gpx)$/i.test(e.name) && e.name !== 'map-data.geojson') stats.geoFiles.push(e.name);
@@ -1564,7 +1564,8 @@ const server = http.createServer((req, res) => {
 
   // POST /upload-photo → 上传媒体到要素专属目录
   if (reqPath === '/upload-photo' && req.method === 'POST') {
-    const gdDir = resolveDir(config.paths.geodata);
+    const featDb = url.searchParams.get('db') || 'trip';
+    const gdDir = path.join(resolveDir(config.paths.database), featDb);
     if (!fs.existsSync(gdDir)) fs.mkdirSync(gdDir, { recursive: true });
 
     // 支持 ?feature=xxx 参数指定要素 ID 子目录
@@ -1631,7 +1632,7 @@ const server = http.createServer((req, res) => {
         fs.writeFileSync(path.join(featureDir, finalName), fileData);
         delete cache['geodata-list'];
 
-        const relPath = 'media/geodata/' + featureId + '/' + finalName;
+        const relPath = 'media/geodata/' + featDb + '/' + featureId + '/' + finalName;
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: true, file: relPath, name: finalName, featureId: featureId }));
       } catch(e) {
@@ -1644,7 +1645,8 @@ const server = http.createServer((req, res) => {
 
   // ====== GET /api/geo/media → 浏览要素媒体文件 ======
   if (reqPath === '/api/geo/media' && req.method === 'GET') {
-    const gdDir = resolveDir(config.paths.geodata);
+    const featDb = url.searchParams.get('db') || 'trip';
+    const gdDir = path.join(resolveDir(config.paths.database), featDb);
     const featureFilter = url.searchParams.get('feature');
     const result = [];
 
@@ -1661,7 +1663,7 @@ const server = http.createServer((req, res) => {
           const stat = fs.statSync(path.join(featureDir, f));
           result.push({
             featureId,
-            file: 'media/geodata/' + featureId + '/' + f,
+            file: 'media/geodata/' + featDb + '/' + featureId + '/' + f,
             name: f,
             size: stat.size,
             isVideo: /\.(mp4|webm|mkv|mov)$/i.test(f),
@@ -1681,7 +1683,8 @@ const server = http.createServer((req, res) => {
 
   // ====== DELETE /api/geo/media → 删除要素媒体目录 ======
   if (reqPath === '/api/geo/media' && req.method === 'DELETE') {
-    const gdDir = resolveDir(config.paths.geodata);
+    const featDb = url.searchParams.get('db') || 'trip';
+    const gdDir = path.join(resolveDir(config.paths.database), featDb);
     const featureId = url.searchParams.get('feature');
     if (!featureId) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1975,7 +1978,7 @@ const server = http.createServer((req, res) => {
 
   // 虚拟挂载：/media/geodata/ → geodata 实际目录
   if (reqPath.startsWith('/media/geodata/')) {
-    const realDir = resolveDir(config.paths.geodata);
+    const realDir = resolveDir(config.paths.database);
     const relative = reqPath.slice('/media/geodata/'.length);
     const realPath = path.join(realDir, relative);
     if (path.normalize(realPath).startsWith(path.normalize(realDir) + path.sep) || path.normalize(realPath) === path.normalize(realDir)) {

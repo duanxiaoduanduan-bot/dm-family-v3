@@ -42,7 +42,7 @@ body{font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;back
 </div>
 <div class="main">
   <h1>存储路径管理</h1>
-  <p class="sub">管理 DMgeo 的数据目录与 PostGIS 连接。支持相对路径（./xxx，相对项目根目录）或绝对路径（如 /mnt/nas/geodata）。改完保存后服务自动重启生效。</p>
+  <p class="sub">管理 DMgeo 的数据根目录（按库分文件夹）与 PostGIS 连接。支持相对路径（./xxx，相对项目根目录）或绝对路径（如 /mnt/nas/data）。改完保存后服务自动重启生效。</p>
 
   <div class="root-info">📁 项目根目录：<code id="rootPath">...</code></div>
 
@@ -69,7 +69,7 @@ body{font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;back
 function T(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('sh');setTimeout(function(){t.classList.remove('sh')},3000)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
-var PATH_META={geodata:{ic:'🗺️',nm:'地图数据',desc:'要素照片 / GeoJSON / GPX'},boundaries:{ic:'🌐',nm:'边界数据',desc:'省市区国家 GeoJSON'},album:{ic:'🖼️',nm:'相册',desc:'图片相册'}};
+var PATH_META={data:{ic:'📁',nm:'数据根目录',desc:'data/ 根目录'},boundaries:{ic:'🌐',nm:'边界数据',desc:'省市区国家 GeoJSON（共享底图）'},database:{ic:'🗄️',nm:'数据库数据',desc:'按库分文件夹（trip/onenew/Basemap）'}};
 var cfg=null;
 
 function load(){

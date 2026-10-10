@@ -29,7 +29,7 @@ function fc(features) {
 // 离线构建：读本地 geodata/china/{provinces,cities,districts} 缓存，零网络。缺失返回 null。
 // 直辖市处理：区的 parent.adcode 直接是省 adcode，该区同时作为"市"进入 cities（供大屏下钻）。
 function offlineBuild() {
-  const chinaDir = path.join(resolveDir(config.paths.geodata), 'china');
+  const chinaDir = path.join(resolveDir(config.paths.boundaries), 'china');
   const provDir = path.join(chinaDir, 'provinces');
   const cityDir = path.join(chinaDir, 'cities');
   const distDir = path.join(chinaDir, 'districts');

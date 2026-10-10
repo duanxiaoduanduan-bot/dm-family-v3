@@ -374,9 +374,21 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 // ===== 状态 =====
 var markers=[],paths=[],photoMarkers=[],videoMarkers=[];
 var markerId=0,pathId=0;
-var currentDb=localStorage.getItem('pgm_db')||'Work';
+var currentDb=localStorage.getItem('pgm_db')||'trip';
 
-function switchDb(db){currentDb=db;localStorage.setItem('pgm_db',db);markers=[];paths=[];photoMarkers=[];videoMarkers=[];renderAll();loadGeoData().then(function(){renderAll()})}
+function switchDb(db){
+  currentDb=db;
+  localStorage.setItem('pgm_db',db);
+  // 清空地图上的旧图层（否则切库后旧库要素仍显示）
+  markers.forEach(function(mk){if(mk.marker)map.removeLayer(mk.marker);if(mk.photoMarker)map.removeLayer(mk.photoMarker);if(mk.videoMarker)map.removeLayer(mk.videoMarker)});
+  paths.forEach(function(p){if(p.line)map.removeLayer(p.line)});
+  photoMarkers.forEach(function(m){if(m.marker)map.removeLayer(m.marker);if(m.line)map.removeLayer(m.line)});
+  videoMarkers.forEach(function(m){if(m.marker)map.removeLayer(m.marker);if(m.line)map.removeLayer(m.line)});
+  markers=[];paths=[];photoMarkers=[];videoMarkers=[];
+  photoList=[];videoList=[];
+  autoLoad();loadGeodata();renderTable();renderLayerList();
+  showToast('已切换到数据库: '+db);
+}
 function loadDatabases(){fetch('/api/pg/databases').then(r=>r.json()).then(dbs=>{var s=document.getElementById('dbSelect');s.innerHTML='';dbs.forEach(function(d){s.innerHTML+='<option value="'+d+'"'+(d===currentDb?' selected':'')+'>🗄 '+d+'</option>'})})}
 function dbApi(url,opts){
   opts=opts||{};
