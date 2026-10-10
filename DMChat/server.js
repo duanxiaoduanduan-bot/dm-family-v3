@@ -179,7 +179,7 @@ const requestHandler = (req, res) => {
         const userId = 'u' + Date.now().toString(36);
         const isAdmin = Object.keys(users).length === 0;
         const recoveryCode = 'rc' + crypto.randomBytes(4).toString('hex');
-        users[userId] = { name, password: sha256(password), isAdmin, recoveryCode: sha256(recoveryCode), createdAt: Date.now() };
+        users[userId] = { name, password: sha256(password), isAdmin, recoveryCode, createdAt: Date.now() };
         invites[invite].used = true;
         invites[invite].usedBy = userId;
         saveUsers(users); saveInvites(invites);
@@ -206,11 +206,11 @@ const requestHandler = (req, res) => {
         if (!user || user[1].password !== sha256(password)) {
           res.writeHead(401, ctJson); return res.end(JSON.stringify({ error: '昵称或密码错误' }));
         }
-        // 老账号没有恢复码的，登录时自动补发（仅本次响应返回，请用户保存）
+        // 恢复码缺漏或旧版(sha256 64位) → 迁移为明文(rc+8位)并在本次响应返回，请用户保存
         let recoveryCode;
-        if (!user[1].recoveryCode) {
+        if (!user[1].recoveryCode || user[1].recoveryCode.length !== 10) {
           recoveryCode = 'rc' + crypto.randomBytes(4).toString('hex');
-          user[1].recoveryCode = sha256(recoveryCode);
+          user[1].recoveryCode = recoveryCode;
           saveUsers(users);
         }
         const token = crypto.randomBytes(16).toString('hex');
@@ -256,7 +256,7 @@ const requestHandler = (req, res) => {
         if (newPassword.length < 4) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '新密码至少4位' })); }
         const user = Object.values(users).find(u => u.name === name);
         if (!user) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '用户不存在' })); }
-        if (!user.recoveryCode || user.recoveryCode !== sha256(recoveryCode)) {
+        if (!user.recoveryCode || user.recoveryCode !== recoveryCode) {
           res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '恢复码错误' }));
         }
         user.password = sha256(newPassword);
@@ -279,12 +279,23 @@ const requestHandler = (req, res) => {
         const user = users[userId];
         if (!user) { res.writeHead(401, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
         const recoveryCode = 'rc' + crypto.randomBytes(4).toString('hex');
-        user.recoveryCode = sha256(recoveryCode);
+        user.recoveryCode = recoveryCode;
         saveUsers(users);
         res.writeHead(200, ctJson);
         res.end(JSON.stringify({ ok: true, recoveryCode }));
       } catch (e) { res.writeHead(400, ctJson); res.end(JSON.stringify({ error: e.message })); }
     });
+    return;
+  }
+
+  // === 查看我的恢复码（已登录；明文可见，方便备份）===
+  if (reqPath === '/api/my-recovery-code' && req.method === 'GET') {
+    const token = url.searchParams.get('token');
+    const userId = tokens.get(token);
+    const user = users[userId];
+    if (!user) { res.writeHead(401, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
+    res.writeHead(200, ctJson);
+    res.end(JSON.stringify({ recoveryCode: user.recoveryCode || null }));
     return;
   }
 

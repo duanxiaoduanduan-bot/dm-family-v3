@@ -280,7 +280,8 @@ input { font-family: inherit; }
 <button onclick="changePassword()" style="padding:8px 16px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;margin-top:4px">修改</button>
 <span id="pwMsg" style="font-size:12px;margin-left:8px"></span>
 <div style="font-size:13px;font-weight:600;margin:18px 0 6px">🆘 恢复码</div>
-<div style="font-size:12px;color:var(--text2);margin-bottom:8px">忘记密码时，用「昵称 + 恢复码」即可在登录页自助重置。恢复码只在生成时显示一次；重新生成后旧码立即失效，请妥善保存。</div>
+<div style="font-size:12px;color:var(--text2);margin-bottom:8px">忘记密码时，在登录页点「忘记密码」，输入「昵称 + 恢复码」即可自助重置，不用找管理员。当前恢复码：</div>
+<div style="display:flex;gap:6px;margin-bottom:8px"><input id="rcView" readonly style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--blue);font-size:13px;font-family:monospace" placeholder="点「查看」加载"><button onclick="viewRecoveryCode()" style="padding:8px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap">👁 查看</button><button onclick="copyRecoveryCode()" style="padding:8px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap">📋 复制</button></div>
 <button onclick="regenRecoveryCode()" style="padding:8px 16px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;cursor:pointer">🔄 重新生成恢复码</button>
 </div></div>
 
@@ -468,7 +469,7 @@ async function adminResetPassword(userId){
 }
 
 // ===== 我的设置：修改密码 / 恢复码 =====
-function showSettings(){ document.getElementById('settingsPanel').classList.add('show'); document.getElementById('pwMsg').textContent=''; }
+function showSettings(){ document.getElementById('settingsPanel').classList.add('show'); document.getElementById('pwMsg').textContent=''; document.getElementById('rcView').value=''; loadRecoveryCode(); }
 function closeSettings(){ document.getElementById('settingsPanel').classList.remove('show'); }
 async function changePassword(){
   const oldPassword=document.getElementById('oldPass').value, newPassword=document.getElementById('newPass').value, msg=document.getElementById('pwMsg');
@@ -482,8 +483,22 @@ async function regenRecoveryCode(){
   if(!confirm('重新生成后旧恢复码立即失效，确定？')) return;
   const r=await fetch('/api/recovery-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:myToken})});
   const d=await r.json();
-  if(d.ok){ alert('🆘 你的新恢复码（仅此一次显示，请立即保存）：\n\n'+d.recoveryCode); closeSettings(); }
+  if(d.ok){ document.getElementById('rcView').value=d.recoveryCode; toast('恢复码已更新，可复制保存','success'); }
   else toast(d.error||'生成失败','error');
+}
+async function loadRecoveryCode(){
+  try{
+    const r=await fetch('/api/my-recovery-code?token='+encodeURIComponent(myToken));
+    const d=await r.json();
+    if(d.recoveryCode) document.getElementById('rcView').value=d.recoveryCode;
+  }catch(e){}
+}
+function viewRecoveryCode(){ loadRecoveryCode(); }
+function copyRecoveryCode(){
+  const v=document.getElementById('rcView').value;
+  if(!v){ toast('先点「查看」加载恢复码','error'); return; }
+  if(navigator.clipboard){ navigator.clipboard.writeText(v).then(function(){toast('恢复码已复制','success')}); }
+  else { document.getElementById('rcView').select(); document.execCommand('copy'); toast('恢复码已复制','success'); }
 }
 
 // ===== 其余全部函数保持不变 =====
