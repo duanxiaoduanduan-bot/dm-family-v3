@@ -10,11 +10,14 @@ const PORT = process.env.PORT || 8085;
 const ROOT = __dirname;
 
 // 从 ports.json 获取实际端口(缺省回退)
-let realPorts = { media: 8081, geo: 8084 };
+let realPorts = { media: 8081, chat: 8083, geo: 8084, show: 8086, netdisk: 8087, core: 8088 };
 try {
   const j = JSON.parse(fs.readFileSync(path.join(ROOT, '..', 'ports.json'), 'utf8'));
-  if (j.DMmedia) realPorts.media = j.DMmedia.media;
-  if (j.DMgeo)   realPorts.geo   = j.DMgeo.port;
+  if (j.DMmedia) { realPorts.media   = j.DMmedia.media; realPorts.netdisk = j.DMmedia.files || 8087; }
+  if (j.DMgeo)     realPorts.geo   = j.DMgeo.port;
+  if (j.DMChat)    realPorts.chat  = j.DMChat.port;
+  if (j.DMshow)    realPorts.show  = j.DMshow.port;
+  // DMcore 不写 ports.json（DMCORE_PORT 默认 8088），保持默认
 } catch(e) { /* 缺省回退 */ }
 
 const MIME = {
@@ -41,7 +44,11 @@ const server = http.createServer((req, res) => {
     try {
       let html = fs.readFileSync(fp, 'utf8');
       html = html.replace(/:8081\b/g, ':' + realPorts.media);
+      html = html.replace(/:8083\b/g, ':' + realPorts.chat);
       html = html.replace(/:8084\b/g, ':' + realPorts.geo);
+      html = html.replace(/:8086\b/g, ':' + realPorts.show);
+      html = html.replace(/:8087\b/g, ':' + realPorts.netdisk);
+      html = html.replace(/:8088\b/g, ':' + realPorts.core);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(html);
     } catch(e) { res.writeHead(404); return res.end('Not Found'); }
@@ -57,6 +64,7 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log('  ╔══════════════════════════════════════╗');
   console.log('  ║     DMpageo 合并门户  :' + PORT + '            ║');
-  console.log('  ║     媒体 :' + realPorts.media + '    地理统计 :' + realPorts.geo + '    ║');
+  console.log('  ║  媒体:' + realPorts.media + ' 聊天:' + realPorts.chat + ' 地理:' + realPorts.geo + ' 主页:' + realPorts.show + ' ║');
+  console.log('  ║  网盘:' + realPorts.netdisk + ' 控制台:' + realPorts.core + '                          ║');
   console.log('  ╚══════════════════════════════════════╝');
 });

@@ -952,7 +952,7 @@ function loadWorldGeo(cb){
     _worldGeoCache=d;cb(d);
   }).catch(function(){
     // 备用：本地文件
-    fetch('map-boundaries/world-countries.geojson').then(function(r){return r.json()}).then(function(d){
+    fetch('boundaries/world-countries.geojson').then(function(r){return r.json()}).then(function(d){
       _worldGeoCache=d;cb(d);
     }).catch(function(){
       $('regionChartLegend').innerHTML='<span style="color:#e17055">加载世界地图失败</span>';
@@ -965,7 +965,7 @@ function loadProvGeo(cb){
   fetch('api/geo/boundaries?type=provinces').then(function(r){return r.json()}).then(function(d){
     _provGeoCache=d;cb(d);
   }).catch(function(){
-    fetch('map-boundaries/china-provinces.geojson').then(function(r){return r.json()}).then(function(d){
+    fetch('boundaries/china-provinces.geojson').then(function(r){return r.json()}).then(function(d){
       _provGeoCache=d;cb(d);
     }).catch(function(){
       $('regionChartLegend').innerHTML='<span style="color:#e17055">加载中国地图失败</span>';
@@ -981,7 +981,7 @@ function loadCityGeo(provinceName,cb){
     // 备用：尝试本地文件
     var code=provCodeMap[provinceName];
     if(code){
-      fetch('map-boundaries/cities/'+code+'.geojson').then(function(r){return r.json()}).then(function(d){cb(d)}).catch(function(){cb(null)});
+      fetch('boundaries/cities/'+code+'.geojson').then(function(r){return r.json()}).then(function(d){cb(d)}).catch(function(){cb(null)});
     }else{cb(null)}
   });
 }

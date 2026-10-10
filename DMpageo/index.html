@@ -22,23 +22,32 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
   <div class="logo">✦ DMpageo 合并门户</div>
   <div class="tabs">
     <div class="tab active" data-tab="media">🎬 媒体网盘</div>
+    <div class="tab" data-tab="chat">💬 聊天</div>
     <div class="tab" data-tab="geo">🗺️ 地理统计</div>
     <div class="tab" data-tab="show">📱 个人主页</div>
+    <div class="tab" data-tab="netdisk">📁 网盘</div>
+    <div class="tab" data-tab="core">🎛️ 控制台</div>
   </div>
   <div class="hint">单独运行各自独立 · 合并运行同处一界面</div>
 </div>
 <div class="stage">
   <iframe id="f-media" class="frame active" src=""></iframe>
+  <iframe id="f-chat" class="frame" src=""></iframe>
   <iframe id="f-geo" class="frame" src=""></iframe>
   <iframe id="f-show" class="frame" src=""></iframe>
+  <iframe id="f-netdisk" class="frame" src=""></iframe>
+  <iframe id="f-core" class="frame" src=""></iframe>
 </div>
 <script>
   const isProxy = location.port === '8080' || location.pathname.startsWith('/pageo');
   const host = location.hostname;
   const URLS = {
-    media: isProxy ? '/media/' : ('//' + host + ':8081/'),
-    geo:   isProxy ? '/geo/'   : ('//' + host + ':8084/'),
-    show:  isProxy ? '/show/'  : ('//' + host + ':8086/')
+    media:   isProxy ? '/media/'   : ('//' + host + ':8081/'),
+    chat:    isProxy ? '/chat/'    : ('//' + host + ':8083/'),
+    geo:     isProxy ? '/geo/'     : ('//' + host + ':8084/'),
+    show:    isProxy ? '/show/'    : ('//' + host + ':8086/'),
+    netdisk: isProxy ? '/netdisk/' : ('//' + host + ':8087/'),
+    core:    isProxy ? '/core/'    : ('//' + host + ':8088/')
   };
   const loaded = {}; // 懒加载：首次切到某 tab 才设 src
 

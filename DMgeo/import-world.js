@@ -9,8 +9,11 @@ const https = require('https');
 const { Pool } = require('pg');
 
 const ROOT = __dirname;
+const { loadStorageConfig, resolveDir } = require('./storage');
+const config = loadStorageConfig();
+const dbCfg = config.database;
 const SRC = 'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_admin_0_countries.geojson';
-const OUT = path.join(ROOT, 'map-boundaries/world-countries.geojson');
+const OUT = path.join(resolveDir(config.paths.boundaries), 'world-countries.geojson');
 
 function download(url) {
   return new Promise((resolve, reject) => {
@@ -64,7 +67,7 @@ function normalize(src) {
   console.log('[2] 已写入本地', OUT, '(', features.length, '国 )');
 
   console.log('[3] 导入 PostGIS Basemap.countries 表 ...');
-  const pool = new Pool({ database: 'Basemap', user: 'dmuser', password: 'dmpageo123' });
+  const pool = new Pool({ host: dbCfg.host, port: dbCfg.port, database: dbCfg.basemapDb, user: dbCfg.user, password: dbCfg.password });
   await pool.query(`CREATE TABLE IF NOT EXISTS countries (
     id SERIAL PRIMARY KEY, name TEXT, geom GEOMETRY(GEOMETRY,4326))`);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_countries_geom ON countries USING GIST (geom)');

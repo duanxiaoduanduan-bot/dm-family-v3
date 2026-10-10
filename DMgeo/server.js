@@ -6,25 +6,31 @@ const { Pool, Client } = require('pg');
 
 const PORT = process.env.PORT || 8084;
 const ROOT = __dirname;
+const { loadStorageConfig, resolveDir } = require('./storage');
+const config = loadStorageConfig();
+const dbCfg = config.database;
 
 // ===== PostgreSQL/PostGIS 连接池 =====
 const pgPool = new Pool({        // trip — 主库(要素+边界缓存)
-  database: 'trip',
-  user: 'dmuser',
-  password: 'dmpageo123',
+  host: dbCfg.host, port: dbCfg.port,
+  database: dbCfg.featureDb,
+  user: dbCfg.user,
+  password: dbCfg.password,
   max: 10
 });
 const basemapPool = new Pool({   // Basemap — 底图原档(不动)
-  database: 'Basemap',
-  user: 'dmuser',
-  password: 'dmpageo123',
+  host: dbCfg.host, port: dbCfg.port,
+  database: dbCfg.basemapDb,
+  user: dbCfg.user,
+  password: dbCfg.password,
   max: 10
 });
 // 管理连接�� — 连 postgres 库, 用于 CREATE/DROP DATABASE
-const adminPool = new Pool({
-  database: 'postgres',
-  user: 'dmuser',
-  password: 'dmpageo123',
+const adminPool = new Pool({     // 连 postgres 库, 用于 CREATE/DROP DATABASE
+  host: dbCfg.host, port: dbCfg.port,
+  database: dbCfg.adminDb,
+  user: dbCfg.user,
+  password: dbCfg.password,
   max: 3
 });
 
@@ -34,7 +40,7 @@ const adminPool = new Pool({
 const _featPools = { trip: pgPool, Basemap: basemapPool };
 function getFeaturePool(dbName) {
   const db = dbName || 'trip';
-  if (!_featPools[db]) _featPools[db] = new Pool({ database: db, user: 'dmuser', password: 'dmpageo123', max: 3 });
+  if (!_featPools[db]) _featPools[db] = new Pool({ host: dbCfg.host, port: dbCfg.port, database: db, user: dbCfg.user, password: dbCfg.password, max: 3 });
   return _featPools[db];
 }
 // 库名/标识符加引号（库名可能含空格，如 "Financial Assets"）
@@ -52,7 +58,7 @@ async function resolveSuperUser() {
   try { cands.push(os.userInfo().username); } catch (_) {}
   cands.push('postgres');
   for (const u of cands.filter(Boolean)) {
-    const c = new Client({ database: 'postgres', user: u });
+    const c = new Client({ host: dbCfg.host, port: dbCfg.port, database: dbCfg.adminDb, user: u });
     try {
       await c.connect();
       const r = await c.query('SELECT rolsuper FROM pg_roles WHERE rolname = current_user');
@@ -83,7 +89,7 @@ async function ensureFeatureStore(dbName, force) {
   )`;
   const DDL_INDEX = 'CREATE INDEX IF NOT EXISTS idx_features_geom ON features USING GIST (geom)';
   if (su) {
-    const c = new Client({ database: db, user: su });
+    const c = new Client({ host: dbCfg.host, port: dbCfg.port, database: db, user: su });
     try {
       await c.connect();
       await c.query('CREATE EXTENSION IF NOT EXISTS postgis');
@@ -203,17 +209,7 @@ pgPool.query('SELECT PostGIS_version()').then(r => {
   console.error('  ⚠️  PostGIS 连接失败:', e.message);
 });
 
-// ===== 存储配置 =====
-function resolveDir(cfgEntry) {
-  if (!cfgEntry || !cfgEntry.dir) return ROOT;
-  const d = cfgEntry.dir;
-  if (path.isAbsolute(d)) return d;
-  return path.resolve(ROOT, d);
-}
-
-
-
-const config = { paths: { geodata: { dir: './geodata' }, album: { dir: './album' } } };
+// ===== 存储配置（见 storage.js：loadStorageConfig / resolveDir）=====
 
 const MIME = {
   '.html':'text/html; charset=utf-8','.js':'application/javascript',
@@ -661,6 +657,46 @@ const server = http.createServer((req, res) => {
         const columns = result.fields.map(f => f.name);
         sendJson(res, 200, { columns, rows: result.rows });
       } catch(e) {
+        sendJson(res, 400, { error: e.message });
+      }
+    });
+    return;
+  }
+
+  // GET /api/storage-config → 读取存储/连接配置（root + paths + database）
+  if (reqPath === '/api/storage-config' && req.method === 'GET') {
+    const cfg = loadStorageConfig();
+    const paths = {};
+    for (const [k, v] of Object.entries(cfg.paths)) {
+      const resolved = resolveDir(v);
+      paths[k] = { dir: v.dir, resolved, exists: fs.existsSync(resolved) };
+    }
+    sendJson(res, 200, { root: ROOT, paths, database: cfg.database });
+    return;
+  }
+
+  // POST /api/storage-config → 保存存储/连接配置，写回 storage-config.json 后重启生效
+  if (reqPath === '/api/storage-config' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const input = JSON.parse(body);
+        if (!input.database && !input.paths) throw new Error('缺少 database 或 paths 配置');
+        const cfgPath = path.join(ROOT, 'storage-config.json');
+        let cur = {};
+        try { cur = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch (e) {}
+        if (input.database) cur.database = { ...(cur.database || {}), ...input.database };
+        if (input.paths) {
+          cur.paths = { ...(cur.paths || {}) };
+          for (const [k, v] of Object.entries(input.paths)) {
+            cur.paths[k] = { ...(cur.paths[k] || {}), ...v };
+          }
+        }
+        fs.writeFileSync(cfgPath, JSON.stringify(cur, null, 2));
+        sendJson(res, 200, { ok: true, message: '已保存，服务重启中' });
+        setTimeout(() => process.exit(0), 600);
+      } catch (e) {
         sendJson(res, 400, { error: e.message });
       }
     });
@@ -1941,6 +1977,17 @@ const server = http.createServer((req, res) => {
   if (reqPath.startsWith('/media/geodata/')) {
     const realDir = resolveDir(config.paths.geodata);
     const relative = reqPath.slice('/media/geodata/'.length);
+    const realPath = path.join(realDir, relative);
+    if (path.normalize(realPath).startsWith(path.normalize(realDir) + path.sep) || path.normalize(realPath) === path.normalize(realDir)) {
+      return serveFile(realPath, res);
+    }
+    res.writeHead(403); return res.end('Forbidden');
+  }
+
+  // 虚拟挂载：/boundaries/ → 边界数据实际目录（map-boundaries，见 storage-config.json）
+  if (reqPath.startsWith('/boundaries/')) {
+    const realDir = resolveDir(config.paths.boundaries);
+    const relative = reqPath.slice('/boundaries/'.length);
     const realPath = path.join(realDir, relative);
     if (path.normalize(realPath).startsWith(path.normalize(realDir) + path.sep) || path.normalize(realPath) === path.normalize(realDir)) {
       return serveFile(realPath, res);

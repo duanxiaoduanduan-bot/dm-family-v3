@@ -13,13 +13,16 @@ const path = require('path');
 const https = require('https');
 
 const ROOT = __dirname;
+const { loadStorageConfig, resolveDir } = require('./storage');
+const config = loadStorageConfig();
+const chinaDir = path.join(resolveDir(config.paths.geodata), 'china');
 const BASE = 'https://geo.datav.aliyun.com/areas_v3/bound/';
-const CHINA_FULL = path.join(ROOT, 'geodata/china/china_full.json');
-const PROV_DIR = path.join(ROOT, 'geodata/china/provinces');
-const CITY_DIR = path.join(ROOT, 'geodata/china/cities');
-const DIST_DIR = path.join(ROOT, 'geodata/china/districts');
-const MAP_PROV = path.join(ROOT, 'map-boundaries/china-provinces.geojson');
-const MAP_CITY_DIR = path.join(ROOT, 'map-boundaries/cities');
+const CHINA_FULL = path.join(chinaDir, 'china_full.json');
+const PROV_DIR = path.join(chinaDir, 'provinces');
+const CITY_DIR = path.join(chinaDir, 'cities');
+const DIST_DIR = path.join(chinaDir, 'districts');
+const MAP_PROV = path.join(resolveDir(config.paths.boundaries), 'china-provinces.geojson');
+const MAP_CITY_DIR = path.join(resolveDir(config.paths.boundaries), 'cities');
 
 function httpsGet(url, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {

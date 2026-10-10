@@ -12,6 +12,9 @@ const path = require('path');
 const { Pool } = require('pg');
 
 const ROOT = __dirname;
+const { loadStorageConfig, resolveDir } = require('./storage');
+const config = loadStorageConfig();
+const dbCfg = config.database;
 
 // 几何规范化：将 DataV 返回的 Polygon / MultiPolygon / GeometryCollection
 // 统一转为 MultiPolygon。北京/广东/天津等省级边界 DataV 返回 GeometryCollection（Polygon + LineString），
@@ -26,9 +29,10 @@ function fc(features) {
 // 离线构建：读本地 geodata/china/{provinces,cities,districts} 缓存，零网络。缺失返回 null。
 // 直辖市处理：区的 parent.adcode 直接是省 adcode，该区同时作为"市"进入 cities（供大屏下钻）。
 function offlineBuild() {
-  const provDir = path.join(ROOT, 'geodata/china/provinces');
-  const cityDir = path.join(ROOT, 'geodata/china/cities');
-  const distDir = path.join(ROOT, 'geodata/china/districts');
+  const chinaDir = path.join(resolveDir(config.paths.geodata), 'china');
+  const provDir = path.join(chinaDir, 'provinces');
+  const cityDir = path.join(chinaDir, 'cities');
+  const distDir = path.join(chinaDir, 'districts');
   if (![provDir, cityDir, distDir].every(d => fs.existsSync(d))) return null;
   const read = dir => fs.readdirSync(dir).filter(f => f.endsWith('.json'))
     .map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
@@ -73,7 +77,7 @@ function offlineBuild() {
 
   // ---- upsert 进 PostGIS ----
   console.log('[5] upsert 进 PostGIS Basemap ...');
-  const pool = new Pool({ database: 'Basemap', user: 'dmuser', password: 'dmpageo123' });
+  const pool = new Pool({ host: dbCfg.host, port: dbCfg.port, database: dbCfg.basemapDb, user: dbCfg.user, password: dbCfg.password });
 
   await pool.query(`CREATE TABLE IF NOT EXISTS provinces (
     id SERIAL PRIMARY KEY, name TEXT, code TEXT, geom GEOMETRY(GEOMETRY,4326))`);

@@ -1,0 +1,16 @@
+{
+  "paths": {
+    "geodata": { "dir": "./geodata" },
+    "boundaries": { "dir": "./map-boundaries" },
+    "album": { "dir": "./album" }
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "dmuser",
+    "password": "dmpageo123",
+    "featureDb": "trip",
+    "basemapDb": "Basemap",
+    "adminDb": "postgres"
+  }
+}

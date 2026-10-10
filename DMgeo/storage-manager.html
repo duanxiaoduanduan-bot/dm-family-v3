@@ -1,0 +1,132 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>存储管理 - DMgeo</title>
+<style>
+:root{--bg:#0d0d14;--pn:#12121e;--bd:rgba(255,255,255,.06);--tx:#c8c8d0;--di:#6a6a78;--ac:#00cec9;--a2:#6c5ce7;--wn:#f39c12;--dg:#e74c3c;--sc:#2ecc71}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+.header{padding:14px 24px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--bd);background:var(--pn)}
+.header .logo{font-size:16px;font-weight:700;color:#fff}
+.header .logo b{color:var(--ac)}
+.header a{margin-left:auto;color:var(--di);font-size:11px;text-decoration:none}
+.header a:hover{color:var(--ac)}
+.main{max-width:900px;margin:0 auto;padding:28px 20px 40px}
+.main h1{font-size:20px;color:#fff;margin-bottom:4px}
+.main .sub{color:var(--di);font-size:12px;margin-bottom:22px}
+.root-info{padding:12px 16px;border-radius:10px;background:rgba(108,92,231,.08);border:1px solid rgba(108,92,231,.2);margin-bottom:22px;font-size:12px;color:#999;display:flex;align-items:center;gap:10px}
+.root-info code{color:var(--ac);font-size:12px;word-break:break-all}
+.section{font-size:12px;color:var(--di);margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+.card{background:rgba(255,255,255,.03);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.card .head{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:14px;color:#fff;font-weight:600}
+.card .head .ic{font-size:18px}
+.card .meta{font-size:11px;color:var(--di);margin-bottom:10px;word-break:break-all}
+.card .meta code{color:#888;font-family:monospace}
+.card .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
+.dot.ok{background:var(--sc)}.dot.err{background:var(--dg)}.dot.warn{background:var(--wn)}
+.card input{width:100%;padding:7px 10px;border-radius:7px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--tx);font-size:12px;font-family:monospace;outline:none;margin-bottom:8px}
+.card input:focus{border-color:var(--ac)}
+.card .btn{padding:6px 14px;border-radius:7px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--di);font-size:11px;cursor:pointer;margin-right:6px}
+.card .btn:hover{color:#fff}
+.card .btn.save{background:rgba(0,206,201,.12);border-color:rgba(0,206,201,.3);color:var(--ac)}
+.card .btn.save:hover{background:rgba(0,206,201,.2)}
+.hint{font-size:10px;color:#555;margin-top:6px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.9);color:#fff;padding:9px 22px;border-radius:20px;font-size:12px;z-index:999;opacity:0;pointer-events:none;transition:.3s}
+.toast.sh{opacity:1}
+@media(max-width:640px){.main{padding:20px 14px 30px}.grid{grid-template-columns:1fr}}
+</style>
+</head><body>
+<div class="header">
+  <div class="logo">⚙️ <b>存储管理</b> · DMgeo</div>
+  <a href="/db-manager.html">🗄️ 数据管理</a><a href="/index.html">← DMgeo</a>
+</div>
+<div class="main">
+  <h1>存储路径管理</h1>
+  <p class="sub">管理 DMgeo 的数据目录与 PostGIS 连接。支持相对路径（./xxx，相对项目根目录）或绝对路径（如 /mnt/nas/geodata）。改完保存后服务自动重启生效。</p>
+
+  <div class="root-info">📁 项目根目录：<code id="rootPath">...</code></div>
+
+  <div class="section">🗂️ 数据目录</div>
+  <div class="grid" id="pathGrid"></div>
+
+  <div class="section">🗄️ 数据库连接</div>
+  <div class="card" style="max-width:560px">
+    <div class="head"><span class="ic">🔌</span>PostGIS 连接</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><div style="font-size:10px;color:var(--di);margin-bottom:4px">主机 host</div><input id="db_host"></div>
+      <div><div style="font-size:10px;color:var(--di);margin-bottom:4px">端口 port</div><input id="db_port"></div>
+      <div><div style="font-size:10px;color:var(--di);margin-bottom:4px">用户 user</div><input id="db_user"></div>
+      <div><div style="font-size:10px;color:var(--di);margin-bottom:4px">密码 password</div><input id="db_pw"></div>
+      <div><div style="font-size:10px;color:var(--di);margin-bottom:4px">要素库 featureDb</div><input id="db_fdb"></div>
+      <div><div style="font-size:10px;color:var(--di);margin-bottom:4px">底图库 basemapDb</div><input id="db_bdb"></div>
+      <div><div style="font-size:10px;color:var(--di);margin-bottom:4px">管理库 adminDb</div><input id="db_adb"></div>
+    </div>
+    <button class="btn save" onclick="saveDb()" style="margin-top:12px">💾 保存连接</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function T(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('sh');setTimeout(function(){t.classList.remove('sh')},3000)}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+var PATH_META={geodata:{ic:'🗺️',nm:'地图数据',desc:'要素照片 / GeoJSON / GPX'},boundaries:{ic:'🌐',nm:'边界数据',desc:'省市区国家 GeoJSON'},album:{ic:'🖼️',nm:'相册',desc:'图片相册'}};
+var cfg=null;
+
+function load(){
+  fetch('/api/storage-config').then(function(r){return r.json()}).then(function(d){
+    cfg=d;
+    document.getElementById('rootPath').textContent=d.root||'';
+    renderPaths(d.paths||{});
+    fillDb(d.database||{});
+  }).catch(function(e){T('加载失败: '+e.message)});
+}
+function renderPaths(paths){
+  var g=document.getElementById('pathGrid'); g.innerHTML='';
+  Object.keys(PATH_META).forEach(function(k){
+    var meta=PATH_META[k], p=paths[k]||{dir:'./'+k};
+    var dot=p.exists===true?'ok':(p.exists===false?'err':'warn');
+    var txt=p.exists===true?'存在':(p.exists===false?'不存在':'未知');
+    g.innerHTML+='<div class="card"><div class="head"><span class="ic">'+meta.ic+'</span>'+meta.nm+'</div>'+
+      '<div class="meta">'+esc(meta.desc)+'</div>'+
+      '<div class="meta"><span class="dot '+dot+'"></span>'+txt+' · <code>'+esc(p.dir||'')+'</code></div>'+
+      '<div class="meta">→ <code>'+esc(p.resolved||'')+'</code></div>'+
+      '<input id="p_'+k+'" value="'+esc(p.dir||'')+'">'+
+      '<button class="btn save" onclick="savePath(\''+k+'\')">💾 保存</button>'+
+      '<div class="hint">相对路径 ./xxx 或绝对路径 /mnt/nas/xxx</div></div>';
+  });
+}
+function fillDb(db){
+  document.getElementById('db_host').value=db.host||'';
+  document.getElementById('db_port').value=db.port||'';
+  document.getElementById('db_user').value=db.user||'';
+  document.getElementById('db_pw').value=db.password||'';
+  document.getElementById('db_fdb').value=db.featureDb||'';
+  document.getElementById('db_bdb').value=db.basemapDb||'';
+  document.getElementById('db_adb').value=db.adminDb||'';
+}
+function post(body){
+  fetch('/api/storage-config',{method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},body:JSON.stringify(body)})
+  .then(function(r){return r.json()}).then(function(d){
+    if(d.ok){T('✅ 已保存，服务重启中...');setTimeout(function(){location.reload()},2600)}
+    else T('保存失败: '+(d.error||'未知'));
+  }).catch(function(e){T('请求失败: '+e.message)});
+}
+function savePath(k){
+  var v=(document.getElementById('p_'+k).value||'').trim();
+  if(!v){T('路径不能为空');return}
+  post({paths:{[k]:{dir:v}}});
+}
+function saveDb(){
+  post({database:{
+    host:document.getElementById('db_host').value.trim(),
+    port:parseInt(document.getElementById('db_port').value||'5432',10),
+    user:document.getElementById('db_user').value.trim(),
+    password:document.getElementById('db_pw').value,
+    featureDb:document.getElementById('db_fdb').value.trim(),
+    basemapDb:document.getElementById('db_bdb').value.trim(),
+    adminDb:document.getElementById('db_adb').value.trim()
+  }});
+}
+load();
+</script>
+</body></html>

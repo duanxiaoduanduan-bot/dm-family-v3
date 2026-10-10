@@ -80,11 +80,12 @@ tr.sel{background:rgba(0,206,201,.04)}tr.sel td{color:#fff}
 </style></head><body>
 <div class="top">
   <h1>🗄️ PostGIS 数据管理</h1><span class="badge" id="dbBadge"></span>
-  <button onclick="showNewDb()" style="margin-left:8px;padding:3px 10px;font-size:10px;border-radius:5px;border:1px solid var(--bd);background:rgba(0,206,201,.1);color:var(--ac);cursor:pointer">＋建库</button>
+  <button onclick="showConnCfg()" style="margin-left:8px;padding:3px 10px;font-size:10px;border-radius:5px;border:1px solid var(--bd);background:rgba(243,156,18,.12);color:var(--wn);cursor:pointer" title="数据库连接配置">⚙️ 连接</button>
+  <button onclick="showNewDb()" style="margin-left:4px;padding:3px 10px;font-size:10px;border-radius:5px;border:1px solid var(--bd);background:rgba(0,206,201,.1);color:var(--ac);cursor:pointer">＋建库</button>
   <select id="dbSel" onchange="pickDb(this.value)" style="padding:3px 6px;border-radius:5px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--tx);font-size:10px;outline:none"></select>
   <button onclick="showRenameDb()" style="padding:3px 8px;font-size:9px" title="重命名">✏️</button>
   <button onclick="showDropDb()" class="dg" style="padding:3px 8px;font-size:9px" title="删除">🗑</button>
-  <a href="/admin-regions.html">📍 区划</a><a href="/index.html">← DMgeo</a>
+  <a href="/storage-manager.html">⚙️ 存储</a><a href="/admin-regions.html">📍 区划</a><a href="/index.html">← DMgeo</a>
 </div>
 <div class="layout">
   <div class="side"><div class="side-hd"><input id="treeQ" placeholder="🔍 搜索..." oninput="doTree()"></div><div class="tree" id="tree"></div>
@@ -294,6 +295,36 @@ async function doDropExec(){
 
 function doTrunc(){if(confirm('⚠️ 清空表 '+cur.tbl+'？'))doTruncExec()}
 async function doTruncExec(){try{var r=await api('/api/pg/tables/'+encodeURIComponent(cur.tbl)+'/rows/all',{method:'DELETE'});if(r.ok){T('✅');closeMo();loadPage(1);doData()}else T(r.error)}catch(e){T(e.message)}}
+
+// ===== 连接配置 =====
+function showConnCfg(){
+  fetch('/api/storage-config').then(function(r){return r.json()}).then(function(d){
+    var db=(d&&d.database)||{};
+    mo('⚙️ 连接配置','<div class="fd"><label>主机 host</label><input id="f_host" value="'+E(db.host||'')+'"></div>'+
+      '<div class="fd"><label>端口 port</label><input id="f_port" value="'+E(db.port||'')+'"></div>'+
+      '<div class="fd"><label>用户 user</label><input id="f_user" value="'+E(db.user||'')+'"></div>'+
+      '<div class="fd"><label>密码 password</label><input id="f_pw" value="'+E(db.password||'')+'"></div>'+
+      '<div class="fd"><label>要素库 featureDb</label><input id="f_fdb" value="'+E(db.featureDb||'')+'"></div>'+
+      '<div class="fd"><label>底图库 basemapDb</label><input id="f_bdb" value="'+E(db.basemapDb||'')+'"></div>'+
+      '<div class="fd"><label>管理库 adminDb</label><input id="f_adb" value="'+E(db.adminDb||'')+'"></div>'+
+      '<p style="color:var(--dg);font-size:9px">保存后服务自动重启，新连接约 2 秒生效</p>',
+      saveConnCfg,'ok');
+  }).catch(function(e){T(e.message)});
+}
+function saveConnCfg(){
+  var db={host:(document.getElementById('f_host').value||'').trim(),
+    port:parseInt(document.getElementById('f_port').value||'5432',10),
+    user:(document.getElementById('f_user').value||'').trim(),
+    password:document.getElementById('f_pw').value,
+    featureDb:(document.getElementById('f_fdb').value||'').trim(),
+    basemapDb:(document.getElementById('f_bdb').value||'').trim(),
+    adminDb:(document.getElementById('f_adb').value||'').trim()};
+  fetch('/api/storage-config',{method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},body:JSON.stringify({database:db})})
+  .then(function(r){return r.json()}).then(function(d){
+    if(d.ok){T('✅ 已保存，服务重启中...');closeMo();setTimeout(function(){location.reload()},2600)}
+    else T(d.error||'失败');
+  }).catch(function(e){T(e.message)});
+}
 
 // ===== 数据库操作 =====
 function showNewDb(){mo('＋ 建库','<div class="fd"><label>库名</label><input id="f_dn"></div><p style="color:var(--di);font-size:9px">自动启用 PostGIS</p>',doNewDb,'ok')}

@@ -3,8 +3,11 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const pgPool = new Pool({ database: 'Basemap', user: 'dmuser', password: 'dmpageo123', max: 5 });
-const DATA_DIR = path.join(__dirname, 'geodata', 'standard');
+const { loadStorageConfig, resolveDir } = require('./storage');
+const config = loadStorageConfig();
+const dbCfg = config.database;
+const pgPool = new Pool({ host: dbCfg.host, port: dbCfg.port, database: dbCfg.basemapDb, user: dbCfg.user, password: dbCfg.password, max: 5 });
+const DATA_DIR = path.join(resolveDir(config.paths.geodata), 'standard');
 
 async function main() {
   console.log('🔄 开始重建 PostGIS 地理数据...\n');
