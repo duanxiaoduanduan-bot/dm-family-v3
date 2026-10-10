@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const pgPool = new Pool({ database: 'dmpageo', user: 'dmuser', password: 'dmpageo123', max: 5 });
+const pgPool = new Pool({ database: 'Basemap', user: 'dmuser', password: 'dmpageo123', max: 5 });
 const DATA_DIR = path.join(__dirname, 'geodata', 'standard');
 
 async function main() {

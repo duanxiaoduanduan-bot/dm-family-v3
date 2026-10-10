@@ -63,8 +63,11 @@ function normalize(src) {
   fs.writeFileSync(OUT, JSON.stringify(fc));
   console.log('[2] 已写入本地', OUT, '(', features.length, '国 )');
 
-  console.log('[3] 导入 PostGIS countries 表 ...');
-  const pool = new Pool({ database: 'dmpageo', user: 'dmuser', password: 'dmpageo123' });
+  console.log('[3] 导入 PostGIS Basemap.countries 表 ...');
+  const pool = new Pool({ database: 'Basemap', user: 'dmuser', password: 'dmpageo123' });
+  await pool.query(`CREATE TABLE IF NOT EXISTS countries (
+    id SERIAL PRIMARY KEY, name TEXT, geom GEOMETRY(GEOMETRY,4326))`);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_countries_geom ON countries USING GIST (geom)');
   await pool.query('DELETE FROM countries');
   let ok = 0, fail = 0;
   for (const f of features) {
