@@ -48,5 +48,11 @@ if [ -d "$ROOT/DMshow" ]; then
   mkdir -p "$ROOT/DMshow/library"/{works,albums,videos,gallery}
 fi
 
+# DMmedia 媒体目录（空架子；媒体数据不入库，安装时统一创建，与 storage-config.json 的 dir 对齐）
+if [ -d "$ROOT/DMmedia" ]; then
+  mkdir -p "$ROOT/DMmedia"/{music,video,tvdrama,album,book,pdf,Audio,geodata}
+  ok "DMmedia 媒体目录已就绪: music/video/tvdrama/album/book/pdf/Audio/geodata"
+fi
+
 mark_done "apps"
 ok "业务依赖阶段完成: ${APPS[*]}"
