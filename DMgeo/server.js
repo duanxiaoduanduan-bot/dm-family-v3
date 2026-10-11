@@ -2172,8 +2172,11 @@ const server = http.createServer((req, res) => {
             );
             if (ins.rowCount) {
               const newId = ins.rows[0].id;
-              // 回写 dbId，前端下次保存即可精确命中同一条
-              await p.query("UPDATE features SET properties = properties || jsonb_build_object('dbId', $1) WHERE id = $2", ['f_' + newId, newId]);
+              // 回写 dbId，前端下次保存即可精确命中同一条。
+              // ⚠️ $1 必须显式 ::text 转型：jsonb_build_object() 是变参函数，
+              // 不加转型时 PG 无法推断参数类型，会直接报
+              // "could not determine data type of parameter $1" —— 导致**所有新增要素都写不进去**。
+              await p.query("UPDATE features SET properties = properties || jsonb_build_object('dbId', $1::text) WHERE id = $2", ['f_' + newId, newId]);
             }
           }
           added++;

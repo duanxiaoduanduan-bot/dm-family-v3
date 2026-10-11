@@ -1054,3 +1054,52 @@ var paths = mapData.features.filter(f => f.geometry.type==='LineString' || f.geo
 
 **部署**：`server.js`（md5 `2419872c6da1ca39e13f083147640479`，restart dm-DMgeo）
 + `dashboard.html`（md5 `bf52f5e63e9c4f82d779d7bfd52639b7`，Ctrl+F5）。
+
+## 42. DMgeo · 修复「照片连线刷新后保存不下来」（PG 参数类型推断失败）
+
+**需求**：断断「通过照片，连线之后他的线一刷新怎么保存不下来呢？」
+
+**排查过程**：
+
+1. 先怀疑是 `p.dbId` 丢失 —— `finishLink()` 生成路径时确实**只 push 了 `{id,name,coords,color,line}`，没有 `dbId`**。
+2. 但实测发现更严重的问题：**所有"新增要素"的保存全部静默失败**，后端返回
+   ```json
+   {"ok":false,"error":"could not determine data type of parameter $1"}
+   ```
+   而前端 `saveToServer` 只在 `r.ok` 时 toast，失败只 `console.error` —— **所以表面上"像是能存"**。
+3. 用 psql `PREPARE` 精确复现，锁定到 INSERT 后回写主键那一句：
+   ```sql
+   PREPARE t2 AS UPDATE features
+     SET properties = properties || jsonb_build_object('dbId', $1) WHERE id = $2;
+   -- ERROR:  could not determine data type of parameter $1
+   ```
+   **根因**：`jsonb_build_object()` 是**变参（variadic）函数**，PostgreSQL 无法从调用上下文推断 `$1` 的类型，
+   于是 node-postgres 预编译阶段就报错。UPDATE 分支（"命中已有记录"）不经过这一句，所以**只有新增会失败** ——
+   这解释了"为什么点/照片标记也存不住、而编辑已有要素正常"。
+
+**改动（`DMgeo/server.js`）**：
+
+```js
+// 修复前
+... jsonb_build_object('dbId', $1) WHERE id = $2
+// 修复后（显式转型，给出类型上下文）
+... jsonb_build_object('dbId', $1::text) WHERE id = $2
+```
+
+同类写法全库仅此一处（已 grep 确认无其它 `jsonb_build_object` / `jsonb_set` 隐患）。
+
+**验证（真实环境 192.168.1.9:8084）**：
+
+| 用例 | 结果 |
+|---|---|
+| 全新照片连线（3 点）保存 | `{"ok":true,"added":1}`，回读 `f_2231` 且 `dbId=f_2231` ✅ |
+| 模拟刷新后再存 | 仍 `ok:true`，库中 **1 条**（不重复）✅ |
+| 连刷 3 次 | 库中仍 **1 条** ✅ |
+| 全量回写（25 要素）连发 2 次 | `added:25` 两次，总数稳定 **25 → 25** ✅ |
+
+测试数据已清理，库回到 **17 条要素 + 1 条计划（8 节点）**。
+
+**部署**：`server.js`（md5 `d302d56fb15147d3475dc02bd54466e1`，restart dm-DMgeo）。
+
+**遗留建议（未实施）**：`saveToServer` 失败时只 `console.error`，用户看不到 —— 建议补一个失败 toast，
+避免今后再出现"静默不保存"。

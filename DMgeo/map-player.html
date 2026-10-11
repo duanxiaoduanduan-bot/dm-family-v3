@@ -1562,6 +1562,9 @@ function exportGeoJSON(){
 var pendingDeleted=[];
 function markDeleted(clientId){if(clientId&&pendingDeleted.indexOf(clientId)<0)pendingDeleted.push(clientId)}
 
+// 连续保存失败计数（用于升级为弹窗提醒，见 saveToServer）
+var saveFailCount=0;
+
 async function saveToServer(geojson){
   try{
     // 不再发空的 features:[] 清库包（破坏性旧套路，后端已用 ?mode=replace 白名单挡住）。
@@ -1571,7 +1574,19 @@ async function saveToServer(geojson){
     if(pendingDeleted.length)payload.deleted=pendingDeleted.slice();
     var r=await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if(r.ok){pendingDeleted=[];showToast('已同步')}
-  }catch(e){console.error('保存���败',e)}
+    else{
+      // 保存失败必须显式告警：历史 bug（PG 参数类型推断失败）曾静默返回 ok:false，
+      // 前端只 console.error，用户以为"存上了"，刷新才发现丢失。
+      saveFailCount++;
+      console.error('保存被服务端拒绝',r);
+      showToast('⚠️ 保存失败: '+(r.error||('HTTP '+r.status))+'（修改不会保留，请截图反馈）');
+      if(saveFailCount===3)alert('连续 3 次保存失败，修改可能丢失：\n'+(r.error||'未知错误'));
+    }
+  }catch(e){
+    saveFailCount++;
+    console.error('保存失败',e);
+    showToast('⚠️ 保存请求失败: '+e.message);
+  }
 }
 
 // 自动保存（标记/路径变更后 2 秒自动存）
