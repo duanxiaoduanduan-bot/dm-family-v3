@@ -858,3 +858,83 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 **验证**：内联脚本 `node --check` 通过；行尾 LF（CR=0）；线上含 `mp-anchor`×6、`snapPulse`×4、`setSnapHot`×3、`snap-hot`×4；md5 `fe021530c2714744930266cca90a65bf`
 
 **部署**：`map-player.html` → Ctrl+F5。
+
+## 35. DMgeo dashboard · 路径总览补「媒体文件路径」+「媒体拍摄轨迹」
+
+**需求**：断断「这个路径总览没有看到照片的路径」→ 追问后确认「两个都要」（文件路径清单 + 拍摄轨迹）。
+
+**问题（根因）**：`trip` 库里媒体要素**一直存在**（实测 `props.type`：photo ×15、video ×2），但 `renderPathsOverview()` 第 625 行按设计只过滤 `LineString`/`MultiLineString`：
+
+```js
+var paths = mapData.features.filter(f => f.geometry.type==='LineString' || f.geometry.type==='MultiLineString');
+```
+
+媒体要素是 `Point`，因此**永远不可能进入「路径总览」**。而 `renderLatestMarkers()` 只取 `Point`/`MultiPoint` 且仅显示 `slice(-10)`（后 10 条），23 个 MultiPoint 一挤，媒体也基本看不到。
+
+**改动**（`DMgeo/dashboard.html`）：
+
+1. 新增 `collectMediaFeatures(mapData)`：收集所有带媒体文件的点要素（`photo`/`video`/`media` 三字段任一，`mediaType` 缺失时按扩展名兜底推断），统一结构 `{id,name,file,mediaType,lng,lat,desc,at}`
+2. 新增 `renderMediaPathSection(list)` —— **①媒体文件路径清单**：每行 = 类型徽章 + 名称 + 文件路径（等宽字体、`direction:rtl` 长路径末尾省略）+ 坐标 + 「打开」链接；头部计数「N 个文件」
+3. 新增 `renderMediaTrackSection(list)` —— **②媒体拍摄轨迹**：按 `updatedAt/created` 排序后连成链路，逐段列出「A → B + 距离」；按「文件+坐标」去重（同名照片重复定位会原地打结）；头部汇总「N 点 · 照片 X / 视频 Y · 全长 Z」
+4. 新增 `haversineKm()` 共用球面距离函数，**顺手重构** `renderPathsOverview` 里原来内联的同一段 Haversine 计算（口径统一，行为不变）
+5. 新增 `toggleMediaSec(id)` 折叠开关 + 对应 CSS（`.media-sec`/`.media-sec-head`/`.media-row`/`.mr-path`/`.mr-open`），沿用既有 `.path-card` 折叠风格
+6. `renderPathsOverview` 早退逻辑调整：原来 `if(!paths.length){显示"暂无路径";return}` 会在无线路时**直接吞掉媒体区块**，改为累积 `html` 后统一判断
+
+**验证**（Node mock + 真库）：
+- mock 6 要素（1 线 + 1 面 + 2 照片 + 1 视频 + 1 无属性 MultiPoint）→ 正确收集 3 条媒体、轨迹 3 点、全长 19.560 km、照片 2 / 视频 1 ✅
+- 同名同坐标 3 条 → 去重后 2 条 ✅
+- 真库 trip：36 要素（10 MultiPolygon / 1 MultiLineString / 2 Point / 23 MultiPoint），`props.type` = photo 15 + video 2 + polygon 10 + path 1 + point 8
+- 内联脚本 `node --check` 通过；行尾 LF（CR=0）
+- 部署后线上 md5 一致、`dashboard.html` HTTP 200、含 `renderMediaPathSection`/`renderMediaTrackSection`/`toggleMediaSec`/`collectMediaFeatures`/`haversineKm`
+- dashboard.html md5 `56c19ccaca39a...`
+
+## 36. DMgeo map-player · 灯箱视频改为显式非静音播放（排查"视频没声音"）
+
+**需求**：断断「为什么我放的图片他不能播放声音啊」。
+
+**排查（ffprobe 实测，关键结论）**：
+
+| 文件 | 流信息 |
+|---|---|
+| `holo-20260823-134609.mp4`（39MB, 37.7s） | `0,h264,video` — **只有画面，无音频流** |
+| `kqcTSd0fctPs5Tn2.mp4` | `0,h264,video` + `1,aac,audio` — 有音轨 |
+
+→ **"没声音"的直接原因是源文件本身就无声**，不是播放器代码问题。
+
+**改动**（`DMgeo/map-player.html`，`openLightbox()`）：虽非根因，但仍消除"自动播放策略导致静音"这一潜在坑：
+1. 从 `innerHTML` 注入改为 `document.createElement('video')`，显式设 `controls/autoplay/playsInline`
+2. 显式 `v.muted=false; v.volume=1;`（不再依赖属性默认值）
+3. 插入 DOM 后主动 `v.play()`；`NotAllowedError` 兜底：改 `muted=true` 再播，并 toast 提示"浏览器拦截了自动播放，请点视频上的播放键，或再次点击开启声音"
+4. 视频 `onclick` 阻止冒泡，避免误触灯箱关闭
+
+**验证**：`node --check` 通过；LF（CR=0）；线上含 `muted=false`；md5 一致
+
+**提醒断断**：若还想要那条视频有声音，需换带音轨的源文件（例如上面那个 `kqcTSd0fctPs5Tn2.mp4`）。
+
+## 37. DMgeo dashboard · 路径总览「站点名丢失」修复（精确匹配 → 精确+就近两级）
+
+**需求**：断断「不对，这路径应该和之前不一样了」→ 贴出实际渲染，指出第 5 个站点只有坐标没有名字，要求「和这个（8 个站点全有名字）保持一致」。
+
+**问题（根因）**：路径顶点与站点要素是**两条独立数据**，坐标存在米级漂移：
+
+| | 经度 | 纬度 |
+|---|---|---|
+| 路径顶点 `f_627[4]` | `116.101945678` | `38.890136513` |
+| 站点要素 `f_1982` 枣林庄 | `116.102404545` | `38.890231155` |
+
+两者相距 **41m**。原逻辑用 `toFixed(5)` 做**精确**字符串匹配（`116.10195` vs `116.10240`）→ key 不同 → 枣林庄站点名丢失，退化成纯坐标显示。其余 7 个站点坐标完全相同，所以只有这一个出问题。
+
+**改动**（`DMgeo/dashboard.html`，`renderPathsOverview()`）：
+
+1. 站点索引从单表改为**双结构**：`stationIdx`（精确 `toFixed(5)` 表，快速命中）+ `stationList`（`{lng,lat,name}` 列表，供就近查找）
+2. 新增 `nearestStation(lng,lat,tolM)`：容差默认 **300m**，取最近站点名；匹配改为**两级** —— 先精确查表，未命中再走就近
+3. **排除媒体点**：站点名只从「地点」点要素收集，`type/mediaType` 为 `photo`/`video` 的点跳过 —— 否则照片文件名（如 `HONhxHda4AAPyyG_1.jpg`）会被当成站点名误吸附
+4. 顺带把循环里的 `c[1]/c[0]` 统一为 `lat/lng` 局部变量，去掉重复 `Number()` 转换
+
+**验证**（真实 trip 库 + Python 复刻新逻辑）：
+- 修复前命名 **7/8**，修复后 **8/8** —— 第 5 点正确识别为「枣林庄」，与断断贴出的期望一致
+- 第 5 点距枣林庄实测 **41.1m**，在 300m 容差内 ✅
+- 邻近点冲突排查：全库 25 个命名点，300m 内近邻对 56 对，**全部是同位重复的媒体点**，无站点名重叠、无站点-媒体互扰 → 容差安全
+- 内联脚本 `node --check` 通过；行尾 LF（CR=0）；部署后 md5 一致、线上含 `nearestStation`×2
+
+**部署**：`dashboard.html` → Ctrl+F5。

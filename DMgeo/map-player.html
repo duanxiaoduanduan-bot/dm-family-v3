@@ -1335,8 +1335,26 @@ map.on('click',onMapClick);
 
 // ===== 灯箱 =====
 function openLightbox(url,info,isVideo){
+  lbContent.innerHTML='';
   if(isVideo){
-    lbContent.innerHTML='<video src="'+url+'" controls autoplay style="max-width:90vw;max-height:85vh;border-radius:4px" onclick="event.stopPropagation()"></video>';
+    // 显式创建 video 元素：autoplay 属性在 innerHTML 注入时易被浏览器拦截，
+    // 这里插入 DOM 后主动调用 play()，并确保未静音 + 满音量。
+    var v=document.createElement('video');
+    v.src=url;v.controls=true;v.autoplay=true;v.playsInline=true;
+    v.muted=false;v.volume=1;
+    v.style.cssText='max-width:90vw;max-height:85vh;border-radius:4px;outline:none';
+    v.setAttribute('playsinline','');
+    v.onclick=function(ev){ev.stopPropagation()};
+    lbContent.appendChild(v);
+    // 若被自动播放策略拦截（NotAllowedError），提示用户手动点播放
+    var pr=v.play();
+    if(pr&&pr.catch){
+      pr.catch(function(){
+        v.muted=true;           // 兜底：改静音后再试，至少能播画面
+        v.play().catch(function(){});
+        showToast('浏览器拦截了自动播放，请点视频上的播放键，或再次点击开启声音');
+      });
+    }
   }else{
     lbContent.innerHTML='<img src="'+url+'" style="max-width:90vw;max-height:85vh;object-fit:contain;border-radius:4px" />';
   }
