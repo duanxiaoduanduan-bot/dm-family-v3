@@ -2200,6 +2200,21 @@ const server = http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: true, added, removed, total: added }));
       } catch(e) {
+        // 落盘诊断日志：save-geodata 失败时记录 db、要素数、首个失败几何与错误。
+        // 用 fs 直接追加文件（console.error 走 stderr，supervisor 可能没合并进日志）。
+        // 注意：dbName/geojson 是 try 块内的 const，catch 里访问不到（块级作用域），
+        // 必须用 typeof 保护，否则 ReferenceError 会被下面的 catch(_) 吞掉、日志永不落盘。
+        try {
+          const dbg = { at: new Date().toISOString(), err: e.message };
+          if (typeof dbName !== 'undefined') dbg.db = dbName;
+          if (typeof geojson !== 'undefined') {
+            dbg.featureCount = Array.isArray(geojson.features) ? geojson.features.length : 'n/a';
+            const fc = Array.isArray(geojson.features) ? geojson.features : [];
+            const bad = fc.find(x => x && x.geometry);
+            if (bad) dbg.firstGeometry = { type: bad.geometry.type, coordSample: JSON.stringify(bad.geometry.coordinates).slice(0, 400) };
+          }
+          fs.appendFileSync(path.join(ROOT, 'save-fail.log'), JSON.stringify(dbg) + '\n');
+        } catch (_) {}
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
