@@ -814,3 +814,26 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 - 内联脚本 `node --check` 通过；行尾 LF（CR=0）；线上 md5 `878e691b5c6c0e4e51e483516ce23612`
 
 **部署**：`map-player.html` → Ctrl+F5。
+
+## 33. DMgeo map-player · 连线可捕捉照片/视频点（吸附）
+
+**需求**：断断「我觉得连线应该可以捕捉到照片和图片的点」——连线时能吸附到已有照片/视频标记，而不只是普通标记。
+
+**原状**：连线（`linkMode`）只认普通标记（`markers`）——`onMarkerClickForLink` 由 marker 的 `click` 触发；照片/视频覆盖层（`addPhotoToMap`/`addVideoToMap` 创建的 `L.marker`）**没绑连线点击**，点它们无反应；点地图空白也无吸附。
+
+**改动**（`DMgeo/map-player.html`）：
+
+1. **照片/视频覆盖层绑定连线点击**：`pm.on('click')` / `vm.on('click')` 在 `linkMode` 下调 `onclickForLink({lat,lng,name,kind,key})`
+2. **统一入口 `onclickForLink(pt)`**：替代原只处理 marker 的 `onMarkerClickForLink`；用 `key`（`m:<id>` / `p:<file>` / `v:<file>` / `f:<lat,lng>`）去重，回点同一点即结束连线
+3. **空白处吸附 `findSnapPoint(latlng,maxPx=18)`**：在点击坐标 18px 内找最近的照片/视频/标记点并吸附；无则用「自由点」
+4. **`onMapClick` 新增 `linkMode` 分支**：优先 `findSnapPoint` 吸附，否则自由点
+5. **`bubblingMouseEvents:false`**：三处 `L.marker`（照片/视频/普通标记）全部设置，避免点 marker 时事件同时冒泡到 map 导致**同一位置被加两次**
+6. 提示文案：「依次点击各点连线；可点照片/视频/标记，点空白处自动吸附最近的点」
+
+**验证**（Node mock）：
+- 点击处附近有照片（10px 内）→ 吸附「照片A(photo)」✅
+- 点击处很远 → 走自由点 ✅
+- 链正确累积 2 点
+- 内联脚本 `node --check` 通过；行尾 LF（CR=0）；线上 md5 `5a34e2fbd46815757b3e9e8c0865569e`
+
+**部署**：`map-player.html` → Ctrl+F5。

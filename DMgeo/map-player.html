@@ -511,9 +511,14 @@ function addPhotoToMap(lat,lng,photoUrl,label){
     html:'<div class="map-photo" onclick="event.stopPropagation();openLightbox(\''+photoUrl+'\',\''+escJs(label)+'\')"><img src="'+photoUrl+'" loading="lazy" /><div class="mp-label">'+esc(label)+'</div></div>',
     iconSize:[80,60],iconAnchor:[40,30]
   });
-  var pm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true}).addTo(map);
+  var pm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true,bubblingMouseEvents:false}).addTo(map);
   pm._photoData={photo:photoUrl,name:label};
   pm.on('mousedown',function(){map.dragging.disable()});
+  // 连线模式：点照片覆盖层 → 吸附进连线（标签用文件名/显示名）
+  pm.on('click',function(e){
+    if(!linkMode)return;
+    onclickForLink({lat:lat,lng:lng,name:label,kind:'photo',key:photoUrl});
+  });
   pm.on('dragend',function(){
     var pos=pm.getLatLng();
     var pd=pm._photoData;
@@ -551,9 +556,14 @@ function addVideoToMap(lat,lng,videoUrl,label){
     html:'<div class="map-video" onclick="event.stopPropagation();openLightbox(\''+escJs(videoUrl)+'\',\''+escJs(label)+'\',true)"><video src="'+videoUrl+'" muted preload="metadata"></video><div class="mv-play">▶</div><div class="mv-label">'+esc(label)+'</div></div>',
     iconSize:[80,60],iconAnchor:[40,30]
   });
-  var vm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true}).addTo(map);
+  var vm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true,bubblingMouseEvents:false}).addTo(map);
   vm._videoData={video:videoUrl,name:label};
   vm.on('mousedown',function(){map.dragging.disable()});
+  // 连线模式：点视频覆盖层 → 吸附进连线
+  vm.on('click',function(e){
+    if(!linkMode)return;
+    onclickForLink({lat:lat,lng:lng,name:label,kind:'video',key:videoUrl});
+  });
   vm.on('dragend',function(){
     var pos=vm.getLatLng();
     var vd=vm._videoData;
@@ -575,7 +585,7 @@ function addMarker(lat,lng,name,desc,media,note,mediaType){
   var id='m_'+(++markerId);
   name=name||'点 '+markerId;desc=desc||'';media=media||'';note=note||'';mediaType=mediaType||(media?isVideoUrl(media)?'video':'photo':'');
   var icon=makeIcon('#e17055',14,media,mediaType);
-  var m=L.marker([lat,lng],{icon:icon,draggable:true}).addTo(map);
+  var m=L.marker([lat,lng],{icon:icon,draggable:true,bubblingMouseEvents:false}).addTo(map);
   m.on('mousedown',function(){map.dragging.disable()});
 
   var popupHtml='<div class="marker-popup"><b>'+esc(name)+'</b><br><small style="color:#888">'+lat.toFixed(6)+', '+lng.toFixed(6)+'</small>';
@@ -1039,7 +1049,7 @@ function startLinkMode(){
   document.getElementById('drawBtn').style.background='';
   document.getElementById('drawBtn').style.borderColor='';
   map.getContainer().style.cursor='pointer';
-  showToast('依次点击多个点连线；点同一个点或按「🔗 完成」结束');
+  showToast('依次点击各点连线；可点照片/视频/标记，点空白处自动吸附最近的点');
   // 高亮所有标记
   markers.forEach(function(mk){mk.marker.setOpacity(1)});
 }
@@ -1084,24 +1094,51 @@ function finishLink(){
 }
 function onMarkerClickForLink(mk){
   if(!linkMode)return;
+  onclickForLink({lat:mk.lat,lng:mk.lng,name:mk.name,kind:'marker',key:'m:'+mk.id,mk:mk});
+}
+// 通用：把一个点（标记/照片/视频）加入连线链
+// pt = {lat,lng,name,kind,key,mk?}
+function onclickForLink(pt){
+  if(!linkMode||!pt)return;
+  var key=pt.key||pt.kind+':?'+linkChain.length;
   if(!linkChain.length){
-    // 第一个点
-    linkChain.push({lat:mk.lat,lng:mk.lng,name:mk.name,mk:mk});
-    mk.marker.setOpacity(0.5);
-    showToast('起点: '+mk.name+' — 继续点下一个点');
+    // 起点
+    linkChain.push({lat:pt.lat,lng:pt.lng,name:pt.name||'点',key:key,mk:pt.mk||null});
+    if(pt.mk&&pt.mk.marker)pt.mk.marker.setOpacity(0.5);
+    showToast('起点: '+(pt.name||'点')+' — 继续点下一个点（可点照片/视频/标记）');
     return;
   }
   var last=linkChain[linkChain.length-1];
-  if(last.mk && last.mk.id===mk.id){
+  if(last.key===key){
     // 点到刚选的那个点 → 结束并生成折线
     finishLink();
     return;
   }
-  // 追加到链条
-  linkChain.push({lat:mk.lat,lng:mk.lng,name:mk.name,mk:mk});
-  mk.marker.setOpacity(0.5);
+  linkChain.push({lat:pt.lat,lng:pt.lng,name:pt.name||'点',key:key,mk:pt.mk||null});
+  if(pt.mk&&pt.mk.marker)pt.mk.marker.setOpacity(0.5);
   updateLinkPreview();
   showToast('已加 '+linkChain.length+' 个点 — 继续点，或按「🔗 完成」结束');
+}
+// 在给定坐标附近搜索可吸附的点（照片/视频覆盖层 + 标记），返回最近的（阈值 maxPx 像素）
+function findSnapPoint(latlng,maxPx){
+  maxPx=maxPx||18;
+  var best=null,bestD=Infinity;
+  photoMarkers.forEach(function(pm){
+    if(!pm.marker)return;
+    try{var d=map.latLngToContainerPoint(latlng).distanceTo(map.latLngToContainerPoint(pm.marker.getLatLng()));
+      if(d<bestD){bestD=d;best={lat:pm.lat,lng:pm.lng,name:pm.name||pm.photo,kind:'photo',key:'p:'+pm.photo};}}catch(e){}
+  });
+  videoMarkers.forEach(function(vm){
+    if(!vm.marker)return;
+    try{var d=map.latLngToContainerPoint(latlng).distanceTo(map.latLngToContainerPoint(vm.marker.getLatLng()));
+      if(d<bestD){bestD=d;best={lat:vm.lat,lng:vm.lng,name:vm.name||vm.video,kind:'video',key:'v:'+vm.video};}}catch(e){}
+  });
+  markers.forEach(function(mk){
+    if(!mk.marker)return;
+    try{var d=map.latLngToContainerPoint(latlng).distanceTo(map.latLngToContainerPoint(mk.marker.getLatLng()));
+      if(d<bestD){bestD=d;best={lat:mk.lat,lng:mk.lng,name:mk.name,kind:'marker',key:'m:'+mk.id,mk:mk};}}catch(e){}
+  });
+  return (best&&bestD<=maxPx)?best:null;
 }
 
 // ===== 数据加载 =====
@@ -1240,6 +1277,15 @@ function renderPhotoGrid(){
 // 所以这里用具名函数，所有 off/on 都必须带上 handler 参数。
 function onMapClick(e){
   if(drawing||polygonDrawing)return;
+  if(linkMode){
+    // 连线模式：优先吸附附近已有的照片/视频/标记点，否则以点击坐标作为自由点
+    var snap=findSnapPoint(e.latlng,18);
+    if(snap){onclickForLink(snap);}
+    else{
+      onclickForLink({lat:e.latlng.lat,lng:e.latlng.lng,name:'自由点',kind:'free',key:'f:'+e.latlng.lat.toFixed(6)+','+e.latlng.lng.toFixed(6)});
+    }
+    return;
+  }
   if(addPhotoMode&&activePhoto!==null&&photoList[activePhoto]){
     // 照片模式：在点击位置放照片
     // 注意：addMarker 内部检测到 media 会自动创建覆盖层（addPhotoToMap），
