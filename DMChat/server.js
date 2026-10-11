@@ -32,9 +32,34 @@ function localDateStr(ts) {
 
 function appendChatLog(entry) {
   try {
-    const file = path.join(CHATLOG_DIR, localDateStr(entry.time) + '.jsonl');
+    const date = localDateStr(entry.time);          // YYYY-MM-DD
+    const monthDir = path.join(CHATLOG_DIR, date.slice(0, 7)); // YYYY-MM
+    if (!fs.existsSync(monthDir)) fs.mkdirSync(monthDir, { recursive: true });
+    const file = path.join(monthDir, date + '.jsonl');
     fs.appendFileSync(file, JSON.stringify(entry) + '\n');
   } catch (_) { /* 记录失败不影响聊天 */ }
+}
+
+// 递归列出所有聊天记录日期（兼容旧的平铺 jsonl 与新的按月子文件夹）
+function listChatDates() {
+  const dates = [];
+  try {
+    if (!fs.existsSync(CHATLOG_DIR)) return dates;
+    for (const name of fs.readdirSync(CHATLOG_DIR)) {
+      const p = path.join(CHATLOG_DIR, name);
+      let st;
+      try { st = fs.statSync(p); } catch (_) { continue; }
+      if (st.isDirectory()) {
+        for (const f of fs.readdirSync(p)) {
+          if (f.endsWith('.jsonl')) dates.push(f.replace(/\.jsonl$/, ''));
+        }
+      } else if (name.endsWith('.jsonl')) {
+        dates.push(name.replace(/\.jsonl$/, ''));
+      }
+    }
+  } catch (_) {}
+  dates.sort().reverse();
+  return dates;
 }
 
 const MIME = {
@@ -577,10 +602,7 @@ const requestHandler = (req, res) => {
     const uid = tokens.get(token);
     if (!uid || !users[uid]) { res.writeHead(403, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
     try {
-      const dates = fs.readdirSync(CHATLOG_DIR)
-        .filter(f => f.endsWith('.jsonl'))
-        .map(f => f.replace(/\.jsonl$/, ''))
-        .sort().reverse();
+      const dates = listChatDates();
       res.writeHead(200, ctJson);
       res.end(JSON.stringify({ ok: true, dates }));
     } catch (e) {
@@ -597,7 +619,8 @@ const requestHandler = (req, res) => {
     if (!uid || !users[uid]) { res.writeHead(403, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
     const date = url.searchParams.get('date') || localDateStr(Date.now());
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '日期格式错误' })); }
-    const file = path.join(CHATLOG_DIR, date + '.jsonl');
+    let file = path.join(CHATLOG_DIR, date.slice(0, 7), date + '.jsonl');
+    if (!fs.existsSync(file)) file = path.join(CHATLOG_DIR, date + '.jsonl'); // 兼容旧的平铺文件
     const arr = [];
     if (fs.existsSync(file)) {
       const lines = fs.readFileSync(file, 'utf8').split('\n');

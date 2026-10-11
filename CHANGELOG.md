@@ -248,14 +248,14 @@ dm → postgis → apps → geodata → start
 
 | 路径 | 说明 |
 |------|------|
-| `DMChat/server.js` | 新增 `CHATLOG_DIR=chatlogs/`，每条聊天 `appendChatLog` 落盘为 `chatlogs/YYYY-MM-DD.jsonl`（一行一条，含 from/fromName/text/time/file） |
+| `DMChat/server.js` | 新增 `CHATLOG_DIR=chatlogs/`，每条聊天 `appendChatLog` 落盘为 `chatlogs/YYYY-MM/YYYY-MM-DD.jsonl`（按月分文件夹，一行一条，含 from/fromName/text/time/file） |
 | `DMChat/server.js` | 新增接口 `/api/chat-dates`（可用日期列表）、`/api/chat-history?date=YYYY-MM-DD`（某日明细，token 校验 + 日期正则防穿越） |
 | `DMChat/index.html` | 顶栏新增「📜 记录」按钮；加入时自动加载当日历史到主聊天区；记录面板支持按日期浏览、导出 TXT |
 | `DMChat/.gitignore` | `DMChat/chatlogs/` 加入忽略（用户数据，不入库） |
 
 **能力**
 
-- 每条消息按服务器本地日期写入 `chatlogs/YYYY-MM-DD.jsonl`，服务重启 / 全员离线后仍在。
+- 每条消息按服务器本地日期写入 `chatlogs/YYYY-MM/YYYY-MM-DD.jsonl`（**按月分文件夹**，清理时删整月目录即可、不误删别的天），服务重启 / 全员离线后仍在。
 - 新成员加入自动回填当日历史，不丢上下文。
 - 记录面板可翻看任意历史日期，一键导出纯文本备份。
 - 历史接口需登录 token，且 `date` 仅接受 `YYYY-MM-DD`，杜绝路径穿越。
