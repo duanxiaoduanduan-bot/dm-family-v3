@@ -714,6 +714,7 @@ function closeMarkerPanel(){$('markerCreatePanel').classList.remove('open')}
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'){
     if($('markerCreatePanel').classList.contains('open')){cancelMarkerCreate();return}
+    if(linkMode){if(linkChain.length>=2)finishLink();else stopLinkMode();return}
     closeLightbox();if(drawing)finishDraw();
   }
   if(e.key==='Enter'&&$('markerCreatePanel').classList.contains('open')){confirmMarkerCreate()}
@@ -1022,25 +1023,29 @@ function clearEditMarkers(){
   for(var i=0;i<editMarkers.length;i++){map.removeLayer(editMarkers[i])}
   editMarkers=[];editingPath=null;
 }
-var linkMode=false,linkFirst=null;
+var linkMode=false;
+var linkChain=[];        // 多段连线：已选中的点序列（[{lat,lng,name,mk}]）
+var linkPreview=null;     // 预览折线（虚线，随选中点数更新）
 function startLinkMode(){
-  if(linkMode){stopLinkMode();return}
+  if(linkMode){finishLink();return}   // 已在该模式 → 点击按钮 = 完成连线
   linkMode=true;markerMode=false;addPhotoMode=false;drawing=false;
-  linkFirst=null;
+  linkChain=[];
   if(drawLayer)drawLayer.clearLayers();
-  document.getElementById('linkBtn').textContent='🔗 取消';
+  document.getElementById('linkBtn').textContent='🔗 完成';
   document.getElementById('linkBtn').style.background='#fdcb6e';
   document.getElementById('linkBtn').style.borderColor='#fdcb6e';
   document.getElementById('drawBtn').textContent='✏️ 线';
   document.getElementById('drawBtn').style.background='';
   document.getElementById('drawBtn').style.borderColor='';
   map.getContainer().style.cursor='pointer';
-  showToast('点击第一个点，再点第二个点自动连线');
+  showToast('依次点击多个点连线；点同一个点或按「🔗 完成」结束');
   // 高亮所有标记
   markers.forEach(function(mk){mk.marker.setOpacity(1)});
 }
 function stopLinkMode(){
-  linkMode=false;linkFirst=null;
+  linkMode=false;linkChain=[];
+  if(linkPreview){map.removeLayer(linkPreview);linkPreview=null}
+  if(drawLayer)drawLayer.clearLayers();
   document.getElementById('linkBtn').textContent='🔗 连线';
   document.getElementById('linkBtn').style.background='';
   document.getElementById('linkBtn').style.borderColor='';
@@ -1049,31 +1054,53 @@ function stopLinkMode(){
   markers.forEach(function(mk){mk.marker.setOpacity(1)});
   showToast('连线模式已取消');
 }
+// 刷新预览折线（虚线，跟随已选点）
+function updateLinkPreview(){
+  var coords=linkChain.map(function(p){return[p.lat,p.lng]});
+  if(linkPreview){map.removeLayer(linkPreview);linkPreview=null}
+  if(coords.length>=2){
+    linkPreview=L.polyline(coords,{color:'#fdcb6e',weight:3,dashArray:'8,6'}).addTo(map);
+  }
+}
+// 结束连线：把累积的点串成一条折线（≥2 个点才生成）
+function finishLink(){
+  if(linkChain.length<2){
+    showToast('至少需要 2 个点');
+    stopLinkMode();
+    return;
+  }
+  var coords=linkChain.map(function(p){return[p.lat,p.lng]});
+  var id='p_'+(++pathId);
+  var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+  var line=L.polyline(coords,{color:color,weight:4}).addTo(map);
+  var name=linkChain.map(function(p){return p.name||'?'}).join(' → ');
+  line.bindPopup('<b>'+esc(name)+'</b><br>'+coords.length+' 个点<br><button onclick="deletePath(\''+id+'\')" style="color:#e74c3c;font-size:11px">删除连线</button>');
+  paths.push({id:id,name:name,coords:coords,color:color,line:line});
+  showToast('已连线: '+coords.length+' 个点');
+  stopLinkMode();
+  autoSave();
+  renderPathList();
+}
 function onMarkerClickForLink(mk){
   if(!linkMode)return;
-  if(!linkFirst){
-    linkFirst=mk;
+  if(!linkChain.length){
+    // 第一个点
+    linkChain.push({lat:mk.lat,lng:mk.lng,name:mk.name,mk:mk});
     mk.marker.setOpacity(0.5);
-    showToast('已选: '+mk.name+' — 请点击第二个点');
-  }else if(linkFirst.id===mk.id){
-    // 点同一个取消
-    linkFirst.marker.setOpacity(1);
-    linkFirst=null;
-    showToast('已取消选择');
-  }else{
-    // 两个标记都选了，创建连线
-    var id='p_'+(++pathId);
-    var coords=[[linkFirst.lat,linkFirst.lng],[mk.lat,mk.lng]];
-    var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
-    var line=L.polyline(coords,{color:color,weight:4}).addTo(map);
-    var name=(linkFirst.name||'?')+' → '+(mk.name||'?');
-    line.bindPopup('<b>'+esc(name)+'</b><br><button onclick="deletePath(\''+id+'\')" style="color:#e74c3c;font-size:11px">删除连线</button>');
-    paths.push({id:id,name:name,coords:coords,color:color,line:line});
-    linkFirst.marker.setOpacity(1);
-    linkFirst=null;
-    autoSave();
-    showToast('已连线: '+name);
+    showToast('起点: '+mk.name+' — 继续点下一个点');
+    return;
   }
+  var last=linkChain[linkChain.length-1];
+  if(last.mk && last.mk.id===mk.id){
+    // 点到刚选的那个点 → 结束并生成折线
+    finishLink();
+    return;
+  }
+  // 追加到链条
+  linkChain.push({lat:mk.lat,lng:mk.lng,name:mk.name,mk:mk});
+  mk.marker.setOpacity(0.5);
+  updateLinkPreview();
+  showToast('已加 '+linkChain.length+' 个点 — 继续点，或按「🔗 完成」结束');
 }
 
 // ===== 数据加载 =====
