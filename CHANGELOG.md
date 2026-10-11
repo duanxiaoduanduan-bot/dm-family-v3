@@ -837,3 +837,24 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 - 内联脚本 `node --check` 通过；行尾 LF（CR=0）；线上 md5 `5a34e2fbd46815757b3e9e8c0865569e`
 
 **部署**：`map-player.html` → Ctrl+F5。
+
+## 34. DMgeo map-player · 照片/视频覆盖层显示「捕捉锚点」
+
+**需求**：断断「照片很难点到，能不能让照片视频的点显出来方便捕捉？」
+
+**问题**：照片/视频覆盖层是 80×60 的大 divIcon，真实坐标在图标**正中心**，但中心被图片占着，视觉上没有「点」的位置感，连线时很难对准。
+
+**改动**（`DMgeo/map-player.html`）：
+
+1. **锚点小圆点常显**：照片/视频覆盖层 HTML 末尾加 `<span class="mp-anchor">`，居中定位（`top/left:50%` + 负 margin），画一个白边实心小圆 —— 就是真实坐标所在
+   - 照片锚点**黄**（`#fdcb6e`）、视频锚点**紫**（`#a29bfe`），与覆盖层描边同色系
+   - `.map-photo` 补 `position:relative`（原来缺，锚点无法定位）
+2. **连线模式脉冲高亮 `setSnapHot(on)`**：
+   - `startLinkMode()` → `setSnapHot(true)`：照片/视频锚点放大到 16px 并播放 `snapPulse` 扩散环动画；普通标记 `zIndex` 提到 1000 置顶
+   - `stopLinkMode()` → `setSnapHot(false)`：还原
+   - 通过 `marker.getElement()` 找覆盖层 DOM 切换 `.snap-hot` class
+3. `.mp-anchor` 设 `pointer-events:none`（锚点纯视觉，点击仍由覆盖层整体接收，不影响原有交互）
+
+**验证**：内联脚本 `node --check` 通过；行尾 LF（CR=0）；线上含 `mp-anchor`×6、`snapPulse`×4、`setSnapHot`×3、`snap-hot`×4；md5 `fe021530c2714744930266cca90a65bf`
+
+**部署**：`map-player.html` → Ctrl+F5。

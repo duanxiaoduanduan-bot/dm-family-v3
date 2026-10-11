@@ -33,10 +33,19 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 .marker-popup .mp-btns button{padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#f5f5f5;font-size:11px;cursor:pointer}
 
 /* 地图上的照片缩略图 */
-.map-photo{width:80px;height:60px;border-radius:4px;overflow:hidden;border:2px solid #fdcb6e;box-shadow:0 2px 8px rgba(0,0,0,.5);background:#000;cursor:pointer;transition:transform .2s}
+.map-photo{width:80px;height:60px;border-radius:4px;overflow:hidden;border:2px solid #fdcb6e;box-shadow:0 2px 8px rgba(0,0,0,.5);background:#000;cursor:pointer;transition:transform .2s;position:relative}
 .map-photo:hover{transform:scale(1.15);z-index:999!important;border-color:#fff}
 .map-photo img{width:100%;height:100%;object-fit:cover}
 .map-photo .mp-label{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#fff;font-size:8px;padding:1px 3px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 捕捉锚点：图标正中心的小圆点（对应真实坐标），方便连线时对准 */
+.mp-anchor{position:absolute;top:50%;left:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:rgba(253,203,110,.95);border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.9);pointer-events:none;transition:all .15s;z-index:3}
+.map-video .mp-anchor{background:rgba(162,155,254,.95)}
+/* 连线模式：可捕捉的点都亮起脉冲环 */
+.snap-hot .mp-anchor{width:16px;height:16px;margin:-8px 0 0 -8px;animation:snapPulse 1.2s ease-out infinite}
+@keyframes snapPulse{0%{box-shadow:0 0 0 0 rgba(253,203,110,.7),0 0 4px rgba(0,0,0,.9)}70%{box-shadow:0 0 0 10px rgba(253,203,110,0),0 0 4px rgba(0,0,0,.9)}100%{box-shadow:0 0 0 0 rgba(253,203,110,0),0 0 4px rgba(0,0,0,.9)}}
+.map-video-container.snap-hot .mp-anchor{animation-name:snapPulseV}
+@keyframes snapPulseV{0%{box-shadow:0 0 0 0 rgba(162,155,254,.7),0 0 4px rgba(0,0,0,.9)}70%{box-shadow:0 0 0 10px rgba(162,155,254,0),0 0 4px rgba(0,0,0,.9)}100%{box-shadow:0 0 0 0 rgba(162,155,254,0),0 0 4px rgba(0,0,0,.9)}}
 
 /* 右侧面板 */
 .panel{width:340px;flex-shrink:0;background:rgba(18,18,30,.95);border-left:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;z-index:10;transition:transform .3s}
@@ -508,7 +517,7 @@ function makeIcon(color,size,mediaUrl,mediaType){
 function addPhotoToMap(lat,lng,photoUrl,label){
   var icon=L.divIcon({
     className:'map-photo-container',
-    html:'<div class="map-photo" onclick="event.stopPropagation();openLightbox(\''+photoUrl+'\',\''+escJs(label)+'\')"><img src="'+photoUrl+'" loading="lazy" /><div class="mp-label">'+esc(label)+'</div></div>',
+    html:'<div class="map-photo" onclick="event.stopPropagation();openLightbox(\''+photoUrl+'\',\''+escJs(label)+'\')"><img src="'+photoUrl+'" loading="lazy" /><div class="mp-label">'+esc(label)+'</div><span class="mp-anchor" title="捕捉点"></span></div>',
     iconSize:[80,60],iconAnchor:[40,30]
   });
   var pm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true,bubblingMouseEvents:false}).addTo(map);
@@ -553,7 +562,7 @@ async function savePhotoLocation(photoName,displayName,lat,lng,isVideo){
 function addVideoToMap(lat,lng,videoUrl,label){
   var icon=L.divIcon({
     className:'map-video-container',
-    html:'<div class="map-video" onclick="event.stopPropagation();openLightbox(\''+escJs(videoUrl)+'\',\''+escJs(label)+'\',true)"><video src="'+videoUrl+'" muted preload="metadata"></video><div class="mv-play">▶</div><div class="mv-label">'+esc(label)+'</div></div>',
+    html:'<div class="map-video" onclick="event.stopPropagation();openLightbox(\''+escJs(videoUrl)+'\',\''+escJs(label)+'\',true)"><video src="'+videoUrl+'" muted preload="metadata"></video><div class="mv-play">▶</div><div class="mv-label">'+esc(label)+'</div><span class="mp-anchor" title="捕捉点"></span></div>',
     iconSize:[80,60],iconAnchor:[40,30]
   });
   var vm=L.marker([lat,lng],{icon:icon,opacity:1,draggable:true,bubblingMouseEvents:false}).addTo(map);
@@ -1052,6 +1061,15 @@ function startLinkMode(){
   showToast('依次点击各点连线；可点照片/视频/标记，点空白处自动吸附最近的点');
   // 高亮所有标记
   markers.forEach(function(mk){mk.marker.setOpacity(1)});
+  setSnapHot(true);
+}
+// 连线模式下让所有可捕捉的点显形（照片/视频锚点脉冲 + 标记放大）
+function setSnapHot(on){
+  try{
+    photoMarkers.forEach(function(pm){if(pm.marker&&pm.marker.getElement){var el=pm.marker.getElement();if(el){var d=el.querySelector('.map-photo');if(d)d.classList.toggle('snap-hot',!!!on);}}});
+    videoMarkers.forEach(function(vm){if(vm.marker&&vm.marker.getElement){var el=vm.marker.getElement();if(el){var d=el.querySelector('.map-video');if(d)d.classList.toggle('snap-hot',!!!on);}}});
+    markers.forEach(function(mk){if(mk.marker&&mk.marker.getElement){var el=mk.marker.getElement();if(el)el.style.zIndex=on?'1000':'';}});
+  }catch(e){}
 }
 function stopLinkMode(){
   linkMode=false;linkChain=[];
@@ -1063,6 +1081,7 @@ function stopLinkMode(){
   map.getContainer().style.cursor='';
   // 取消高亮
   markers.forEach(function(mk){mk.marker.setOpacity(1)});
+  setSnapHot(false);
   showToast('连线模式已取消');
 }
 // 刷新预览折线（虚线，跟随已选点）
