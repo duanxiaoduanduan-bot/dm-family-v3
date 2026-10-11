@@ -89,6 +89,9 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 
 .panel-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;overflow:hidden}
 .panel-card .pc-head{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.04);font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.pc-ico{width:24px;height:24px;border-radius:7px;background:rgba(108,92,231,.14);display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.plan-add{font-size:11px;color:#a99cf5;cursor:pointer;border:1px solid rgba(108,92,231,.35);border-radius:7px;padding:3px 11px;text-decoration:none;transition:all .2s}
+.plan-add:hover{background:rgba(108,92,231,.15);color:#c3b9ff}
 .panel-card .pc-body{padding:16px 18px;max-height:400px;overflow-y:auto}
 .panel-card .pc-body::-webkit-scrollbar{width:4px}
 .panel-card .pc-body::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
@@ -142,6 +145,74 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 .timeline .tl-item::before{content:'';position:absolute;left:-20px;top:12px;width:8px;height:8px;border-radius:50%;background:#6c5ce7;border:2px solid rgba(108,92,231,.3)}
 .timeline .tl-item .tl-date{font-size:10px;color:#555}
 .timeline .tl-item .tl-text{font-size:12px;color:#aaa;margin-top:2px}
+
+/* 补充时间计划（计划任务） */
+.plan-list{display:flex;flex-direction:column;gap:8px}
+.plan-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;transition:all .2s}
+.plan-item:hover{border-color:rgba(108,92,231,.3);background:rgba(255,255,255,.05)}
+.plan-item.is-done{opacity:.55}
+.plan-item.is-done .plan-title{text-decoration:line-through;color:#777}
+.plan-check{flex-shrink:0;padding-top:1px}
+.plan-check input{width:15px;height:15px;cursor:pointer;accent-color:#00b894}
+.plan-main{flex:1;min-width:0}
+.plan-title{font-size:13px;color:#ddd;font-weight:600;display:flex;align-items:center;gap:6px;word-break:break-all}
+.plan-prio{font-size:10px;color:#e17055;border:1px solid rgba(225,112,85,.4);border-radius:5px;padding:0 5px;font-weight:400}
+.plan-detail{font-size:11px;color:#888;margin-top:3px;word-break:break-all}
+.plan-hook{font-size:11px;color:#6c5ce7;margin-top:4px;background:rgba(108,92,231,.08);border:1px solid rgba(108,92,231,.2);border-radius:6px;padding:2px 8px;display:inline-block}
+.plan-notes{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.plan-note{font-size:11px;color:#aaa;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:6px;padding:2px 8px;max-width:100%;word-break:break-all}
+.plan-note b{color:#888;font-weight:600;margin-right:5px}
+.plan-stops{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+.stop-line{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;font-size:11px;background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.06);border-radius:7px;padding:6px 9px}
+.stop-line.is-open{border-color:rgba(225,112,85,.35);background:rgba(225,112,85,.05)}
+.stop-badge{flex-shrink:0;width:18px;height:18px;border-radius:50%;background:rgba(108,92,231,.2);color:#8b7cf0;font-size:10px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.stop-nm{color:#ddd;font-weight:600;flex-shrink:0;line-height:20px}
+.stop-bits{display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding-top:1px}
+.stop-chip{color:#9a9a9a;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);border-radius:5px;padding:1px 7px;word-break:break-all;line-height:16px}
+.stop-chip b{color:#7d7d7d;font-weight:600;margin-right:4px}
+.stop-empty{color:#666;font-style:normal}
+.plan-chain{margin-top:9px;display:flex;flex-direction:column;gap:5px}
+.chain-head{font-size:11px;color:#8b7cf0;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.chain-prog{font-size:10px;color:#999;background:rgba(108,92,231,.12);border-radius:8px;padding:0 7px}
+.chain-time{font-size:10px;color:#7fd6c1;background:rgba(0,184,148,.12);border:1px solid rgba(0,184,148,.22);border-radius:8px;padding:1px 8px;white-space:nowrap}
+.chain-btn{margin-left:auto;font-size:11px;color:#6c5ce7;cursor:pointer;border:1px solid rgba(108,92,231,.35);border-radius:6px;padding:1px 9px;text-decoration:none}
+.chain-btn:hover{background:rgba(108,92,231,.12)}
+.stop-check{flex-shrink:0;display:flex;align-items:center;margin-top:2px}
+.stop-check input{width:13px;height:13px;cursor:pointer;accent-color:#6c5ce7}
+.stop-line.is-done{opacity:.5}
+.stop-line.is-done .stop-nm{text-decoration:line-through}
+.stop-when{color:#8b7cf0}
+.stop-when.is-unset{color:#77778a;border-style:dashed;opacity:.85}
+.stop-ops{margin-left:auto;flex-shrink:0}
+.stop-ops a{font-size:12px;color:#6c5ce7;cursor:pointer;text-decoration:none}
+.stop-ops a:hover{opacity:.7}
+.stops-box{margin-top:8px;display:flex;flex-direction:column;gap:7px}
+.stop-row{background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;gap:7px}
+.stop-head{display:flex;align-items:center;gap:7px}
+.stop-seq{width:18px;height:18px;border-radius:50%;background:rgba(108,92,231,.2);color:#a99cf5;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stop-name{font-size:12px;color:#ddd;font-weight:600}
+.stop-fields{display:flex;gap:7px;flex-wrap:wrap}
+.stop-field{flex:1;min-width:110px;display:flex;flex-direction:column;gap:3px}
+.stop-field .sf-label{font-size:10px;color:#7a7a8a}
+.stop-field.sf-time{flex:0 0 auto;min-width:190px}
+.stop-in{padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.28);color:#ddd;font-size:11px;outline:none;width:100%;box-sizing:border-box;transition:border-color .2s}
+.stop-in:focus{border-color:rgba(108,92,231,.55);background:rgba(108,92,231,.05)}
+.time-wrap{display:flex;align-items:center;gap:5px}
+.time-wrap .stop-in{flex:1}
+.time-clear{flex-shrink:0;width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:none;color:#888;font-size:11px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0}
+.time-clear:hover{color:#e17055;border-color:rgba(225,112,85,.4)}
+.time-wrap.has-val .time-clear{display:flex}
+/* 深色主题下原生 datetime-local：日历图标转亮 + 整体配色 */
+input[type=datetime-local]{color-scheme:dark}
+input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:invert(.75);cursor:pointer;opacity:.8}
+input[type=datetime-local]::-webkit-calendar-picker-indicator:hover{opacity:1}
+input[type=datetime-local]::-webkit-datetime-edit{color:#ddd}
+input[type=datetime-local]::-webkit-datetime-edit-fields-wrapper{padding:0}
+.plan-when{flex-shrink:0;font-size:11px;white-space:nowrap;display:flex;align-items:center;gap:5px;padding-top:2px}
+.plan-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.plan-ops{flex-shrink:0;display:flex;gap:8px;padding-top:2px}
+.plan-ops a{font-size:13px;color:#6c5ce7;cursor:pointer;text-decoration:none}
+.plan-ops a:hover{opacity:.7}
 
 .empty{text-align:center;padding:30px;color:#555;font-size:13px}
 
@@ -244,11 +315,55 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
       </div>
     </div>
 
-    <!-- 时间线 -->
-    <div class="panel-card">
-      <div class="pc-head">📅 活动时间线</div>
-      <div class="pc-body" id="timeline">
-        <div class="empty">加载中...</div>
+    <!-- 补充时间计划（计划任务） -->
+    <div class="panel-card" style="grid-column:1/-1">
+      <div class="pc-head">
+        <span class="pc-ico">🗓️</span> 补充时间计划
+        <span style="font-weight:400;font-size:10px;color:#555;margin-left:8px">选一条路径 → 自动拆出沿途节点任务</span>
+        <span style="margin-left:auto">
+          <a onclick="openPlanForm()" class="plan-add">＋ 新增任务</a>
+        </span>
+      </div>
+      <div class="pc-body">
+        <!-- 新增/编辑表单（默认收起） -->
+        <div id="planForm" style="display:none;background:rgba(108,92,231,.06);border:1px solid rgba(108,92,231,.2);border-radius:10px;padding:12px 14px;margin-bottom:12px">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+            <input id="planTitle" placeholder="任务标题（必填）" style="flex:1;min-width:180px;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none">
+            <div class="time-wrap" id="planAtWrap" style="flex:0 0 auto">
+              <input id="planAt" type="datetime-local" onchange="togglePlanAtClear()" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none" title="计划时间（可选）">
+              <button type="button" class="time-clear" onclick="clearPlanAt()" title="清空时间">✕</button>
+            </div>
+            <select id="planPriority" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none">
+              <option value="normal">普通</option>
+              <option value="high">重要</option>
+            </select>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:11px;color:#888;min-width:64px">挂钩路径</span>
+            <select id="planFeature" onchange="onHookChange()" style="flex:1;min-width:220px;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none">
+              <option value="">— 不挂钩（独立任务）—</option>
+            </select>
+          </div>
+          <!-- 途经点逐点排期（仅当挂钩「路径」时展开，每个节点可分别填 时间/任务/补充） -->
+          <div id="planStopsWrap" style="display:none;margin-top:10px">
+            <div style="font-size:11px;color:#888;margin-bottom:6px">🛣️ 该路径的途经点 <span style="color:#666">— 每个节点各填「时间 / 任务 / 补充」，即是该地点自己的任务</span></div>
+            <div id="planStops" class="stops-box"></div>
+          </div>
+          <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div><div style="font-size:10px;color:#888;margin-bottom:3px">📍 地点备注（整条）</div><textarea id="planPlaceNote" rows="2" placeholder="地点相关（码头/入口/参照物…）" style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none;resize:vertical"></textarea></div>
+            <div><div style="font-size:10px;color:#888;margin-bottom:3px">🕐 时间备注（整体）</div><textarea id="planTimeNote" rows="2" placeholder="时间相关（潮汐/集合/窗口期…）" style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none;resize:vertical"></textarea></div>
+            <div><div style="font-size:10px;color:#888;margin-bottom:3px">📋 任务备注（整体）</div><textarea id="planTaskNote" rows="2" placeholder="任务相关（带什么/做什么…）" style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none;resize:vertical"></textarea></div>
+          </div>
+          <div style="margin-top:8px">
+            <textarea id="planDetail" placeholder="总体补充说明（可选）" rows="2" style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);color:#ddd;font-size:12px;outline:none;resize:vertical"></textarea>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button onclick="savePlan()" style="padding:5px 14px;border-radius:8px;border:none;background:#6c5ce7;color:#fff;font-size:12px;cursor:pointer">保存</button>
+            <button onclick="closePlanForm()" style="padding:5px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:none;color:#aaa;font-size:12px;cursor:pointer">取消</button>
+            <span id="planFormMsg" style="font-size:11px;color:#e17055;align-self:center"></span>
+          </div>
+        </div>
+        <div id="plansList"><div class="empty">加载中...</div></div>
       </div>
     </div>
   </div>
@@ -418,8 +533,10 @@ async function refreshAll(){
   // 路径总览
   renderPathsOverview(mapData);
 
-  // 时间线
-  renderTimeline(mapData,geostats);
+  // 补充时间计划（计划任务，独立于地图要素，走后端 /api/plans）
+  // 先按当前库刷新「挂钩路径」下拉（只列路径），再加载任务列表
+  fillHookOptions(mapData);
+  loadPlans();
 
   $('refreshTime').textContent=new Date().toLocaleTimeString();
 }
@@ -590,26 +707,398 @@ function togglePath(i){
   if(el)el.classList.toggle('open');
 }
 
-function renderTimeline(mapData,geostats){
-  var items=[];
-  // 当前库的要素（口径与统计卡片一致，photo/video 单列不混进标记点）
-  var fc=countFeatures(mapData);
-  if(fc.points)items.push({date:'🗄 '+currentDb,text:fc.points+' 个标记点'});
-  if(fc.lines||fc.polygons)items.push({date:'🗄 '+currentDb,text:fc.lines+' 条线 · '+fc.polygons+' 个面'});
-  if(fc.timePaths)items.push({date:'🗄 '+currentDb,text:fc.timePaths+' 条时间路径'});
-  if(fc.photos||fc.videos)items.push({date:'🗄 '+currentDb,text:fc.photos+' 张地理照片 · '+fc.videos+' 个地理视频'});
-  // 全局静态素材清单（geodata-list.json），与选中数据库无关，单独标注避免误读
-  if(geostats){
-    items.push({date:'全局',text:'素材库: '+geostats.photoCount+'张照片 + '+geostats.videoCount+'个视频 · '+geostats.groupCount+'个分组'});
-  }
+// ====== 补充时间计划（计划任务）======
+var _planEditing=null;  // 正在编辑的任务 id（null=新增）
+var _plansCache=[];     // 最近一次列表缓存（编辑时按 id 取）
+var _hookFeatures=[];   // 地图上可挂钩的要素（路径/地点）[{id,name,kind}]
+var _mapFeaturesById={};// id -> 原始要素（取几何用）
+var _stopsSeed=[];      // 当前表单里的途经点草稿 [{stop_name,lng,lat,stop_at,stop_task,stop_note}]
+var _planParentId=null; // 正在编辑的是节点子任务时，记录其父计划 id
 
-  if(!items.length){$('timeline').innerHTML='<div class="empty">暂无活动记录</div>';return}
-  var html='<div class="timeline">';
-  for(var i=0;i<items.length;i++){
-    html+='<div class="tl-item"><div class="tl-date">'+esc(items[i].date)+'</div><div class="tl-text">'+esc(items[i].text)+'</div></div>';
+function planUrl(u){return u+(u.indexOf('?')>=0?'&':'?')+'db='+encodeURIComponent(currentDb)}
+
+// 收集当前库地图上可挂钩的要素：**只收路径（线）**
+// 挂钩标的 = 一条路径；保存后自动拆出沿途节点子任务（单点任务不在下拉里做）
+function collectHookFeatures(mapData){
+  var out=[];
+  if(mapData&&mapData.features){
+    mapData.features.forEach(function(f){
+      if(!f.geometry)return;
+      var gt=f.geometry.type;
+      var nm=(f.properties&&f.properties.name);
+      if(!nm)return;
+      if(gt==='LineString'||gt==='MultiLineString'){
+        out.push({code:f.id||nm,name:nm,kind:'路径',feature:f});
+      }
+    });
   }
-  html+='</div>';
-  $('timeline').innerHTML=html;
+  return out;
+}
+// 坐标 -> 点名 索引（用当前库里有名字的点要素反查）
+function buildPointIndex(mapData){
+  var idx={};
+  if(mapData&&mapData.features){
+    mapData.features.forEach(function(f){
+      if(!f.geometry)return;
+      var gt=f.geometry.type;
+      if(gt!=='Point'&&gt!=='MultiPoint')return;
+      var nm=(f.properties&&f.properties.name);if(!nm)return;
+      var cs=gt==='Point'?[f.geometry.coordinates]:f.geometry.coordinates;
+      cs.forEach(function(c){idx[c[1].toFixed(5)+','+c[0].toFixed(5)]=nm});
+    });
+  }
+  return idx;
+}
+// 从一条路径要素拆出途经点（每个顶点一行，能匹配到点名就显示点名，否则用坐标）
+function extractStops(feature,pointIdx){
+  var gt=feature.geometry.type;
+  var coords=gt==='MultiLineString'?feature.geometry.coordinates[0]:feature.geometry.coordinates;
+  if(!coords||!coords.length)return [];
+  return coords.map(function(c,i){
+    var key=c[1].toFixed(5)+','+c[0].toFixed(5);
+    var nm=pointIdx[key]||('点 '+(i+1));
+    return {stop_name:nm,lng:c[0],lat:c[1],stop_at:'',stop_task:'',stop_note:''};
+  });
+}
+function fillHookOptions(mapData){
+  _hookFeatures=collectHookFeatures(mapData);
+  _mapFeaturesById={};_pointIdxGlobal={};
+  (mapData&&mapData.features||[]).forEach(function(f){if(f.id)_mapFeaturesById[f.id]=f});
+  _pointIdxGlobal=buildPointIndex(mapData);
+  var sel=$('planFeature');
+  if(!sel)return;
+  var cur=sel.value;
+  var opts='<option value="">— 不挂钩（独立任务）—</option>';
+  _hookFeatures.forEach(function(h){
+    var val=h.code+'|'+h.name;
+    opts+='<option value="'+esc(val)+'">'+esc(h.kind)+' · '+esc(h.name)+'</option>';
+  });
+  sel.innerHTML=opts;
+  if(cur)sel.value=cur;
+}
+// 挂钩选择变化：若选的是「路径」，拆出途经点渲染逐点编辑行；选「地点」则隐藏逐点区
+function onHookChange(){
+  var val=($('planFeature').value||'');
+  var wrap=$('planStopsWrap');
+  if(!val){wrap.style.display='none';_stopsSeed=[];$('planStops').innerHTML='';return}
+  var idx=val.indexOf('|');
+  var fid=idx>=0?val.slice(0,idx):'';
+  var f=_mapFeaturesById[fid];
+  var gt=f&&f.geometry?f.geometry.type:'';
+  var isLine=(gt==='LineString'||gt==='MultiLineString');
+  if(!isLine){wrap.style.display='none';_stopsSeed=[];$('planStops').innerHTML='';return}
+  var stops=f?extractStops(f,_pointIdxGlobal):[];
+  // 若之前已填过（编辑态）且点数一致，用之前的备注/时间回填
+  if(_stopsSeed.length===stops.length){
+    for(var i=0;i<stops.length;i++){
+      stops[i].stop_at=_stopsSeed[i].stop_at||stops[i].stop_at;
+      stops[i].stop_task=_stopsSeed[i].stop_task||'';
+      stops[i].stop_note=_stopsSeed[i].stop_note||'';
+    }
+  }
+  _stopsSeed=stops;
+  renderStops();
+  wrap.style.display=stops.length?'block':'none';
+}
+function renderStops(){
+  var box=$('planStops');
+  if(!_stopsSeed.length){box.innerHTML='';return}
+  var html='';
+  _stopsSeed.forEach(function(s,i){
+    var has=s.stop_at?true:false;
+    html+='<div class="stop-row">'+
+      '<div class="stop-head"><span class="stop-seq">'+(i+1)+'</span><span class="stop-name">'+esc(s.stop_name)+'</span></div>'+
+      '<div class="stop-fields">'+
+        '<div class="stop-field sf-time"><span class="sf-label">到达时间（可选）</span>'+
+          '<div class="time-wrap'+(has?' has-val':'')+'" id="stopTimeWrap_'+i+'">'+
+            '<input type="datetime-local" class="stop-in" value="'+(has?toLocalInput(s.stop_at):'')+'" onchange="setStopAt('+i+',this.value)" title="到达时间（可选）">'+
+            '<button type="button" class="time-clear" onclick="clearStopAt('+i+')" title="清空时间">✕</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="stop-field"><span class="sf-label">任务</span><input type="text" class="stop-in" value="'+esc(s.stop_task)+'" placeholder="到此做什么" onchange="_stopsSeed['+i+'].stop_task=this.value"></div>'+
+        '<div class="stop-field"><span class="sf-label">补充</span><input type="text" class="stop-in" value="'+esc(s.stop_note)+'" placeholder="备注" onchange="_stopsSeed['+i+'].stop_note=this.value"></div>'+
+      '</div>'+
+    '</div>';
+  });
+  box.innerHTML=html;
+}
+// 设置/清空途经点时间（可选）：同步 _stopsSeed 与清空按钮显隐
+function setStopAt(i,v){
+  if(!_stopsSeed[i])return;
+  _stopsSeed[i].stop_at=v||'';
+  var w=$('stopTimeWrap_'+i);
+  if(w)w.classList.toggle('has-val',!!v);
+}
+function clearStopAt(i){
+  if(!_stopsSeed[i])return;
+  _stopsSeed[i].stop_at='';
+  var inp=document.querySelector('#stopTimeWrap_'+i+' input');
+  if(inp)inp.value='';
+  var w=$('stopTimeWrap_'+i);
+  if(w)w.classList.remove('has-val');
+}
+var _pointIdxGlobal={};
+
+function openPlanForm(plan){
+  _planEditing=plan?plan.id:null;
+  _planParentId=(plan&&plan.parent_id)?plan.parent_id:null;
+  $('planForm').style.display='block';
+  $('planFormMsg').textContent='';
+  $('planTitle').value=plan?plan.title:'';
+  $('planDetail').value=plan?(plan.detail||''):'';
+  $('planPriority').value=plan?(plan.priority||'normal'):'normal';
+  $('planAt').value=plan&&plan.plan_at?toLocalInput(plan.plan_at):'';
+  togglePlanAtClear();
+  $('planPlaceNote').value=plan?(plan.place_note||''):'';
+  $('planTimeNote').value=plan?(plan.time_note||''):'';
+  $('planTaskNote').value=plan?(plan.task_note||''):'';
+  // 回填挂钩选择
+  var sel=$('planFeature');
+  if(plan&&plan.feature_name){
+    var val=(plan.feature_id?plan.feature_id+'|':'')+plan.feature_name;
+    var found=false;
+    for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===val){found=true;break}}
+    if(!found){sel.innerHTML+='<option value="'+esc(val)+'">挂钩 · '+esc(plan.feature_name)+'</option>'}
+    sel.value=val;
+  }else{sel.value=''}
+  // 编辑「节点子任务」时：不显示路径逐点编辑器（子任务本身就是单个节点）
+  if(plan&&plan.parent_id){
+    _stopsSeed=[];
+    $('planStops').innerHTML='';
+    $('planStopsWrap').style.display='none';
+    setTimeout(function(){$('planTitle').focus()},50);
+    return;
+  }
+  // 回填途经点（每个点自带的时间/任务/补充）
+  if(plan&&plan.stops&&plan.stops.length){
+    _stopsSeed=plan.stops.map(function(s){
+      return {stop_name:s.stop_name||'',lng:s.lng,lat:s.lat,stop_at:s.stop_at||'',stop_task:s.stop_task||'',stop_note:s.stop_note||''};
+    });
+    renderStops();
+    $('planStopsWrap').style.display='block';
+  }else{
+    _stopsSeed=[];
+    $('planStops').innerHTML='';
+    $('planStopsWrap').style.display='none';
+  }
+  setTimeout(function(){$('planTitle').focus()},50);
+}
+function editPlan(id){
+  var p=null;
+  for(var i=0;i<_plansCache.length;i++){
+    if(_plansCache[i].id===id){p=_plansCache[i];break}
+    var kids=_plansCache[i].children||[];
+    for(var j=0;j<kids.length;j++){if(kids[j].id===id){p=kids[j];break}}
+    if(p)break;
+  }
+  if(p)openPlanForm(p);
+}
+// 计划整体时间的显隐/清空（可选时间）
+function togglePlanAtClear(){var w=$('planAtWrap');if(w)w.classList.toggle('has-val',!!$('planAt').value)}
+function clearPlanAt(){$('planAt').value='';togglePlanAtClear()}
+function closePlanForm(){
+  $('planForm').style.display='none';
+  _planEditing=null;_planParentId=null;
+  $('planTitle').value='';$('planDetail').value='';$('planAt').value='';$('planPriority').value='normal';
+  $('planPlaceNote').value='';$('planTimeNote').value='';$('planTaskNote').value='';$('planFeature').value='';
+  _stopsSeed=[];$('planStops').innerHTML='';$('planStopsWrap').style.display='none';
+  $('planFormMsg').textContent='';
+}
+// ISO -> datetime-local 显示值（本地时区）
+function toLocalInput(iso){
+  var d=new Date(iso);if(isNaN(d))return '';
+  var p=function(n){return(n<10?'0':'')+n};
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+
+async function savePlan(){
+  var title=($('planTitle').value||'').trim();
+  if(!title){$('planFormMsg').textContent='请填写任务标题';return}
+  var hook=$('planFeature').value||'';
+  var feature_id=null,feature_name=null;
+  if(hook){
+    var idx=hook.indexOf('|');
+    if(idx>=0){feature_id=hook.slice(0,idx);feature_name=hook.slice(idx+1);}
+    else{feature_name=hook;}
+  }
+  var payload={
+    title:title,detail:$('planDetail').value||'',priority:$('planPriority').value,plan_at:$('planAt').value||null,
+    feature_id:feature_id,feature_name:feature_name,
+    place_note:$('planPlaceNote').value||'',time_note:$('planTimeNote').value||'',task_note:$('planTaskNote').value||''
+  };
+  // 编辑节点子任务：只更新这一条，不重发 stops、不重新生成子任务
+  if(_planEditing!=null && _planParentId){
+    // 子任务：把三个备注映射到这条任务自身
+    payload.stops=undefined;
+  }else{
+    payload.stops=_stopsSeed;
+  }
+  try{
+    var r;
+    if(_planEditing!=null){
+      r=await fetch(planUrl('/api/plans/'+_planEditing),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    }else{
+      r=await fetch(planUrl('/api/plans'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    }
+    var d=await r.json();
+    if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));
+    closePlanForm();loadPlans();
+  }catch(e){$('planFormMsg').textContent='保存失败: '+e.message}
+}
+
+async function togglePlan(id,done){
+  try{
+    await fetch(planUrl('/api/plans/'+id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({done:!!done})});
+    loadPlans();
+  }catch(e){}
+}
+async function deletePlan(id){
+  if(!confirm('确定删除该计划任务？'))return;
+  try{await fetch(planUrl('/api/plans/'+id),{method:'DELETE'});loadPlans()}catch(e){}
+}
+// 把已有路径计划的途经点补物化成节点子任务
+async function materializePlan(id){
+  try{
+    var r=await fetch(planUrl('/api/plans/'+id+'/materialize'),{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var d=await r.json();
+    if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));
+    loadPlans();
+  }catch(e){alert('生成失败: '+e.message)}
+}
+
+function planStatusMeta(p){
+  if(p.done)return{cls:'done',label:'已完成',color:'#00b894'};
+  if(!p.plan_at)return{cls:'todo',label:'未排期',color:'#888'};
+  var t=new Date(p.plan_at).getTime();
+  if(isNaN(t))return{cls:'todo',label:'未排期',color:'#888'};
+  var now=Date.now();
+  if(t<now)return{cls:'overdue',label:'已逾期',color:'#e17055'};
+  if(t-now<86400000)return{cls:'today',label:'24h内',color:'#fdcb6e'};
+  return{cls:'upcoming',label:'待执行',color:'#0984e3'};
+}
+
+async function loadPlans(){
+  var box=$('plansList');
+  try{
+    var r=await fetch(planUrl('/api/plans?_='+Date.now()));
+    var d=await r.json();
+    if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP ' + r.status));
+    var plans=d.plans||[];
+    if(!plans.length){box.innerHTML='<div class="empty">暂无计划任务 — 点右上「＋ 新增任务」，选一条地图路径即可自动拆出沿途节点任务</div>';return}
+    var html='<div class="plan-list">';
+    _plansCache=plans;
+    plans.forEach(function(p){
+      var st=planStatusMeta(p);
+      var when=p.plan_at?fmtPlanTime(p.plan_at):'未排期';
+      var prio=p.priority==='high'?'<span class="plan-prio">重要</span>':'';
+      var hook=p.feature_name?'<div class="plan-hook">🔗 '+esc(p.feature_name)+'</div>':'';
+      var notes='';
+      if(p.place_note)notes+='<span class="plan-note"><b>地点</b>'+esc(p.place_note)+'</span>';
+      if(p.time_note)notes+='<span class="plan-note"><b>时间</b>'+esc(p.time_note)+'</span>';
+      if(p.task_note)notes+='<span class="plan-note"><b>任务</b>'+esc(p.task_note)+'</span>';
+      // 全链计划：节点子任务（每个节点一条独立任务，可单独勾选/编辑）
+      var subs='';
+      var kids=p.children||[];
+      if(kids.length){
+        var doneN=0;kids.forEach(function(k){if(k.done)doneN++});
+        var tsum=summarizeTimes(kids);
+        subs+='<div class="plan-chain"><div class="chain-head"><span class="pc-ico" style="width:20px;height:20px;font-size:11px">🛣️</span> 沿途节点任务 <span class="chain-prog">'+doneN+'/'+kids.length+'</span>'+
+          (tsum?('<span class="chain-time" title="自动统计已排期节点的起止与跨度">⏱ '+tsum.firstTxt.split(' ')[0]+' → '+tsum.lastTxt.split(' ')[0]+' · 共 '+tsum.spanTxt+' · '+tsum.count+'/'+tsum.total+' 已排期</span>'):'')+
+          '</div>';
+        kids.forEach(function(k,i){
+          var kst=planStatusMeta(k);
+          var hasT=!!k.plan_at;
+          var kwhen=hasT?fmtPlanTime(k.plan_at):'时间可选';
+          var kbits=[];
+          if(k.task_note)kbits.push('<span class="stop-chip"><b>任务</b>'+esc(k.task_note)+'</span>');
+          if(k.place_note)kbits.push('<span class="stop-chip"><b>补充</b>'+esc(k.place_note)+'</span>');
+          subs+='<div class="stop-line'+(k.done?' is-done':'')+(hasT?'':' is-open')+'">'+
+            '<label class="stop-check"><input type="checkbox"'+(k.done?' checked':'')+' onchange="togglePlan('+k.id+',this.checked)"></label>'+
+            '<span class="stop-badge">'+(i+1)+'</span>'+
+            '<span class="stop-nm">'+esc(k.title)+'</span>'+
+            '<span class="stop-bits">'+
+              '<span class="stop-chip stop-when'+(hasT?'':' is-unset')+'" style="'+(hasT?('color:'+kst.color):'')+'">'+esc(kwhen)+'</span>'+
+              (kbits.length?kbits.join(''):'<span class="stop-empty">待标注</span>')+
+            '</span>'+
+            '<span class="stop-ops"><a onclick="editPlan('+k.id+')" title="编辑">✎</a></span>'+
+          '</div>';
+        });
+        subs+='</div>';
+      }
+      // 兼容旧数据：有 stops 明细但还没拆出子任务时，提供「生成节点任务」按钮
+      if(!kids.length&&p.stops&&p.stops.length){
+        subs+='<div class="plan-stops"><div class="chain-head">🛣️ 该路径有 '+p.stops.length+' 个节点 '+
+          '<a class="chain-btn" onclick="materializePlan('+p.id+')">▶ 生成节点任务</a></div>';
+        p.stops.forEach(function(s,i){
+          var nm=s.stop_name||('点'+(i+1));
+          var bits=[];
+          if(s.stop_at)bits.push('<span class="stop-chip"><b>时间</b>'+esc(fmtPlanTime(s.stop_at))+'</span>');
+          if(s.stop_task)bits.push('<span class="stop-chip"><b>任务</b>'+esc(s.stop_task)+'</span>');
+          if(s.stop_note)bits.push('<span class="stop-chip"><b>补充</b>'+esc(s.stop_note)+'</span>');
+          subs+='<div class="stop-line'+(s.stop_at?'':' is-open')+'">'+
+            '<span class="stop-badge">'+(i+1)+'</span>'+
+            '<span class="stop-nm">'+esc(nm)+'</span>'+
+            '<span class="stop-bits">'+(bits.length?bits.join(''):'<span class="stop-empty">待标注</span>')+'</span>'+
+          '</div>';
+        });
+        subs+='</div>';
+      }
+      html+='<div class="plan-item'+(p.done?' is-done':'')+'">'+
+        '<label class="plan-check"><input type="checkbox"'+(p.done?' checked':'')+' onchange="togglePlan('+p.id+',this.checked)"></label>'+
+        '<div class="plan-main">'+
+          '<div class="plan-title">'+esc(p.title)+prio+'</div>'+
+          hook+
+          (p.detail?'<div class="plan-detail">'+esc(p.detail)+'</div>':'')+
+          (notes?'<div class="plan-notes">'+notes+'</div>':'')+
+          subs+
+        '</div>'+
+        '<div class="plan-when" style="color:'+st.color+'"><span class="plan-dot" style="background:'+st.color+'"></span>'+st.label+' · '+when+'</div>'+
+        '<div class="plan-ops">'+
+          '<a onclick="editPlan('+p.id+')" title="编辑">✎</a>'+
+          '<a onclick="deletePlan('+p.id+')" title="删除" style="color:#e17055">✕</a>'+
+        '</div>'+
+      '</div>';
+    });
+    html+='</div>';
+    box.innerHTML=html;
+  }catch(e){
+    box.innerHTML='<div class="empty">加载失败: '+esc(e.message)+'</div>';
+  }
+}
+
+// 汇总一条链上所有已排期节点的时间：起止 + 跨度（自动总计）
+function summarizeTimes(nodes){
+  var ts=[];
+  (nodes||[]).forEach(function(n){
+    if(!n||!n.plan_at)return;
+    var t=new Date(n.plan_at).getTime();
+    if(!isNaN(t))ts.push(t);
+  });
+  if(!ts.length)return null;
+  ts.sort(function(a,b){return a-b});
+  var first=ts[0],last=ts[ts.length-1];
+  var spanMs=last-first;
+  var days=spanMs/86400000;
+  var spanTxt;
+  if(days<1){
+    var hrs=Math.round(spanMs/3600000);
+    spanTxt=hrs>0?(hrs+' 小时'):'当日';
+  }else{
+    // 以「日期」计跨度：同一天=1天
+    var d0=new Date(first);d0.setHours(0,0,0,0);
+    var d1=new Date(last);d1.setHours(0,0,0,0);
+    var dd=Math.round((d1-d0)/86400000)+1;
+    spanTxt=dd+' 天';
+  }
+  return {count:ts.length,total:(nodes||[]).length,first:first,last:last,spanMs:spanMs,spanTxt:spanTxt,
+          firstTxt:fmtPlanTime(new Date(first).toISOString()),
+          lastTxt:fmtPlanTime(new Date(last).toISOString())};
+}
+
+function fmtPlanTime(iso){
+  var d=new Date(iso);if(isNaN(d))return String(iso);
+  var p=function(n){return(n<10?'0':'')+n};
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}

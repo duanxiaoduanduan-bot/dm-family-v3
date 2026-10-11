@@ -88,6 +88,58 @@ async function ensureFeatureStore(dbName, force) {
     created_at TIMESTAMP DEFAULT NOW()
   )`;
   const DDL_INDEX = 'CREATE INDEX IF NOT EXISTS idx_features_geom ON features USING GIST (geom)';
+  // 计划任务表（补充时间计划）：创建时即带计划时间 plan_at
+  // 可挂钩地图要素（feature_id/feature_name），并对地点/时间/任务分别备注
+  // parent_id：全链计划的父子关系——路径主计划为空，沿途每个节点子任务指向主计划
+  const DDL_PLANS = `CREATE TABLE IF NOT EXISTS plans (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    detail TEXT DEFAULT '',
+    plan_at TIMESTAMP,
+    done BOOLEAN DEFAULT FALSE,
+    priority TEXT DEFAULT 'normal',
+    feature_id TEXT,
+    feature_name TEXT,
+    place_note TEXT DEFAULT '',
+    time_note TEXT DEFAULT '',
+    task_note TEXT DEFAULT '',
+    parent_id INTEGER REFERENCES plans(id) ON DELETE CASCADE,
+    stop_seq INTEGER,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  )`;
+  const DDL_PLANS_IDX = 'CREATE INDEX IF NOT EXISTS idx_plans_at ON plans (plan_at)';
+  const DDL_PLANS_PARENT_IDX = 'CREATE INDEX IF NOT EXISTS idx_plans_parent ON plans (parent_id, stop_seq)';
+  // 计划任务「途经点明细」：挂钩路径后，按路径顶点逐点排期（时间/任务/补充）
+  const DDL_PLAN_STOPS = `CREATE TABLE IF NOT EXISTS plan_stops (
+    id SERIAL PRIMARY KEY,
+    plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    seq INTEGER DEFAULT 0,
+    stop_name TEXT DEFAULT '',
+    lng DOUBLE PRECISION,
+    lat DOUBLE PRECISION,
+    stop_at TIMESTAMP,
+    stop_task TEXT DEFAULT '',
+    stop_note TEXT DEFAULT ''
+  )`;
+  const DDL_PLAN_STOPS_IDX = 'CREATE INDEX IF NOT EXISTS idx_plan_stops_plan ON plan_stops (plan_id, seq)';
+  // 兼容旧表：补列（老库已建有旧结构 plans 表时）
+  const DDL_PLANS_MIGRATE = [
+    'ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_id TEXT',
+    'ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_name TEXT',
+    "ALTER TABLE plans ADD COLUMN IF NOT EXISTS place_note TEXT DEFAULT ''",
+    "ALTER TABLE plans ADD COLUMN IF NOT EXISTS time_note TEXT DEFAULT ''",
+    "ALTER TABLE plans ADD COLUMN IF NOT EXISTS task_note TEXT DEFAULT ''",
+    'ALTER TABLE plans ADD COLUMN IF NOT EXISTS parent_id INTEGER',
+    'ALTER TABLE plans ADD COLUMN IF NOT EXISTS stop_seq INTEGER',
+    // 自引用外键：老库补列时只有裸列、没有约束，删除父计划会留下孤儿子任务
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plans_parent_fk') THEN
+         ALTER TABLE plans ADD CONSTRAINT plans_parent_fk
+           FOREIGN KEY (parent_id) REFERENCES plans(id) ON DELETE CASCADE;
+       END IF;
+     END $$`
+  ];
   if (su) {
     const c = new Client({ host: dbCfg.host, port: dbCfg.port, database: db, user: su });
     try {
@@ -95,6 +147,12 @@ async function ensureFeatureStore(dbName, force) {
       await c.query('CREATE EXTENSION IF NOT EXISTS postgis');
       await c.query(DDL_TABLE);
       await c.query(DDL_INDEX);
+      await c.query(DDL_PLANS);
+      await c.query(DDL_PLANS_IDX);
+      await c.query(DDL_PLANS_PARENT_IDX);
+      await c.query(DDL_PLAN_STOPS);
+      await c.query(DDL_PLAN_STOPS_IDX);
+      for (const m of DDL_PLANS_MIGRATE) { try { await c.query(m); } catch (_) {} }
       // dmuser 是各服务的运行账号，必须能读写；否则 regional-stats/列要素会 permission denied
       await c.query('GRANT ALL ON SCHEMA public TO dmuser');
       await c.query('GRANT ALL ON ALL TABLES IN SCHEMA public TO dmuser');
@@ -114,6 +172,12 @@ async function ensureFeatureStore(dbName, force) {
     catch (e) { notes.push('postgis 扩展需超级用户: ' + e.message); }
     await p.query(DDL_TABLE);
     await p.query(DDL_INDEX);
+    await p.query(DDL_PLANS);
+    await p.query(DDL_PLANS_IDX);
+    await p.query(DDL_PLANS_PARENT_IDX);
+    await p.query(DDL_PLAN_STOPS);
+    await p.query(DDL_PLAN_STOPS_IDX);
+    for (const m of DDL_PLANS_MIGRATE) { try { await p.query(m); } catch (_) {} }
     _ensuredDbs.add(db);
     return { ok: true, degraded: true, notes };
   } catch (e) {
@@ -1068,6 +1132,268 @@ const server = http.createServer((req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
+    })();
+    return;
+  }
+
+  // ====== 计划任务（补充时间计划）CRUD，支持 ?db= ======
+  // 收集请求体
+  function readBody(req) {
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try { resolve(body ? JSON.parse(body) : {}); } catch (e) { reject(e); }
+      });
+      req.on('error', reject);
+    });
+  }
+  function normPlanTime(v) {
+    if (v == null || v === '') return null;
+    const s = String(v).trim().replace('T', ' ');
+    // 接受 'YYYY-MM-DD HH:mm' / 'YYYY-MM-DD HH:mm:ss'；无效则原样丢弃（存 NULL）
+    return /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$/.test(s) ? s : null;
+  }
+  // 整体替换某任务的途经点明细（先删后插，保持前端提交的顺序）
+  async function replacePlanStops(pool, planId, stops) {
+    await pool.query('DELETE FROM plan_stops WHERE plan_id=$1', [planId]);
+    if (!Array.isArray(stops) || !stops.length) return;
+    let seq = 0;
+    for (const s of stops) {
+      if (!s) continue;
+      const name = String(s.stop_name != null ? s.stop_name : (s.name || ''));
+      const lng = (s.lng != null && !isNaN(parseFloat(s.lng))) ? parseFloat(s.lng) : null;
+      const lat = (s.lat != null && !isNaN(parseFloat(s.lat))) ? parseFloat(s.lat) : null;
+      await pool.query(
+        `INSERT INTO plan_stops (plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [planId, seq++, name, lng, lat, normPlanTime(s.stop_at),
+         String(s.stop_task || ''), String(s.stop_note || '')]
+      );
+    }
+  }
+
+  // 把一条顶层计划的途经点物化成 N 条节点子任务（幂等：已有子任务则跳过，除非 force）
+  // 返回新建的子任务行数组；无途经点或已存在（非 force）返回 []
+  async function materializeChildren(pool, parent, opts) {
+    const force = opts && opts.force;
+    const chk = await pool.query('SELECT id FROM plans WHERE parent_id=$1 LIMIT 1', [parent.id]);
+    if (chk.rows.length && !force) return [];
+    // 先读途经点（无论 force 与否），绝不能先删再读
+    let stops = [];
+    if (force && opts && Array.isArray(opts.stops)) {
+      stops = opts.stops;
+    } else {
+      const sr = await pool.query(
+        `SELECT seq, stop_name, lng, lat, stop_at, stop_task, stop_note
+         FROM plan_stops WHERE plan_id=$1 ORDER BY seq, id`, [parent.id]
+      );
+      stops = sr.rows;
+    }
+    // force：清空旧子任务，并按（可能更新过的）stops 重建 plan_stops
+    if (force) {
+      await pool.query('DELETE FROM plans WHERE parent_id=$1', [parent.id]);
+      if (opts && Array.isArray(opts.stops)) {
+        await pool.query('DELETE FROM plan_stops WHERE plan_id=$1', [parent.id]);
+        let sq = 0;
+        for (const s of stops) {
+          if (!s) continue;
+          await pool.query(
+            `INSERT INTO plan_stops (plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [parent.id, sq++, String(s.stop_name || ''), s.lng != null ? parseFloat(s.lng) : null,
+             s.lat != null ? parseFloat(s.lat) : null, normPlanTime(s.stop_at),
+             String(s.stop_task || ''), String(s.stop_note || '')]
+          );
+        }
+      }
+    }
+    const children = [];
+    for (let i = 0; i < stops.length; i++) {
+      const s = stops[i];
+      const nm = String(s.stop_name || ('点' + (i + 1)));
+      const cr = await pool.query(
+        `INSERT INTO plans (title, detail, plan_at, done, priority,
+                            feature_id, feature_name, place_note, time_note, task_note,
+                            parent_id, stop_seq)
+         VALUES ($1, '', $2, FALSE, 'normal', $3, $4, $5, '', $6, $7, $8)
+         RETURNING id, title, detail, plan_at, done, priority,
+                   feature_id, feature_name, place_note, time_note, task_note,
+                   parent_id, stop_seq, created_at, updated_at`,
+        [nm, normPlanTime(s.stop_at), parent.feature_id, nm,
+         String(s.stop_note || ''), String(s.stop_task || ''), parent.id, i]
+      );
+      children.push(cr.rows[0]);
+    }
+    return children;
+  }
+
+  // GET /api/plans?db= → 列出计划任务（顶层计划 + 各计划下的节点子任务）
+  // 全链计划：路径主计划(parent_id IS NULL)+ 沿途每个节点子任务(parent_id 指向主计划)
+  if (reqPath === '/api/plans' && req.method === 'GET') {
+    (async () => {
+      try {
+        const planDb = url.searchParams.get('db') || 'trip';
+        const p = getFeaturePool(planDb);
+        await ensureFeatureStore(planDb);
+        const r = await p.query(
+          `SELECT id, title, detail, plan_at, done, priority,
+                  feature_id, feature_name, place_note, time_note, task_note,
+                  parent_id, stop_seq, created_at, updated_at
+           FROM plans
+           ORDER BY (plan_at IS NULL), plan_at ASC, id ASC`
+        );
+        const rows = r.rows;
+        // 附带逐点明细（plan_stops）
+        const ids = rows.map(x => x.id);
+        let stopsByPlan = {};
+        if (ids.length) {
+          const sr = await p.query(
+            `SELECT id, plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note
+             FROM plan_stops WHERE plan_id = ANY($1::int[])
+             ORDER BY plan_id, seq, id`,
+            [ids]
+          );
+          sr.rows.forEach(s => { (stopsByPlan[s.plan_id] = stopsByPlan[s.plan_id] || []).push(s); });
+        }
+        const byId = {};
+        rows.forEach(x => { byId[x.id] = Object.assign({}, x, { stops: stopsByPlan[x.id] || [], children: [] }); });
+        const top = [];
+        rows.forEach(x => {
+          const node = byId[x.id];
+          if (x.parent_id && byId[x.parent_id]) byId[x.parent_id].children.push(node);
+          else top.push(node);
+        });
+        // 子任务按 stop_seq 排序
+        top.forEach(t => t.children.sort((a, b) => (a.stop_seq == null ? 1e9 : a.stop_seq) - (b.stop_seq == null ? 1e9 : b.stop_seq)));
+        const plans = top.map(x => Object.assign({}, x, { stops: x.stops }));
+        sendJson(res, 200, { ok: true, plans });
+      } catch (e) { sendJson(res, 500, { ok: false, error: e.message }); }
+    })();
+    return;
+  }
+
+  // POST /api/plans?db= → 新建计划任务
+  // body.parent_id 有值 = 建节点子任务；顶层计划带 stops 时自动为每个途经点生一条子任务
+  if (reqPath === '/api/plans' && req.method === 'POST') {
+    (async () => {
+      try {
+        const planDb = url.searchParams.get('db') || 'trip';
+        const input = await readBody(req);
+        const title = String(input.title || '').trim();
+        if (!title) return sendJson(res, 400, { ok: false, error: '缺少标题 title' });
+        const p = getFeaturePool(planDb);
+        await ensureFeatureStore(planDb);
+        const parentId = (input.parent_id != null && input.parent_id !== '') ? parseInt(input.parent_id, 10) : null;
+        const stopSeq = (input.stop_seq != null && input.stop_seq !== '') ? parseInt(input.stop_seq, 10) : null;
+        const r = await p.query(
+          `INSERT INTO plans (title, detail, plan_at, done, priority,
+                              feature_id, feature_name, place_note, time_note, task_note,
+                              parent_id, stop_seq)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           RETURNING id, title, detail, plan_at, done, priority,
+                     feature_id, feature_name, place_note, time_note, task_note,
+                     parent_id, stop_seq, created_at, updated_at`,
+          [title, String(input.detail || ''), normPlanTime(input.plan_at),
+           !!input.done, String(input.priority || 'normal'),
+           input.feature_id != null ? String(input.feature_id) : null,
+           input.feature_name != null ? String(input.feature_name) : null,
+           String(input.place_note || ''), String(input.time_note || ''), String(input.task_note || ''),
+           (Number.isNaN(parentId) ? null : parentId), (Number.isNaN(stopSeq) ? null : stopSeq)]
+        );
+        const plan = r.rows[0];
+        if (input.stops !== undefined) await replacePlanStops(p, plan.id, input.stops);
+        // 全链计划：顶层计划（非子任务）带途经点时，自动为每个节点生成一条子任务
+        const children = (!plan.parent_id && Array.isArray(input.stops) && input.stops.length)
+          ? await materializeChildren(p, plan) : [];
+        sendJson(res, 200, { ok: true, plan, children });
+      } catch (e) { sendJson(res, 400, { ok: false, error: e.message }); }
+    })();
+    return;
+  }
+
+  // POST /api/plans/:id/materialize?db= → 把已有计划的途经点补物化成节点子任务
+  // body.force=true → 先清空旧子任务再重建（用于 stops 变更后重新拆解）
+  if (reqPath.startsWith('/api/plans/') && reqPath.endsWith('/materialize') && req.method === 'POST') {
+    (async () => {
+      try {
+        const id = parseInt(reqPath.split('/')[3].replace(/\D/g, ''), 10);
+        if (isNaN(id)) return sendJson(res, 400, { ok: false, error: '无效ID' });
+        const planDb = url.searchParams.get('db') || 'trip';
+        const input = await readBody(req).catch(() => ({}));
+        const p = getFeaturePool(planDb);
+        await ensureFeatureStore(planDb);
+        const pr = await p.query('SELECT id, feature_id FROM plans WHERE id=$1', [id]);
+        if (!pr.rows.length) return sendJson(res, 404, { ok: false, error: '任务不存在' });
+        const parent = pr.rows[0];
+        const children = await materializeChildren(p, parent, { force: !!input.force });
+        sendJson(res, 200, { ok: true, created: children.length, children });
+      } catch (e) { sendJson(res, 400, { ok: false, error: e.message }); }
+    })();
+    return;
+  }
+
+  // PUT /api/plans/:id?db= → 更新计划任务
+  if (reqPath.startsWith('/api/plans/') && req.method === 'PUT') {
+    (async () => {
+      try {
+        const id = parseInt(reqPath.split('/').pop().replace(/\D/g, ''), 10);
+        if (isNaN(id)) return sendJson(res, 400, { ok: false, error: '无效ID' });
+        const planDb = url.searchParams.get('db') || 'trip';
+        const input = await readBody(req);
+        const p = getFeaturePool(planDb);
+        const fields = [];
+        const vals = [];
+        let n = 1;
+        if (input.title != null) { fields.push(`title=$${n++}`); vals.push(String(input.title)); }
+        if (input.detail != null) { fields.push(`detail=$${n++}`); vals.push(String(input.detail)); }
+        if (input.plan_at !== undefined) { fields.push(`plan_at=$${n++}`); vals.push(normPlanTime(input.plan_at)); }
+        if (input.done !== undefined) { fields.push(`done=$${n++}`); vals.push(!!input.done); }
+        if (input.priority != null) { fields.push(`priority=$${n++}`); vals.push(String(input.priority)); }
+        if (input.feature_id !== undefined) { fields.push(`feature_id=$${n++}`); vals.push(input.feature_id != null ? String(input.feature_id) : null); }
+        if (input.feature_name !== undefined) { fields.push(`feature_name=$${n++}`); vals.push(input.feature_name != null ? String(input.feature_name) : null); }
+        if (input.place_note != null) { fields.push(`place_note=$${n++}`); vals.push(String(input.place_note)); }
+        if (input.time_note != null) { fields.push(`time_note=$${n++}`); vals.push(String(input.time_note)); }
+        if (input.task_note != null) { fields.push(`task_note=$${n++}`); vals.push(String(input.task_note)); }
+        if (input.parent_id !== undefined) { const pv = (input.parent_id == null || input.parent_id === '') ? null : parseInt(input.parent_id, 10); fields.push(`parent_id=$${n++}`); vals.push(Number.isNaN(pv) ? null : pv); }
+        if (input.stop_seq !== undefined) { const sv = (input.stop_seq == null || input.stop_seq === '') ? null : parseInt(input.stop_seq, 10); fields.push(`stop_seq=$${n++}`); vals.push(Number.isNaN(sv) ? null : sv); }
+        const hasStops = input.stops !== undefined;
+        if (!fields.length && !hasStops) return sendJson(res, 400, { ok: false, error: '无可更新字段' });
+        let updated = null;
+        if (fields.length) {
+          fields.push('updated_at=NOW()');
+          vals.push(id);
+          const r = await p.query(
+            `UPDATE plans SET ${fields.join(', ')} WHERE id=$${n}
+             RETURNING id, title, detail, plan_at, done, priority,
+                       feature_id, feature_name, place_note, time_note, task_note,
+                       parent_id, stop_seq, created_at, updated_at`,
+            vals
+          );
+          if (!r.rows.length) return sendJson(res, 404, { ok: false, error: '任务不存在' });
+          updated = r.rows[0];
+        } else {
+          // 仅更新途经点：确认任务存在
+          const chk = await p.query('SELECT id FROM plans WHERE id=$1', [id]);
+          if (!chk.rows.length) return sendJson(res, 404, { ok: false, error: '任务不存在' });
+        }
+        if (hasStops) await replacePlanStops(p, id, input.stops);
+        sendJson(res, 200, { ok: true, plan: updated || { id } });
+      } catch (e) { sendJson(res, 400, { ok: false, error: e.message }); }
+    })();
+    return;
+  }
+
+  // DELETE /api/plans/:id?db= → 删除计划任务
+  if (reqPath.startsWith('/api/plans/') && req.method === 'DELETE') {
+    (async () => {
+      try {
+        const id = parseInt(reqPath.split('/').pop().replace(/\D/g, ''), 10);
+        if (isNaN(id)) return sendJson(res, 400, { ok: false, error: '无效ID' });
+        const planDb = url.searchParams.get('db') || 'trip';
+        const r = await getFeaturePool(planDb).query('DELETE FROM plans WHERE id=$1 RETURNING id', [id]);
+        sendJson(res, 200, { ok: true, deleted: r.rowCount });
+      } catch (e) { sendJson(res, 400, { ok: false, error: e.message }); }
     })();
     return;
   }

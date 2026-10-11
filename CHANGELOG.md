@@ -461,3 +461,247 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 **遗留（未动，断断未要求）**：旧 `/api/update-photo-location`、`/api/geo/export`、`/api/geo/stats` 等仍读 `map-data.geojson`，但**已无任何前端调用**，属无害死代码，保留不动。
 
 **部署**：`server.js` 改动 → `restart dm-DMgeo`；`map-player.html` 静态 → Ctrl+F5。
+
+## 19. DMgeo dashboard ·「活动时间线」重做为「补充时间计划」
+
+**需求**：断断要把 dashboard 的「📅 活动时间线」（原来只是要素统计而已）重做成**计划任务**——**新增时就带计划时间**，数据存**后端**。
+
+**后端**（`DMgeo/server.js`）：
+
+- `ensureFeatureStore()` 增加 `plans` 表 DDL：
+  `id SERIAL PK, title TEXT NOT NULL, detail TEXT, plan_at TIMESTAMP, done BOOLEAN, priority TEXT, created_at, updated_at` + `plan_at` 索引
+- 新增 CRUD 路由（均支持 `?db=`）：
+  | 方法 | 路径 | 说明 |
+  |------|------|------|
+  | GET | `/api/plans` | 列表，按 `plan_at` 升序（未排期排最后） |
+  | POST | `/api/plans` | 新建（`title` 必填，`plan_at` 可选但可创建时即指定） |
+  | PUT | `/api/plans/:id` | 更新（部分字段） |
+  | DELETE | `/api/plans/:id` | 删除 |
+- 时间归一化 `normPlanTime()`：接受 `YYYY-MM-DD` / `YYYY-MM-DD HH:mm(:ss)` / `T` 分隔，非法存 NULL
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- 面板 `📅 活动时间线` → `🗓️ 补充时间计划`，整行宽
+- 右上「＋ 新增任务」→ 内联表单（标题必填 / 计划时间 `datetime-local` / 优先级 / 说明）→ 保存
+- 列表项：勾选框（完成态，划线+半透明）、标题、重要标记、说明、**状态点**（未排期/待执行/24h内/已逾期/已完成，按计划时间实时着色）、计划时间、✎ 编辑、✕ 删除
+- `refreshAll()` 改调 `loadPlans()`（替换原 `renderTimeline`）
+- 新增 `.plan-*` 系列 CSS
+
+**验证**（Ubuntu 真实库，前端逻辑级 + 后端接口级）：
+
+- 新建（带时间）→ 列表按时间升序 → 勾选完成 → 改期 → 删除 → 清空，全链路 200 通过
+- 线上 `dashboard.html` 校验：新面板/`plansList`/`loadPlans` 均在，旧「活动时间线」/`renderTimeline` 已移除；`GET /api/plans?db=trip` 返回 200
+- 内联脚本 `node --check` 通过；行尾 LF
+
+**部署**：`server.js` 改动 → `restart dm-DMgeo`；`dashboard.html` 静态 → Ctrl+F5。
+
+## 20. DMgeo dashboard · 计划任务挂钩地图要素 + 地点/时间/任务三备注
+
+**需求**：断断指出——计划任务要**挂钩标的路径（地点）**，并**对地点、时间、任务分别备注**。
+
+**后端**（`DMgeo/server.js`）：
+
+- `plans` 表加列：`feature_id` / `feature_name`（挂钩的要素）+ `place_note` / `time_note` / `task_note`（三个独立备注）
+- 加 `DDL_PLANS_MIGRATE`（`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`），老库自动补列，无需手工迁移
+- CRUD 接口（GET/POST/PUT）全部返回并接受这些新字段
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- 表单加「挂钩标的」下拉：数据来自 `collectHookFeatures(mapData)` —— 把当前库地图上的要素按几何类型归类为 **路径 / 区域 / 地点**，值为 `feature_id|feature_name`；「不挂钩」为默认项
+- 表单加**三个独立备注框**：📍 地点备注 / 🕐 时间备注 / 📋 任务备注（保留原「总体补充说明」）
+- 列表项：挂钩显示 `🔗 名称` 徽标；三备注以标签形式并排展示
+- `refreshAll()` 调 `fillHookOptions(mapData)` 随库刷新下拉
+
+**验证**（Ubuntu 真实库，前端逻辑级 + 后端接口级）：
+
+- 挂钩下拉收到当前库 **19** 个要素（1 条路径 + 地点若干 + 区域），路径项显示完整链路名
+- 选路径挂钩 + 填三备注 → 保存 200 → 列表读回挂钩名与三备注全对 → 删除 → 清空
+- 线上页面校验：`planFeature`/三备注框/`fillHookOptions`/列表 `plan-hook`·`plan-notes` 均在
+- 内联脚本 `node --check` 通过；行尾 LF
+
+**部署**：`server.js` 改动 → `restart dm-DMgeo`；`dashboard.html` 静态 → Ctrl+F5。
+
+## 21. DMgeo dashboard · 计划任务「逐途经点排期」（路径自带点可自标）
+
+**需求**：断断指出——上一版"整条路径挂钩 + 三个整体备注"**不够细**；希望**路径本身带的点**能被我们逐点标注，每个点分别填「时间 / 任务 / 补充」。
+
+**后端**（`DMgeo/server.js`）：
+
+- 新表 `plan_stops`：`id SERIAL PK, plan_id INTEGER REFERENCES plans(id) ON DELETE CASCADE, seq INTEGER, stop_name TEXT, lng/lat DOUBLE PRECISION, stop_at TIMESTAMP, stop_task TEXT, stop_note TEXT`
+- `ensureFeatureStore()` 建表 + `DDL_PLANS_MIGRATE`（`ADD COLUMN IF NOT EXISTS`），老库自动升级
+- 新 helper：`readBody(req)`、`normPlanTime(v)`、`replacePlanStops(pool, planId, stops)`
+- `GET /api/plans` 二查 `WHERE plan_id = ANY($1::int[])` 把每个计划的 `stops`（按 seq 排序）挂回；`POST` 收 `input.stops`；`PUT` 支持**仅改途经点**（`hasStops` 分支），保留计划其它字段
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- 「挂钩标的」下拉改为**只列路径**（`LineString`/`MultiLineString`）；`collectHookFeatures` 传回完整 feature 对象
+- 新增 `buildPointIndex(mapData)`：用当前库里有名字的点要素建「坐标 → 点名」索引（key `lat.toFixed(5)+','+lng.toFixed(5)`）
+- 新增 `extractStops(feature, pointIdx)`：把路径每个顶点拆成一行，匹配到点名显示点名、否则显示「点 N」
+- 挂钩切换触发 `onHookChange()` → 自动展开 `#planStopsWrap` 并渲染逐点编辑行（每行：**时间**(datetime-local) / **任务**(text) / **补充**(text)）；同点数时保留已填草稿
+- 新增 `renderStops()` 渲染编辑行；`_stopsSeed` 为表单途经点草稿
+- `openPlanForm(plan)`：编辑态从 `plan.stops` 回填 `_stopsSeed` 并展开；`closePlanForm()`：重置隐藏；`savePlan()`：payload 带 `stops:_stopsSeed`
+- 列表项：计划卡片内新增 `.plan-stops` 逐点展示（序号圆标 + 点名 + 时间/任务/补充 chips，未填显示「未标注」）
+- 新增 CSS：`.plan-stops/.stop-line/.stop-badge/.stop-nm/.stop-bits/.stop-chip/.stop-empty/.stops-box/.stop-row/.stop-head/.stop-seq/.stop-name/.stop-in/.stop-grow`
+- 「整条」三个备注框保留，label 标注「（整条）/（整体）」以区别于逐点字段
+
+**验证**（Ubuntu 真实库，接口级 + 线上页面级）：
+
+- POST 建计划（挂钩真实路径 `f_583`「出发地→宏润学校→灵觉寺→白洋淀→枣林庄→清河佳苑→台头镇→独流镇」+ 3 个途经点）→ 读回 `seq/stop_name/stop_at/stop_task/stop_note` 全对
+- **仅改途经点 PUT**：三备注与标题保持不变，3 个途经点被整体替换（时间/任务/补充均更新）
+- DELETE → `deleted:1`，**级联清空 stops**；真实用户计划 `id=7`「准备工作」全程未被触碰
+- 线上 `dashboard.html` 校验：`onHookChange()`/`planStopsWrap`/`stop-row`/`stops-box`/`途经点排期`/`_stopsSeed`/`stops:_stopsSeed` 均在
+- 内联脚本 `node --check` 通过；行尾 LF
+
+**部署**：`server.js` 改动 → `restart dm-DMgeo`；`dashboard.html` 静态 → Ctrl+F5。
+
+## 22. DMgeo dashboard · 挂钩下拉恢复「地点」，每个节点各自成条
+
+**需求**：断断指出——上一版"只给了一整条线的任务"，但**每个地方节点理论上都该有自己的任务**。
+
+**根因**：`trip` 库里 8 个地点本身就是**独立要素**（`f_564` 出发地 … `f_571` 独流镇，`MultiPoint`），`f_583` 只是把这 8 个点串起来的线。上一版 `collectHookFeatures` **只放行线**，把"地点"这张牌漏了 → 用户只能挂整条线，做不出"每个节点一条任务"。
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- `collectHookFeatures` 恢复收录 **Point/MultiPoint（地点）** + LineString/MultiLineString（路径），**地点排前、路径排后**；无名要素跳过
+- `onHookChange()`：仅当挂的是**路径**时展开 `#planStopsWrap`（拆途经点）；挂**地点**时隐藏逐点区（地点任务本身就是这一条）
+- 表单标签：「挂钩路径」→「挂钩标的」；提示改为「挂钩每个地点各自成条 · 挂钩路径可拆途经点」
+- 逐点区标题：`🛣️ 该路径的途经点 — 每个节点各填「时间 / 任务 / 补充」，即是该地点自己的任务`
+- 列表渲染优化：每个途经点 `.stop-line` 改为**独立卡片式条目**（独立底色/边框/内边距），未排期节点加 `.is-open` 橙色描边提示"待标注"
+- CSS：`.plan-stops` 去左边框线改为独立 gap 布局；`.stop-line` 加背景/边框/圆角/内边距；`.stop-badge` 放大到 18px；`.stop-empty` 文案「待标注」
+
+**验证**（Ubuntu 真实库 + 线上页面）：
+
+- `/api/geo?db=trip` 实测 19 个要素：8 个 `MultiPoint` 地点 + 5+5 个 `MultiPolygon` + 1 条 `MultiLineString`（8 顶点）
+- 线上 `dashboard.html`：`挂钩标的`/`stop-line`/`is-open`/`每个节点各填`/`该路径的途经点` 均在
+- 内联脚本 `node --check` 通过；行尾 LF
+
+**部署**：`dashboard.html` 静态 → Ctrl+F5。
+
+## 23. DMgeo dashboard · 全链计划（路径主计划 + 节点子任务）
+
+**需求**：断断指出——上一版要么只能做「单点任务」（挂地点），要么「整条线」糊成一条；希望能有**一份全链计划**：一条路径是主计划，**沿途每个节点都是它下面的独立子任务**（各有时间/任务/补充）。
+
+**后端**（`DMgeo/server.js`）：
+
+- `plans` 表加 `parent_id INTEGER REFERENCES plans(id) ON DELETE CASCADE` + `stop_seq INTEGER`（子任务顺序）
+- `DDL_PLANS_MIGRATE` 补列 + **补自引用外键约束**（`DO $$ ... plans_parent_fk ... ON DELETE CASCADE`，幂等）——修复"老库补列只有裸列没约束 → 删父计划留孤儿"的隐患
+- `DDL_PLANS_PARENT_IDX`：`idx_plans_parent (parent_id, stop_seq)`
+- `GET /api/plans`：返回 `parent_id`/`stop_seq`，并把子任务**按 `parent_id` 嵌套进父计划的 `children[]`**（按 `stop_seq` 排序），顶层只返回 `parent_id IS NULL` 者
+- `POST /api/plans`：支持 `parent_id`/`stop_seq`；**顶层计划（非子任务）带 `stops` 时自动为每个途经点生成一条子任务**（title=点名，`feature_id` 继承父、`place_note` 继承补充、`stop_seq`=序号），响应返回 `children[]`
+- `PUT /api/plans/:id`：支持改 `parent_id`/`stop_seq`
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- 列表渲染：父计划下新增 `.plan-chain`「🛣️ 沿途节点任务」区，每个节点是**独立条目**（独立勾选框 + 序号 + 点名 + 时间 + 内容 + 编辑），顶部显示进度 `已完成/总数`
+- 每个子任务**可单独勾选**（`togglePlan`）、**单独编辑**（`editPlan` 现在会搜 `children`）
+- `openPlanForm`：编辑子任务时**不显示**路径逐点编辑器（子任务本身就是单个节点）；新增 `_planParentId` 记录
+- `savePlan`：编辑子任务时**不重发 `stops`**、不重新生成子任务
+- 兼容旧数据：父计划没有 children 但带 `stops` 时，退化为只读逐点展示
+- 新增 CSS：`.plan-chain/.chain-head/.chain-prog/.stop-check/.stop-line.is-done/.stop-when/.stop-ops`
+
+**验证**（Ubuntu 真实库，接口级 + 线上页面级）：
+
+- POST 全链计划（挂 `f_583` + 8 途经点）→ **自动生成 8 条子任务**，`stop_seq` 0~7 顺序正确
+- `GET /api/plans` → 父计划带 `children=8`；PUT 子任务 #14（改名/时间/备注）独立生效、`parent_id` 不变
+- 子任务单独勾选 `done=true` 生效
+- **删父计划 → 8 条子任务级联全清**（修复前会残留 8 条孤儿，修复后 PASS）
+- 真实用户计划 `id=7` 全程未动；DB 测试数据已清干净
+- 线上页面：`plan-chain`/`chain-head`/`chain-prog`/`stop-check` 等均在；前后端 `node --check` 通过；行尾 LF
+
+**部署**：`server.js` → `restart dm-DMgeo`；`dashboard.html` 静态 → Ctrl+F5。
+
+## 24. DMgeo dashboard · 老链路补物化节点任务 + 时间全部可选
+
+**需求**：断断确认「这条链路（8 节点）就对了，其他几个不用那么细」，并要求**补充时间**（且**可选**）。
+
+**澄清**（AskUserQuestion）：① 单点任务不拆（保持简单）；② 全部时间可选（不强制）；③ 给现有链路 #7 补生成节点子任务。
+
+**后端**（`DMgeo/server.js`）：
+
+- 抽出 `materializeChildren(pool, parent, opts)` 复用：把一条顶层计划的 `plan_stops` 物化成 N 条节点子任务；**幂等**（已有子任务直接返回 `[]`，不重复建）
+- 新增 `POST /api/plans/:id/materialize?db=`：把**已有**计划的途经点补物化（用于老数据/一键补齐）；`body.force=true` 可先清空再重建
+- `POST /api/plans` 改为调用同一 helper（行为不变）
+- **修复回归**：修正子任务字段映射——`stop_task → plans.task_note`、`stop_note → plans.place_note`（原先错位成 time_note/task_note）
+- **修复隐患**：`force` 模式原先**先删 `plan_stops` 再读**，导致源数据被清空重建为空；改为**先读后删**
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- 老计划有 `stops` 但无 `children` 时，显示 `🛣️ 该路径有 N 个节点 [▶ 生成节点任务]` 按钮 → `materializePlan(id)` 调 materialize 接口后 `loadPlans()`
+- 新增 `.chain-btn` 样式（`plan-stops` 内的 chain-head 右侧按钮）
+
+**验证**（Ubuntu 真实库）：
+
+- `POST /api/plans/7/materialize` → **created=8**；复跑幂等 **created=0**
+- 修复字段映射后 force 重建 → 8 条子任务 `task_note` 正确（努力准备/测试/等待/坐船/坐车/到达）
+- 恢复过程：因早期 buggy force 误删了 #7 的 `plan_stops`，已从 **feature `f_583` 的 8 个顶点 + 8 个同名 Point 要素**反查重建并写回，数据完整
+- 节点时间**可选**：`plan_at` 留空保存成功（未排期），填值（如 #40 白洋淀 `2026-10-26T14:00`）即生效；测后已还原为空
+- 单点任务 `#28 学习`（挂单个地点）→ `children=0`，**不拆**，符合预期
+- 线上页面：`materializePlan`/`/materialize`/`生成节点任务`/`chain-btn` 均在；前后端 `node --check` 通过；行尾 LF
+
+**部署**：`server.js` → `restart dm-DMgeo`；`dashboard.html` 静态 → Ctrl+F5。
+
+## 25. DMgeo dashboard · 「补充时间计划」面板视觉优化（时间选择可清空）
+
+**需求**：断断要求优化「补充时间计划」这一块（含图标），并指出**时间选择有点问题**。
+
+**定位问题**：
+- 原生 `datetime-local` 在深色主题下**日历图标发黑**看不清，整体配色不搭
+- **无法清空时间** —— datetime-local 没有清除按钮，填了就删不掉
+- 节点行里时间输入**无标签**、与任务/补充挤在一行难懂
+
+**前端**（`DMgeo/dashboard.html`，仅动计划面板）：
+
+- **时间可选 + 一键清空**：新增 `setStopAt/clearStopAt/togglePlanAtClear/clearPlanAt`；时间输入外包 `.time-wrap`，有值时才显示 `✕` 清除按钮（`has-val` class 控制显隐）
+- **深色主题适配**：`input[type=datetime-local]{color-scheme:dark}` + `::-webkit-calendar-picker-indicator{filter:invert(.75)}` —— 日历图标转亮可点，`::-webkit-datetime-edit` 文字为浅色
+- **节点行重排**：`.stop-fields` 分栏 + `.sf-label` 标签（「到达时间（可选）」「任务」「补充」），时间字段固定宽、任务/补充自适应
+- **图标统一**：面板标题 `🗓️`/节点区 `🛣️` 包进 `.pc-ico`（圆角紫色底块），「＋ 新增任务」改为 `.plan-add` 描边按钮；子任务未排期时时间 chip 显示「时间可选」+ 虚线弱化（`.stop-when.is-unset`）
+- 输入框统一 `:focus` 高亮（紫边 + 微光底）
+
+**验证**（冒烟测试 + 线上核对）：
+- 抽出 `renderStops/setStopAt/clearStopAt` 跑 Node 冒烟：生成 HTML 含 `sf-label`/`time-clear`/`has-val`；`setStopAt` 写入后 `has-val=true`、`clearStopAt` 清空后 `has-val=false`
+- 线上 `dashboard.html`：`pc-ico`/`plan-add`/`time-clear`/`time-wrap`/`clearStopAt`/`setStopAt`/`togglePlanAtClear`/`clearPlanAt`/`color-scheme:dark`/`时间可选` 均在
+- 内联脚本 `node --check` 通过；行尾 LF
+
+**部署**：`dashboard.html` 静态 → Ctrl+F5（仅前端，未动后端）。
+
+## 26. DMgeo dashboard · 挂钩下拉只留路径（单点不再单列）
+
+**需求**：断断明确「挂钩标的里面只留路径就行了，这里不需要单独拆，单独拆的是下面的（我们已经实现了）」。
+
+**背景**：上一版把下拉恢复成「路径 + 地点」混排。但节点拆解已在**下方**通过「路径 → 节点子任务自动物化」实现，下拉里再单列地点既冗余又容易误用（勾一个地点生成一条孤立任务）。
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- `collectHookFeatures(mapData)` 改为**只收线要素**（`LineString` / `MultiLineString`），统一 `kind:'路径'`；过滤掉 `Point` / `MultiPoint`，并去掉原先「地点优先」的排序逻辑
+- 文案：标签「挂钩标的」→「**挂钩路径**」；表头提示 → 「**选一条路径 → 自动拆出沿途节点任务**」；空状态 → 「暂无计划任务 — 点右上「＋ 新增任务」，选一条地图路径即可自动拆出沿途节点任务」
+- `onHookChange()` 的 `if(!isLine){hide;return}` 守卫保留，单点不再触发节点区展开
+
+**验证**（线上 192.168.1.9:8084 + 真实数据）：
+- 当前库 `/api/geo` 共 19 个要素 → 按新逻辑过滤后**只留 1 条**（`f_583` MultiLineString 八节点链路），8 个 MultiPoint 地点**全部被过滤**
+- 全链计划 `#45 前进方向`（hook 八节点链路）结构正常：`children=8`，父级 `parent_id=None`
+- 线上页面：`挂钩路径`×2、`选一条路径`×1、`kind:'路径'`×1 均在；内联脚本 `node --check` 通过；行尾 LF（CR=0）
+- 上传后 md5 本地/远端一致：`da27ee80f1223901b6351a4ff704b14c`
+
+**部署**：`dashboard.html` 静态 → Ctrl+F5（仅前端）。
+
+## 27. DMgeo dashboard · 链头自动汇总时间（起止 + 跨度）
+
+**需求**：断断「写到时间进去他会自动帮我把时间总计出来」——给节点填时间后，系统自动统计这条链的总时间。
+
+**前端**（`DMgeo/dashboard.html`）：
+
+- 新增 `summarizeTimes(nodes)`：汇总一条链上所有**已排期**节点（有 `plan_at`）的
+  - 最早时间 `first` / 最晚时间 `last`
+  - **跨度**：跨天按「日期」计（同日=1 天，如 10-11→10-15 = 5 天）；同日不足一天按小时显示
+  - 已排期计数 `count/total`
+  - 未排期节点**不参与**计算，不影响结果；输入乱序自动排序
+- 链头 `.chain-head` 新增 `.chain-time` 汇总胶囊：`⏱ 2026-10-11 → 2026-10-15 · 共 5 天 · 4/8 已排期`（青色描边，与紫色进度 `chain-prog` 区分）；仅当至少 1 个节点排期时才显示
+- `.chain-head` 加 `flex-wrap:wrap`，汇总胶囊在窄屏自动换行
+
+**验证**：
+- Node 冒烟 6 场景全通过：跨天(3天)/同日(12小时)/同日小数(7小时)/部分排期(2/3)/全空(null)/倒序输入(自动排序)
+- 真实链路 `#45 前进方向`（8 节点）端到端：临时给 3 个节点排期 → GET → 本地跑 `summarizeTimes` 得 `⏱ 2026-10-11 → 2026-10-15 · 共 5 天 · 4/8 已排期`（与预期一致）；测后已还原测试时间
+- 线上页面含 `chain-time`/`summarizeTimes`/`已排期`/`⏱`；内联脚本 `node --check` 通过；行尾 LF（CR=0）
+- 上传后 md5 本地/远端一致：`6ac318f59e0acb9b08e9157582e242ba`
+
+**部署**：`dashboard.html` 静态 → Ctrl+F5（仅前端）。
