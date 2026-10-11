@@ -18,6 +18,25 @@ if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
 const MD_DIR = path.join(ROOT, 'mdfiles');
 if (!fs.existsSync(MD_DIR)) fs.mkdirSync(MD_DIR, { recursive: true });
 
+// 聊天记录存储（独立文件夹 chatlogs，按天分文件，JSONL 一行一条）
+const CHATLOG_DIR = path.join(ROOT, 'chatlogs');
+if (!fs.existsSync(CHATLOG_DIR)) fs.mkdirSync(CHATLOG_DIR, { recursive: true });
+
+function localDateStr(ts) {
+  const d = new Date(ts || Date.now());
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function appendChatLog(entry) {
+  try {
+    const file = path.join(CHATLOG_DIR, localDateStr(entry.time) + '.jsonl');
+    fs.appendFileSync(file, JSON.stringify(entry) + '\n');
+  } catch (_) { /* 记录失败不影响聊天 */ }
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript',
@@ -545,6 +564,45 @@ const requestHandler = (req, res) => {
     return;
   }
 
+  // === 聊天记录：可用日期列表 ===
+  if (reqPath === '/api/chat-dates' && req.method === 'GET') {
+    const token = url.searchParams.get('token');
+    const uid = tokens.get(token);
+    if (!uid || !users[uid]) { res.writeHead(403, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
+    try {
+      const dates = fs.readdirSync(CHATLOG_DIR)
+        .filter(f => f.endsWith('.jsonl'))
+        .map(f => f.replace(/\.jsonl$/, ''))
+        .sort().reverse();
+      res.writeHead(200, ctJson);
+      res.end(JSON.stringify({ ok: true, dates }));
+    } catch (e) {
+      res.writeHead(500, ctJson);
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // === 聊天记录：某日明细 ===
+  if (reqPath === '/api/chat-history' && req.method === 'GET') {
+    const token = url.searchParams.get('token');
+    const uid = tokens.get(token);
+    if (!uid || !users[uid]) { res.writeHead(403, ctJson); return res.end(JSON.stringify({ error: '未登录' })); }
+    const date = url.searchParams.get('date') || localDateStr(Date.now());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { res.writeHead(400, ctJson); return res.end(JSON.stringify({ error: '日期格式错误' })); }
+    const file = path.join(CHATLOG_DIR, date + '.jsonl');
+    const arr = [];
+    if (fs.existsSync(file)) {
+      const lines = fs.readFileSync(file, 'utf8').split('\n');
+      for (const ln of lines) {
+        if (ln.trim()) { try { arr.push(JSON.parse(ln)); } catch (_) {} }
+      }
+    }
+    res.writeHead(200, ctJson);
+    res.end(JSON.stringify({ ok: true, date, messages: arr }));
+    return;
+  }
+
   if (reqPath === '/') reqPath = '/index.html';
 
   const filePath = path.join(ROOT, reqPath);
@@ -611,10 +669,16 @@ wss.on('connection', (ws) => {
         break;
 
       case 'chat':
-        broadcastAll({
-          type: 'chat', from: info.id, fromName: info.name,
-          text: (msg.text || '').slice(0, 2000), time: Date.now(),
-        });
+        {
+          const chatTime = Date.now();
+          const entry = {
+            type: 'chat', from: info.id, fromName: info.name,
+            text: (msg.text || '').slice(0, 2000), time: chatTime,
+            file: msg.file || null,
+          };
+          appendChatLog(entry);
+          broadcastAll(entry);
+        }
         break;
 
       // --- 轮麦 ---

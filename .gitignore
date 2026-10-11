@@ -51,6 +51,7 @@ DMgeo/_*.jpg
 DMChat/files/
 DMChat/mdfiles/
 DMChat/videos/
+DMChat/chatlogs/
 
 # ── 用户数据: 聊天账号(运行时注册生成, 不进库, 避免各机账号互串/密码哈希入库) ──
 DMChat/users.json

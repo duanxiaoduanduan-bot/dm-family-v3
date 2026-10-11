@@ -205,6 +205,7 @@ input { font-family: inherit; }
     <button onclick="openVideo()" style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px" title="一起看视频">🎬</button>
     <button onclick="startCall('video')" style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px" title="视频通话">📹</button>
     <button onclick="startCall('voice')" style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px" title="语音通话">🎤</button>
+    <button onclick="openHistoryPanel()" style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px" title="聊天记录">📜 记录</button>
   </div>
 
   <div class="video-section" id="videoSection">
@@ -284,6 +285,8 @@ input { font-family: inherit; }
 <div style="display:flex;gap:6px;margin-bottom:8px"><input id="rcView" readonly style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--blue);font-size:13px;font-family:monospace" placeholder="点「查看」加载"><button onclick="viewRecoveryCode()" style="padding:8px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap">👁 查看</button><button onclick="copyRecoveryCode()" style="padding:8px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap">📋 复制</button></div>
 <button onclick="regenRecoveryCode()" style="padding:8px 16px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;cursor:pointer">🔄 重新生成恢复码</button>
 </div></div>
+
+<div class="incoming-dialog" id="historyPanel"><div class="incoming-box" style="text-align:left;max-width:620px;width:92%"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>📜 聊天记录</b><button onclick="closeHistoryPanel()" style="background:var(--red);color:#fff;border:none;padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer">关闭</button></div><div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><select id="historyDate" onchange="loadHistoryDate(this.value)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px"></select><span id="historyCount" style="font-size:12px;color:var(--text2)"></span><button onclick="exportHistory()" style="margin-left:auto;padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">⬇ 导出 TXT</button></div><div id="historyList" style="max-height:55vh;overflow:auto;font-size:13px;display:flex;flex-direction:column;gap:6px"></div></div></div>
 
 <input type="file" id="chatFileInput" accept="image/*,.pdf,.md,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv" style="display:none" onchange="uploadChatFile(this)">
 
@@ -380,6 +383,7 @@ function handleMsg(msg){
       renderAll(); updateButtonStates();
       if(currentSpeaker) updateSpeakerBar();
       addSystemMsg('✅ '+myName+'，欢迎！');
+      loadTodayHistory();
       break;
     case 'user-join': if(!users.find(u=>u.id===msg.user.id)) users.push(msg.user); renderAll(); addSystemMsg('👋 '+msg.user.name+' 加入了聊天'); if(currentSpeaker===myId) sendVoiceOfferTo(msg.user.id); break;
     case 'user-leave': users=users.filter(u=>u.id!==msg.user.id); if(msg.queue) speakQueue=msg.queue; if(msg.currentSpeaker!==undefined) currentSpeaker=msg.currentSpeaker; renderAll(); updateButtonStates(); if(currentSpeaker) updateSpeakerBar(); else clearSpeakerBar(); addSystemMsg('👋 '+msg.user.name+' 离开了聊天'); break;
@@ -653,6 +657,75 @@ function fmtTime(ts){ const d=new Date(ts); return String(d.getHours()).padStart
 function fmtDur(sec){ if(!sec||!isFinite(sec)) return '0:00'; const m=Math.floor(sec/60), s=Math.floor(sec%60); return m+':'+String(s).padStart(2,'0'); }
 function fmtSize(b){ if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 function toast(msg,type){ const t=document.createElement('div'); t.className='toast '+(type||'info'); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
+
+// ===== 聊天记录 =====
+function todayStrClient(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function fmtDateFull(ts){ const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+
+async function openHistoryPanel(){
+  document.getElementById('historyPanel').classList.add('show');
+  try{
+    const r=await fetch('/api/chat-dates?token='+encodeURIComponent(myToken));
+    const d=await r.json();
+    const sel=document.getElementById('historyDate');
+    if(d.error){ sel.innerHTML='<option>加载失败</option>'; return; }
+    if(!d.dates.length){ sel.innerHTML='<option>暂无记录</option>'; document.getElementById('historyList').innerHTML='<div class="msg-system">还没有聊天记录</div>'; document.getElementById('historyCount').textContent=''; return; }
+    sel.innerHTML=d.dates.map(dt=>`<option value="${dt}">${dt}</option>`).join('');
+    loadHistoryDate(d.dates[0]);
+  }catch(e){ toast('加载失败','error'); }
+}
+
+function closeHistoryPanel(){ document.getElementById('historyPanel').classList.remove('show'); }
+
+async function loadHistoryDate(date){
+  if(!date) return;
+  const list=document.getElementById('historyList');
+  list.innerHTML='<div class="msg-system">加载中…</div>';
+  try{
+    const r=await fetch('/api/chat-history?token='+encodeURIComponent(myToken)+'&date='+encodeURIComponent(date));
+    const d=await r.json();
+    if(d.error){ list.innerHTML='<div class="msg-system">'+esc(d.error)+'</div>'; return; }
+    document.getElementById('historyCount').textContent='共 '+d.messages.length+' 条';
+    if(!d.messages.length){ list.innerHTML='<div class="msg-system">当天暂无聊天</div>'; return; }
+    list.innerHTML=d.messages.map(m=>{
+      const mine=(m.from===myId);
+      const bubble=m.file?`<span class="file-link" style="cursor:pointer;text-decoration:underline;color:var(--blue)">${esc(m.text)}</span>`:esc(m.text);
+      return `<div class="msg-row${mine?' mine':''}"><div class="msg-avatar" style="background:${avatarColor(m.from)}">${(m.fromName||'?')[0]}</div><div class="msg-body"><div class="msg-name">${esc(m.fromName)} <span style="font-size:10px;color:var(--text3)">${fmtDateFull(m.time)}</span></div><div class="msg-bubble">${bubble}</div></div></div>`;
+    }).join('');
+    list.scrollTop=0;
+  }catch(e){ list.innerHTML='<div class="msg-system">加载失败</div>'; }
+}
+
+function exportHistory(){
+  const date=document.getElementById('historyDate').value;
+  if(!date) return;
+  fetch('/api/chat-history?token='+encodeURIComponent(myToken)+'&date='+encodeURIComponent(date))
+    .then(r=>r.json()).then(d=>{
+      if(d.error||!d.messages.length){ toast('无记录可导出','error'); return; }
+      let txt='DMChat 聊天记录 '+date+'\n'+'='.repeat(40)+'\n';
+      for(const m of d.messages){ txt+=`[${fmtDateFull(m.time)}] ${m.fromName}: ${m.text}\n`; }
+      const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=`chatlog-${date}.txt`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }).catch(()=>toast('导出失败','error'));
+}
+
+// 加入时加载当日历史，让新成员也能看到过往对话（仅在首次、主聊天区尚无消息时）
+async function loadTodayHistory(){
+  if(document.getElementById('messages').querySelector('.msg-row')) return;
+  try{
+    const today=todayStrClient();
+    const r=await fetch('/api/chat-history?token='+encodeURIComponent(myToken)+'&date='+encodeURIComponent(today));
+    const d=await r.json();
+    if(d.ok && d.messages && d.messages.length){
+      for(const m of d.messages){ addChatMsg(m); autoEmbedIfMd(m); }
+      const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight;
+    }
+  }catch(_){}
+}
 
 document.getElementById('loginName').addEventListener('keydown',(e)=>{if(e.key==='Enter'){ document.getElementById('loginPass').focus(); }});
 document.getElementById('loginPass').addEventListener('keydown',(e)=>{if(e.key==='Enter'){ if(authMode==='register') document.getElementById('loginInvite').focus(); else doAuth(); }});
