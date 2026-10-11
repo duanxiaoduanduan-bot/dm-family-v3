@@ -102,6 +102,9 @@ input { font-family: inherit; }
 .msg-row.mine .msg-name { text-align:right; }
 .msg-bubble { padding:9px 14px; border-radius:14px; font-size:14px; line-height:1.5; word-break:break-word; background:var(--surface2); color:var(--text); }
 .msg-row.mine .msg-bubble { background:var(--blue-bg); border:1px solid var(--blue-border); }
+.msg-bubble img.chat-img { display:block; max-width:260px; max-height:260px; border-radius:10px; cursor:zoom-in; }
+.msg-bubble audio.chat-audio { display:block; max-width:230px; height:40px; }
+.msg-bubble .chat-voice-meta { font-size:11px; color:var(--text2); margin-top:4px; }
 .msg-time { font-size:10px; color:var(--text3); margin-top:3px; }
 .msg-row.mine .msg-time { text-align:right; }
 .msg-system { text-align:center; font-size:12px; color:var(--text3); padding:4px 0; }
@@ -259,7 +262,8 @@ input { font-family: inherit; }
   <div class="messages" id="messages"><div class="msg-system">👋 欢迎！举手排队 · 轮麦发言 · 🎬 一起看视频</div></div>
 
   <div class="input-area">
-    <button onclick="document.getElementById('chatFileInput').click()" style="padding:10px 14px;background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:var(--radius);font-size:16px;cursor:pointer;flex-shrink:0" title="发送文件">📎</button>
+    <button onclick="document.getElementById('chatFileInput').click()" style="padding:10px 14px;background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:var(--radius);font-size:16px;cursor:pointer;flex-shrink:0" title="发送文件/图片">📎</button>
+    <button id="btnVoice" style="padding:10px 14px;background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:var(--radius);font-size:16px;cursor:pointer;flex-shrink:0;user-select:none;-webkit-user-select:none;touch-action:none" title="按住说话（需 HTTPS）">🎤</button>
     <textarea id="msgInput" rows="1" placeholder="输入消息... 支持粘贴图片" onkeydown="onInputKey(event)" onpaste="onPaste(event)"></textarea>
     <button class="btn-send" onclick="sendChat()">发送</button>
   </div>
@@ -617,11 +621,81 @@ function switchTab(tab){ document.querySelectorAll('.sidebar-tab').forEach(t=>t.
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); }
 if(window.innerWidth<=768) document.querySelector('.btn-menu').style.display='';
 
-function addChatMsg(msg){ const c=document.getElementById('messages'), div=document.createElement('div'); div.className='msg-row'+(msg.from===myId?' mine':''); let bubbleContent=esc(msg.text); if(msg.file){ const fid='f'+ (++fileIdCounter); fileStore[fid]=msg.file; bubbleContent='<span class="file-link" data-fid="'+fid+'" style="cursor:pointer;text-decoration:underline;color:var(--blue)">'+esc(msg.text)+'</span>'; } div.innerHTML=`<div class="msg-avatar" style="background:${avatarColor(msg.from)}">${(msg.fromName||'?')[0]}</div><div class="msg-body"><div class="msg-name">${esc(msg.fromName)}</div><div class="msg-bubble">${bubbleContent}</div><div class="msg-time">${fmtTime(msg.time)}</div></div>`; c.appendChild(div); c.scrollTop=c.scrollHeight; }
-document.getElementById('messages').addEventListener('click',function(e){ const el=e.target.closest('.file-link'); if(el&&el.dataset.fid){ const fd=fileStore[el.dataset.fid]; if(fd) handleFileClick(fd); } });
+function isImageExt(ext){ return /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(ext); }
+function isAudioExt(ext){ return /\.(webm|ogg|oga|opus|m4a|aac|mp3|wav|mpeg|mpga)$/i.test(ext); }
+function renderBubble(msg){
+  if(msg.file){
+    const fid='f'+(++fileIdCounter); fileStore[fid]=msg.file;
+    const ext=(msg.file.ext||'').toLowerCase();
+    if(isImageExt(ext)){
+      return `<img src="${msg.file.url}" data-fid="${fid}" class="chat-img" alt="图片" loading="lazy">`;
+    }
+    if(isAudioExt(ext)){
+      const dur = msg.file.dur ? fmtDur(msg.file.dur) : '';
+      return `<audio class="chat-audio" controls preload="metadata" src="${msg.file.url}"></audio><div class="chat-voice-meta">🎤 ${esc(msg.file.name||'语音')}${dur?' · '+dur:''}</div>`;
+    }
+    return `<span class="file-link" data-fid="${fid}" style="cursor:pointer;text-decoration:underline;color:var(--blue)">${esc(msg.text)}</span>`;
+  }
+  return esc(msg.text);
+}
+function addChatMsg(msg){ const c=document.getElementById('messages'), div=document.createElement('div'); div.className='msg-row'+(msg.from===myId?' mine':''); div.innerHTML=`<div class="msg-avatar" style="background:${avatarColor(msg.from)}">${(msg.fromName||'?')[0]}</div><div class="msg-body"><div class="msg-name">${esc(msg.fromName)}</div><div class="msg-bubble">${renderBubble(msg)}</div><div class="msg-time">${fmtTime(msg.time)}</div></div>`; c.appendChild(div); c.scrollTop=c.scrollHeight; }
+function bindMessageClick(el){ el.addEventListener('click',function(e){ const t=e.target.closest('.file-link,.chat-img'); if(t&&t.dataset.fid){ const fd=fileStore[t.dataset.fid]; if(fd) handleFileClick(fd); } }); }
+bindMessageClick(document.getElementById('messages'));
 function addSystemMsg(text){ const c=document.getElementById('messages'), div=document.createElement('div'); div.className='msg-system'; div.textContent=text; c.appendChild(div); c.scrollTop=c.scrollHeight; }
 function sendChat(){ const input=document.getElementById('msgInput'), text=input.value.trim(); if(!text||!ws) return; ws.send(JSON.stringify({type:'chat',text})); input.value=''; input.style.height='auto'; }
 function onInputKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }
+
+// ===== 语音消息（按住说话）=====
+let mediaRecorder=null, voiceChunks=[], voiceStartTime=0, voiceRecording=false;
+function sendVoiceMessage(){
+  if(!voiceChunks.length){ toast('录音太短','error'); return; }
+  const dur=Math.max(1, Math.round((Date.now()-voiceStartTime)/1000));
+  const mimeType=(mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+  let ext='.webm';
+  if(mimeType.indexOf('mp4')>=0) ext='.m4a';
+  else if(mimeType.indexOf('ogg')>=0) ext='.ogg';
+  const blob=new Blob(voiceChunks,{type:mimeType});
+  if(blob.size<100){ toast('录音太短','error'); return; }
+  const form=new FormData();
+  form.append('file', blob, 'voice-'+Date.now()+ext);
+  fetch('/api/upload-file',{method:'POST',body:form}).then(r=>r.json()).then(data=>{
+    if(data.ok){ data.dur=dur; ws.send(JSON.stringify({type:'chat', text:'🎤 语音消息 '+dur+'s', file:data})); }
+    else toast('语音发送失败','error');
+  }).catch(()=>toast('语音发送失败','error'));
+}
+(function bindVoice(){
+  const btn=document.getElementById('btnVoice');
+  if(!btn) return;
+  function stopVoice(){
+    if(!voiceRecording) return;
+    voiceRecording=false;
+    btn.textContent='🎤'; btn.style.background=''; btn.style.color='';
+    try{ mediaRecorder.stop(); }catch(_){}
+    if(mediaRecorder && mediaRecorder.stream){ mediaRecorder.stream.getTracks().forEach(t=>t.stop()); }
+  }
+  btn.addEventListener('pointerdown', async function(e){
+    e.preventDefault();
+    try{ btn.setPointerCapture(e.pointerId); }catch(_){}
+    if(voiceRecording) return;
+    if(!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
+      toast('语音需要 HTTPS 安全上下文，请用 https://192.168.1.9:8443 访问','error'); return;
+    }
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      let mimeType='';
+      if(MediaRecorder.isTypeSupported('audio/webm')) mimeType='audio/webm';
+      else if(MediaRecorder.isTypeSupported('audio/mp4')) mimeType='audio/mp4';
+      mediaRecorder = mimeType ? new MediaRecorder(stream,{mimeType}) : new MediaRecorder(stream);
+      voiceChunks=[]; voiceRecording=true; voiceStartTime=Date.now();
+      mediaRecorder.ondataavailable=ev=>{ if(ev.data && ev.data.size>0) voiceChunks.push(ev.data); };
+      mediaRecorder.onstop=sendVoiceMessage;
+      mediaRecorder.start();
+      btn.textContent='🔴 松开发送'; btn.style.background='var(--red)'; btn.style.color='#fff';
+    }catch(err){ toast('无法访问麦克风（请检查浏览器权限）','error'); }
+  });
+  btn.addEventListener('pointerup', stopVoice);
+  btn.addEventListener('pointercancel', stopVoice);
+})();
 
 function startCall(type){ if(users.length<2){toast('没有其他在线用户','error');return;} const other=users.find(u=>u.id!==myId); if(!other){toast('没有其他在线用户','error');return;} startCallWith(type,other.id); }
 async function startCallWith(type,targetId){ callType=type; callTarget=targetId; try{localStream=await navigator.mediaDevices.getUserMedia({video:type==='video',audio:true});} catch(e){toast('无法访问摄像头/麦克风','error');return;} document.getElementById('localVideo').srcObject=localStream; document.getElementById('callPanel').classList.add('show'); document.getElementById('callStatus').textContent='正在呼叫...'; peerConn=new RTCPeerConnection(rtcConfig); localStream.getTracks().forEach(t=>peerConn.addTrack(t,localStream)); peerConn.onicecandidate=(e)=>{if(e.candidate)ws.send(JSON.stringify({type:'call-ice',target:callTarget,candidate:e.candidate}));}; peerConn.ontrack=(e)=>{document.getElementById('remoteVideo').srcObject=e.streams[0];document.getElementById('videoContainer').classList.add('show');}; const offer=await peerConn.createOffer(); await peerConn.setLocalDescription(offer); ws.send(JSON.stringify({type:'call-offer',target:callTarget,sdp:offer,callType:type})); }
@@ -689,12 +763,12 @@ async function loadHistoryDate(date){
     if(!d.messages.length){ list.innerHTML='<div class="msg-system">当天暂无聊天</div>'; return; }
     list.innerHTML=d.messages.map(m=>{
       const mine=(m.from===myId);
-      const bubble=m.file?`<span class="file-link" style="cursor:pointer;text-decoration:underline;color:var(--blue)">${esc(m.text)}</span>`:esc(m.text);
-      return `<div class="msg-row${mine?' mine':''}"><div class="msg-avatar" style="background:${avatarColor(m.from)}">${(m.fromName||'?')[0]}</div><div class="msg-body"><div class="msg-name">${esc(m.fromName)} <span style="font-size:10px;color:var(--text3)">${fmtDateFull(m.time)}</span></div><div class="msg-bubble">${bubble}</div></div></div>`;
+      return `<div class="msg-row${mine?' mine':''}"><div class="msg-avatar" style="background:${avatarColor(m.from)}">${(m.fromName||'?')[0]}</div><div class="msg-body"><div class="msg-name">${esc(m.fromName)} <span style="font-size:10px;color:var(--text3)">${fmtDateFull(m.time)}</span></div><div class="msg-bubble">${renderBubble(m)}</div></div></div>`;
     }).join('');
     list.scrollTop=0;
   }catch(e){ list.innerHTML='<div class="msg-system">加载失败</div>'; }
 }
+bindMessageClick(document.getElementById('historyList'));
 
 function exportHistory(){
   const date=document.getElementById('historyDate').value;

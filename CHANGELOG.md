@@ -261,3 +261,21 @@ dm → postgis → apps → geodata → start
 - 历史接口需登录 token，且 `date` 仅接受 `YYYY-MM-DD`，杜绝路径穿越。
 
 **部署**：改完 `git push` → Ubuntu 机 `git pull` → 重启 DMChat 即生效（`chatlogs/` 首次运行自动创建）。
+
+---
+
+## 11. DMChat 语音消息 + 图片内联
+
+| 路径 | 说明 |
+|------|------|
+| `DMChat/index.html` | 消息渲染抽成 `renderBubble()`：图片 `.png/.jpg/.gif/.webp/...` 直接内联显示（点击放大）；音频 `.webm/.ogg/.m4a/.mp3/...` 渲染 `<audio controls>` 播放条。聊天流与「📜 记录」历史面板共用同一渲染 |
+| `DMChat/index.html` | 输入区新增「🎤 按住说话」按钮：`pointerdown` 起 MediaRecorder 录音、`pointerup` 停止并上传发送（`/api/upload-file` 复用），消息带 `file.dur` 时长；非 HTTPS 安全上下文时提示走 `https://IP:8443` |
+| `DMChat/server.js` | MIME 表补 `audio/ogg`(`.ogg/.oga/.opus`)、`audio/mp4`(`.m4a`)、`audio/aac`、`audio/mpeg`(`.mp3`)、`audio/wav` |
+
+**能力**
+
+- 图片消息直接显示在气泡里，不再只是文字链接；点击放大查看。
+- 语音消息按住即录、松开发送，全房可见可回放；语音/图片都随聊天记录一起落盘（`chatlogs/` 记录 file url）。
+- 语音依赖浏览器 `getUserMedia`，需 HTTPS（自签 `https://192.168.1.9:8443`）或 localhost，HTTP 下会明确提示。
+
+**部署**：`git push` → Ubuntu `git checkout origin/main -- DMChat/` → `sudo supervisorctl -c DMcore/supervisor/supervisord.conf restart dm-DMChat`。
