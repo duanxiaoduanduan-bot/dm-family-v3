@@ -395,3 +395,47 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 **验证**：逻辑级模拟 —— `A→B→C→D` 生成 1 条 4 点折线、坐标与顺序正确；`A→B→B`（点两次结束）生成 1 条 2 点折线；只点 1 点结束不生成。静态 HTML，刷新即生效。
 
 **部署**：`git push` → Ubuntu 覆盖 `DMgeo/map-player.html`（无需重启服务，Ctrl+F5）。
+
+## 16. DMgeo dashboard · 路径总览不再收录「区域」
+
+**现象**：`dashboard.html` 的「📐 路径总览」会把面要素（Polygon）也列进来，卡片带粉色 `区域` 徽标（例如「天安门广场」），与线路径混在一起。
+
+**改动**：路径总览**只统计线要素**（`LineString` / `MultiLineString`），面要素（区域）不再纳入。
+
+| 路径 | 说明 |
+|------|------|
+| `DMgeo/dashboard.html` | `renderPathsOverview()` 过滤条件去掉 `Polygon`/`MultiPolygon`；`isLine` 固定为 `true`，徽标恒为「路径」，删掉「区域」分支 |
+
+**验证**：本地改后 `md5` 上传校验一致；HTTP 拉取 `http://192.168.1.9:8084/dashboard.html` 确认已生效（含「路径总览只统计」注释、无 `badge-photo「区域」`）。
+
+**部署**：静态 HTML，覆盖 `DMgeo/dashboard.html` 后 Ctrl+F5 即生效，无需重启服务。
+
+## 17. DMgeo map-player · 前后端同步「挂紧」（删除/回读不再脱钩）
+
+**现象**：断断反馈 `map-player.html` 与后端「挂得不严格」。排查确认 5 处真实脱钩：
+
+| # | 问题 | 位置 | 后果 |
+|---|------|------|------|
+| 1 | 回读丢弃数据库主键 | `importGeoJSON()` 只吃 `clientId`，把后端返回的 `f.id` 扔掉 | 从库恢复的要素 `dbId` 恒为空 |
+| 2 | 删除传的是 clientId | `deleteMarker()` → `/api/geo/marker/m_1` | 后端 `parseInt('m_1')=NaN` → **400 无效ID**，库里删不掉（幽灵要素） |
+| 3 | 里外 `dbId` 从不落库 | `buildGeoJSON()` 不输出 dbId | 编辑/删除永远打不中后端 |
+| 4 | 全量覆盖旧套路残留 | `saveToServer()` 先发空 `features:[]` "清库" | 内存快照不完整就抹库（后端已用 `mode=replace` 挡住，但前端仍在发这个空包） |
+| 5 | 删路径走 marker 接口 | `deletePath()` 用 `/api/geo/marker/:dbId` | 路径/面 `dbId` 为空 → 删不掉 |
+
+**改动**（`DMgeo/map-player.html`）：
+
+- `importGeoJSON()`：读取 `f.id` → 落到 `marker.dbId` / `path.dbId`（点/线/面/文件夹全落）
+- 新增 `pendingDeleted` 队列 + `markDeleted(clientId)`：删除操作入队，下次保存随 `payload.deleted` 显式提交
+- `saveToServer()`：**删掉先发空包清库的那次调用**，单次提交；带 `deleted` 数组做精确删除同步，成功即清空队列
+- `buildGeoJSON()`：marker/path 输出 `dbId`（有则带上）
+- `deleteMarker()` / `deletePath()`：改用 `dbId` 调 `/api/geo/marker/:dbId`，并 `markDeleted(clientId)`
+
+**验证**（Ubuntu 192.168.1.9 真实库端到端）：
+
+- 写入 `clientId=e2e_xxx` 测试点 → 回读得到 `dbId=f_584`
+- **新行为**用 `f_584` 删 → `200 ok`，残留 **0** ✅
+- **旧行为**用 clientId 删 → `400 无效ID`，残留 **1** ❌（复现幽灵要素）
+- 清理后 trip 库回到 19 个要素，未误伤业务数据
+- 内联脚本 `node --check` 语法通过；HTTP 拉页面确认 4 个修复点全在
+
+**部署**：静态 HTML，覆盖 `DMgeo/map-player.html` 后 Ctrl+F5 即生效，无需重启服务。

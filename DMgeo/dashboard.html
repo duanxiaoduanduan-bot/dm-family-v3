@@ -504,7 +504,8 @@ function renderPathsOverview(mapData){
   if(!mapData||!mapData.features){
     $('pathsOverview').innerHTML='<div class="empty">暂无路径数据</div>';return;
   }
-  var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='Polygon'||f.geometry.type==='MultiLineString'||f.geometry.type==='MultiPolygon')});
+  // 路径总览只统计「线」路径，面要素（区域）不纳入
+  var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='MultiLineString')});
   if(!paths.length){$('pathsOverview').innerHTML='<div class="empty">暂无路径</div>';return}
 
   // 建立 坐标 -> 站点名 索引（同库里有名字的点要素）
@@ -523,8 +524,8 @@ function renderPathsOverview(mapData){
   for(var i=0;i<paths.length;i++){
     var p=paths[i],props=p.properties||{};
     var coords=flatCoords(p.geometry);
-    var isLine=p.geometry.type==='LineString'||p.geometry.type==='MultiLineString';
-    var typeBadge=isLine?'<span class="badge badge-path">路径</span>':'<span class="badge badge-photo">区域</span>';
+    var isLine=true; // 路径总览只收线要素
+    var typeBadge='<span class="badge badge-path">路径</span>';
 
     var metric,metricLabel;
     if(isLine){

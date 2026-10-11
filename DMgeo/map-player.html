@@ -727,8 +727,9 @@ function deleteMarker(id){
   if(mk.photoMarker)map.removeLayer(mk.photoMarker);
   if(mk.videoMarker)map.removeLayer(mk.videoMarker);
   markers=markers.filter(function(m){return m.id!==id});
-  // 直接从数据库删
-  dbApi('/api/geo/marker/'+id,{method:'DELETE'}).catch(function(){});
+  // 直接从数据库删：必须用数据库主键 dbId（f_xxx），clientId（m_xxx）后端不认
+  if(mk.dbId)dbApi('/api/geo/marker/'+mk.dbId,{method:'DELETE'}).catch(function(){});
+  markDeleted(mk.id);
   if(activeMarker===id)activeMarker=null;
   renderMarkerList();renderTable();renderFootnotes();
   autoSave();
@@ -875,7 +876,7 @@ function finishDraw(){
   paths.push({id:id,name:name,coords:drawPoints,color:color,line:line});
   if(drawLayer)drawLayer.clearLayers();drawPoints=[];showToast('线已创建: '+name);autoSave();
 }
-function deletePath(id){if(!confirm('确定删除？'))return;var p=paths.find(function(x){return x.id===id});if(!p)return;map.removeLayer(p.line);paths=paths.filter(function(x){return x.id!==id});if(p.dbId)dbApi('/api/geo/marker/'+p.dbId,{method:'DELETE'}).catch(function(){});autoSave()}
+function deletePath(id){if(!confirm('确定删除？'))return;var p=paths.find(function(x){return x.id===id});if(!p)return;map.removeLayer(p.line);paths=paths.filter(function(x){return x.id!==id});if(p.dbId)dbApi('/api/geo/marker/'+p.dbId,{method:'DELETE'}).catch(function(){});markDeleted(p.id);autoSave()}
 
 // ===== 多边形绘制 =====
 function startPolygonDraw(){
@@ -1418,14 +1419,17 @@ function buildGeoJSON(){
   var features=[];
   markers.forEach(function(m){
     var props={name:m.name,desc:m.desc||'',media:m.media||'',mediaType:m.mediaType||'',note:m.note||'',clientId:m.id};
+    if(m.dbId)props.dbId=m.dbId;
     if(m.mediaType==='folder'&&m.folderUrls)props.folderUrls=m.folderUrls;
     features.push({type:'Feature',geometry:{type:'Point',coordinates:[m.lng,m.lat]},properties:props});
   });
   paths.forEach(function(p){
+    var props={name:p.name,type:p.isPolygon?'polygon':'path',clientId:p.id};
+    if(p.dbId)props.dbId=p.dbId;
     if(p.isPolygon){
-      features.push({type:'Feature',geometry:{type:'Polygon',coordinates:[p.coords.map(function(c){return[c[1],c[0]]})]},properties:{name:p.name,type:'polygon',clientId:p.id}});
+      features.push({type:'Feature',geometry:{type:'Polygon',coordinates:[p.coords.map(function(c){return[c[1],c[0]]})]},properties:props});
     }else{
-      features.push({type:'Feature',geometry:{type:'LineString',coordinates:p.coords.map(function(c){return[c[1],c[0]]})},properties:{name:p.name,type:'path',clientId:p.id}});
+      features.push({type:'Feature',geometry:{type:'LineString',coordinates:[p.coords.map(function(c){return[c[1],c[0]]})]},properties:props});
     }
   });
   return {type:'FeatureCollection',features:features};
@@ -1441,12 +1445,19 @@ function exportGeoJSON(){
   showToast('已导出 '+geojson.features.length+' 个要素');
 }
 
+// 待删除队列（clientId 列表）：删除操作先入队，随下次保存一并发给后端做显式删除同步
+var pendingDeleted=[];
+function markDeleted(clientId){if(clientId&&pendingDeleted.indexOf(clientId)<0)pendingDeleted.push(clientId)}
+
 async function saveToServer(geojson){
   try{
-    // 先清空当前库的要素，再全量写入（保证删除同步）
-    await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({features:[]})});
-    var r=await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(geojson||buildGeoJSON())});
-    if(r.ok)showToast('已同步');
+    // 不再发空的 features:[] 清库包（破坏性旧套路，后端已用 ?mode=replace 白名单挡住）。
+    // 删除同步改为显式 deleted 数组：只删「前端已移除」的那些要素，绝不误伤库里其它数据。
+    var payload=geojson||buildGeoJSON();
+    if(!payload.features)payload.features=[];
+    if(pendingDeleted.length)payload.deleted=pendingDeleted.slice();
+    var r=await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(r.ok){pendingDeleted=[];showToast('已同步')}
   }catch(e){console.error('保存���败',e)}
 }
 
@@ -1474,6 +1485,8 @@ function importGeoJSON(geojson,name){
   if(!geojson||!geojson.features)return;var added=0;
   geojson.features.forEach(function(f){
     if(!f.geometry)return;var props=f.properties||{};
+    // 数据库主键（形如 f_564）；回读时落到 dbId，删除/编辑才能真正命中后端
+    var dbId=f.id||null;
     var gt=f.geometry.type, coord=f.geometry.coordinates;
     if(gt==='MultiPoint'){gt='Point';if(coord.length)coord=coord[0];}
     else if(gt==='MultiLineString'){gt='LineString';if(coord.length)coord=coord[0];}
@@ -1487,26 +1500,29 @@ function importGeoJSON(geojson,name){
         // 文件夹标记：用 addMarker 创建，然后补 folderUrls
         addMarker(coord[1],coord[0],props.name||'文件夹','',props.desc||'','','folder');
         var fMk=markers[markers.length-1];
-        if(fMk){fMk.folderUrls=props.folderUrls;fMk.marker.off('click');
+        if(fMk){fMk.dbId=dbId;fMk.folderUrls=props.folderUrls;fMk.marker.off('click');
           fMk.marker.on('click',function(){showFolderPopup(fMk)});}
         added++;
       } else {
         var media=props.media||props.photo||'';
         var mtype=props.mediaType||(media?isVideoUrl(media)?'video':'photo':'');
-        addMarker(coord[1],coord[0],props.name||'导入点',props.desc||'',media,props.note||'',mtype);added++;
+        addMarker(coord[1],coord[0],props.name||'导入点',props.desc||'',media,props.note||'',mtype);
+        var nMk=markers[markers.length-1];
+        if(nMk)nMk.dbId=dbId;
+        added++;
       }
     }else if(gt==='LineString'){
       var coords=coord.map(function(c){return[c[1],c[0]]});
       var id='p_'+(++pathId);var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
       var line=L.polyline(coords,{color:color,weight:4}).addTo(map);
       line.bindPopup('<b>'+esc(props.name||name||'线')+'</b>');
-      paths.push({id:id,name:props.name||name||'导入线',coords:coords,color:color,line:line});added++;
+      paths.push({id:id,name:props.name||name||'导入线',coords:coords,color:color,line:line,dbId:dbId});added++;
     }else if(gt==='Polygon'){
       var coords=coord[0].map(function(c){return[c[1],c[0]]});
       var id='p_'+(++pathId);var color='#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
       var polygon=L.polygon(coords,{color:color,weight:3,fillColor:color,fillOpacity:0.2}).addTo(map);
       polygon.bindPopup('<b>'+esc(props.name||name||'区域')+'</b>');
-      paths.push({id:id,name:props.name||name||'导入区域',coords:coords,color:color,line:polygon,isPolygon:true});added++;
+      paths.push({id:id,name:props.name||name||'导入区域',coords:coords,color:color,line:polygon,isPolygon:true,dbId:dbId});added++;
     }
   });showToast('导入完成: '+added+' 个要素');
 }
