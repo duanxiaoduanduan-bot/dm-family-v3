@@ -521,7 +521,7 @@ function addPhotoToMap(lat,lng,photoUrl,label){
     var mk=markers.find(function(m){return m.media===pd.photo});
     if(mk){mk.lat=pos.lat;mk.lng=pos.lng;mk.marker.setLatLng(pos);updateMarkerPopup(mk);renderMarkerList();renderTable()}
     // 异步保存定位
-    savePhotoLocation(pd.photo,pd.name,pos.lat,pos.lng);
+    savePhotoLocation(pd.photo,pd.name,pos.lat,pos.lng,isVideoUrl(pd.photo));
     autoSave();
     showToast('照片已移动到: '+pos.lat.toFixed(4)+', '+pos.lng.toFixed(4));
   });
@@ -533,15 +533,15 @@ function addPhotoToMap(lat,lng,photoUrl,label){
   return pm;
 }
 
-// 保存照片定位到服务器（走 PostGIS 要素表，与主数据同一存储；不再写旧的 map-data.geojson）
-async function savePhotoLocation(photoName,displayName,lat,lng){
+// 保存照片/视频定位到服务器（走 PostGIS 要素表，与主数据同一存储；不再写旧的 map-data.geojson）
+async function savePhotoLocation(photoName,displayName,lat,lng,isVideo){
   try{
     await dbApi('/api/geo/photo-location',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({photoName:photoName,name:displayName,lat:lat,lng:lng})
+      body:JSON.stringify({photoName:photoName,name:displayName,lat:lat,lng:lng,isVideo:!!isVideo})
     });
-  }catch(e){console.error('保存照片定位失败',e)}
+  }catch(e){console.error('保存媒体定位失败',e)}
 }
 
 // ===== 地图上的视频覆盖层 =====
@@ -559,7 +559,7 @@ function addVideoToMap(lat,lng,videoUrl,label){
     var vd=vm._videoData;
     var mk=markers.find(function(m){return m.media===vd.video});
     if(mk){mk.lat=pos.lat;mk.lng=pos.lng;mk.marker.setLatLng(pos);updateMarkerPopup(mk);renderMarkerList();renderTable()}
-    savePhotoLocation(vd.video,vd.name,pos.lat,pos.lng);
+    savePhotoLocation(vd.video,vd.name,pos.lat,pos.lng,true);
     showToast('视频已移动到: '+pos.lat.toFixed(4)+', '+pos.lng.toFixed(4));
   });
   for(var i=0;i<videoMarkers.length;i++){
@@ -1107,42 +1107,65 @@ function onMarkerClickForLink(mk){
 // ===== 数据加载 =====
 async function loadGeodata(){
   showToast('加载数据中...');
+  // 媒体列表每次都重建：数据来自两条路（geodata-list.json + /api/geo/media）
+  photoList=[];videoList=[];
   try{
     var r=await fetch('geodata-list.json?_='+Date.now());
-    if(!r.ok)throw Error('empty');
-    var data=await r.json();
-    if(!data||!data.length){showToast('geodata 目录为空');return}
-    photoList=[];videoList=[];
-    for(var i=0;i<data.length;i++){
-      var d=data[i];
-      if(d.type==='photo_group'&&d.photos){
-        for(var j=0;j<d.photos.length;j++){
-          var p=d.photos[j];
-          if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(p.file)){
-            videoList.push({name:p.name,file:p.file,group:d.name});
-          }else{
-            photoList.push({name:p.name,file:p.file,group:d.name});
+    if(r.ok){
+      var data=await r.json();
+      if(data&&data.length){
+        for(var i=0;i<data.length;i++){
+          var d=data[i];
+          if(d.type==='photo_group'&&d.photos){
+            for(var j=0;j<d.photos.length;j++){
+              var p=d.photos[j];
+              if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(p.file)){
+                videoList.push({name:p.name,file:p.file,group:d.name});
+              }else{
+                photoList.push({name:p.name,file:p.file,group:d.name});
+              }
+            }
+          }
+          if(d.type==='geojson'||d.type==='gpx'){
+            try{var fr=await fetch(d.file);var json=await fr.json();if(d.type==='gpx')json=convertGpxToGeoJSON(json);importGeoJSON(json,d.name)}catch(e){console.error(d.name,e)}
+          }
+          // 纯文件项（根目录媒体）
+          if(d.type==='photo'&&d.file){
+            if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(d.file)){
+              if(!videoList.find(function(v){return v.file===d.file}))videoList.push({name:d.name,file:d.file,group:''});
+            }else{
+              if(!photoList.find(function(p){return p.file===d.file}))photoList.push({name:d.name,file:d.file,group:''});
+            }
           }
         }
       }
-      if(d.type==='geojson'||d.type==='gpx'){
-        try{var fr=await fetch(d.file);var json=await fr.json();if(d.type==='gpx')json=convertGpxToGeoJSON(json);importGeoJSON(json,d.name)}catch(e){console.error(d.name,e)}
-      }
     }
-    // 也检查根目录媒体
-    for(var k=0;k<data.length;k++){
-      var dd=data[k];
-      if(dd.type==='photo'&&dd.file){
-        if(/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(dd.file)){
-          if(!videoList.find(function(v){return v.file===dd.file}))videoList.push({name:dd.name,file:dd.file,group:''});
-        }else{
-          if(!photoList.find(function(p){return p.file===dd.file}))photoList.push({name:dd.name,file:dd.file,group:''});
-        }
+  }catch(e){}
+  // 合并新目录（data/database/<库>/<要素ID>/）里的上传媒体
+  await loadAttachedMedia();
+  renderPhotoGrid();renderVideoGrid();
+  showToast('加载了 '+photoList.length+' 张照片 + '+videoList.length+' 个视频');
+}
+
+// 从 /api/geo/media（data/database/<库>/<要素ID>/）加载照片+视频，
+// 与 geodata-list.json 的结果合并去重。map-player 上传的文件都落在这里。
+async function loadAttachedMedia(){
+  try{
+    var r=await dbApi('/api/geo/media');
+    if(!r.ok)return;
+    var list=await r.json();
+    if(!Array.isArray(list)||!list.length)return;
+    var added=0;
+    list.forEach(function(m){
+      var isVideo=m.isVideo||/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(m.name||'');
+      var bucket=isVideo?videoList:photoList;
+      if(!bucket.find(function(x){return x.file===m.file})){
+        bucket.push({name:m.name,file:m.file,group:m.featureId||'',size:m.size||0});
+        added++;
       }
-    }
-    renderPhotoGrid();renderVideoGrid();
-    showToast('加载了 '+photoList.length+' 张照片 + '+videoList.length+' 个视频');
-  }catch(e){showToast('加载失败: '+e.message)}
+    });
+    if(added){renderPhotoGrid();renderVideoGrid();}
+  }catch(e){}
 }
 
 function renderVideoGrid(){
@@ -1155,9 +1178,10 @@ function renderVideoGrid(){
     item.innerHTML='<video src="'+v.file+'" muted preload="metadata"></video><div class="vg-icon">▶</div><div class="vg-name">'+v.name+'</div>';
     item.onclick=function(j){return function(e){
       activeVideo=j;renderVideoGrid();
-      if(addPhotoMode){
-        showToast('已选中视频: '+videoList[j].name+' — 点击地图放置');
-      }
+      // 直接点缩略图即进入「待放置」状态，再点地图定位（不必先按工具栏按钮）
+      addVideoMode=true;addPhotoMode=false;markerMode=false;drawing=false;polygonDrawing=false;
+      map.getContainer().style.cursor='cell';
+      showToast('已选中视频: '+videoList[j].name+' — 点击地图放置');
     }}(i);
     item.ondblclick=function(j){return function(){
       openLightbox(videoList[j].file,videoList[j].name,true);
@@ -1176,29 +1200,31 @@ function renderPhotoGrid(){
     item.innerHTML='<img src="'+p.file+'" loading="lazy" /><div class="pg-name">'+p.name+'</div>';
     item.onclick=function(j){return function(e){
       activePhoto=j;renderPhotoGrid();
-      if(addPhotoMode){
-        var p=photoList[j];
-        showToast('已选中: '+p.name+' — 检测 EXIF 定位中...');
-        // 尝试自动从 EXIF 读取 GPS
-        dbApi('/api/geo/photo-exif?photo='+encodeURIComponent(p.name)).then(function(r){return r.json()}).then(function(d){
-          if(d.gps){
-            var gpsMsg='EXIF GPS: '+d.gps.lat.toFixed(4)+', '+d.gps.lng.toFixed(4);
-            if(confirm('📷 '+p.name+'\n\n检测到 EXIF GPS 坐标：\n'+gpsMsg+'\n\n是否自动定位到该坐标？\n（选"取消"可手动点击地图放置）')){
-              addPhotoToMap(d.gps.lat,d.gps.lng,p.file,p.name);
-              addMarker(d.gps.lat,d.gps.lng,p.name,'',p.file,'','photo');
-              activePhoto=null;addPhotoMode=false;renderPhotoGrid();
-              map.setView([d.gps.lat,d.gps.lng],15);
-              showToast('✅ 已自动定位: '+p.name);
-            }else{
-              showToast('已选中: '+p.name+' — 点击地图手动放置');
-            }
+      // 直接点缩略图即进入「待放置」状态（不必先按工具栏按钮）
+      addPhotoMode=true;addVideoMode=false;markerMode=false;drawing=false;polygonDrawing=false;
+      map.getContainer().style.cursor='cell';
+      var p=photoList[j];
+      showToast('已选中: '+p.name+' — 检测 EXIF 定位中...');
+      // 尝试自动从 EXIF 读取 GPS
+      dbApi('/api/geo/photo-exif?photo='+encodeURIComponent(p.name)).then(function(r){return r.json()}).then(function(d){
+        if(d.gps){
+          var gpsMsg='EXIF GPS: '+d.gps.lat.toFixed(4)+', '+d.gps.lng.toFixed(4);
+          if(confirm('📷 '+p.name+'\n\n检测到 EXIF GPS 坐标：\n'+gpsMsg+'\n\n是否自动定位到该坐标？\n（选"取消"可手动点击地图放置）')){
+            addPhotoToMap(d.gps.lat,d.gps.lng,p.file,p.name);
+            addMarker(d.gps.lat,d.gps.lng,p.name,'',p.file,'','photo');
+            activePhoto=null;addPhotoMode=false;renderPhotoGrid();
+            map.getContainer().style.cursor='';
+            map.setView([d.gps.lat,d.gps.lng],15);
+            showToast('✅ 已自动定位: '+p.name);
           }else{
-            showToast('已选中: '+p.name+' — 无 EXIF GPS，请点击地图放置');
+            showToast('已选中: '+p.name+' — 点击地图手动放置');
           }
-        }).catch(function(){
-          showToast('已选中: '+p.name+' — 点击地图放置照片');
-        });
-      }
+        }else{
+          showToast('已选中: '+p.name+' — 无 EXIF GPS，请点击地图放置');
+        }
+      }).catch(function(){
+        showToast('已选中: '+p.name+' — 点击地图放置照片');
+      });
     }}(i);
     item.ondblclick=function(j){return function(){
       openLightbox(photoList[j].file,photoList[j].name);
@@ -1421,6 +1447,11 @@ function buildGeoJSON(){
     var props={name:m.name,desc:m.desc||'',media:m.media||'',mediaType:m.mediaType||'',note:m.note||'',clientId:m.id};
     if(m.dbId)props.dbId=m.dbId;
     if(m.mediaType==='folder'&&m.folderUrls)props.folderUrls=m.folderUrls;
+    // 媒体要素补 type/photo/video 字段，供 importGeoJSON 恢复时正确识别（否则刷新后媒体标记丢失）
+    if(m.media&&(m.mediaType==='photo'||m.mediaType==='video')){
+      if(m.mediaType==='video'){props.type='video';props.video=m.media;}
+      else{props.type='photo';props.photo=m.media;}
+    }
     features.push({type:'Feature',geometry:{type:'Point',coordinates:[m.lng,m.lat]},properties:props});
   });
   paths.forEach(function(p){
@@ -1493,9 +1524,14 @@ function importGeoJSON(geojson,name){
     else if(gt==='MultiPolygon'){gt='Polygon';if(coord.length)coord=coord[0];}
     if(gt==='Point'){
       if(props.type==='photo'&&props.photo){
-        addPhotoToMap(coord[1],coord[0],props.photo,props.name||'');added++;
+        // 照片要素：统一走 addMarker（内部会创建覆盖层），保证标记列表/拖拽/删除同步
+        var pMk=addMarker(coord[1],coord[0],props.name||'',props.desc||'',props.photo,props.note||'','photo');
+        if(pMk){pMk.dbId=dbId;pMk.photoUrl=props.photo;}
+        added++;
       } else if(props.type==='video'&&props.video){
-        addVideoToMap(coord[1],coord[0],props.video,props.name||'');added++;
+        var vMk=addMarker(coord[1],coord[0],props.name||'',props.desc||'',props.video,props.note||'','video');
+        if(vMk){vMk.dbId=dbId;vMk.videoUrl=props.video;}
+        added++;
       } else if(props.mediaType==='folder'&&props.folderUrls){
         // 文件夹标记：用 addMarker 创建，然后补 folderUrls
         addMarker(coord[1],coord[0],props.name||'文件夹','',props.desc||'','','folder');
@@ -2038,6 +2074,7 @@ function attachMedia(type){
       }
       showToast('已挂载到: '+featureId+'/'+result.name);
       renderAttachedMedia();
+      loadAttachedMedia();
       autoSave();
     }catch(e){showToast('挂载失败: '+e.message)}
   };

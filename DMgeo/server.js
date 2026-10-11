@@ -1664,13 +1664,18 @@ const server = http.createServer((req, res) => {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ ok: false, error: '缺少 photoName/lat/lng' }));
         }
+        const isVideo = input.isVideo === true ||
+          /\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(input.photoName || '');
         const props = {
           name: input.name || input.photoName,
           photo: input.photoName,
           desc: input.desc || '',
-          type: 'photo',
+          type: isVideo ? 'video' : 'photo',
+          mediaType: isVideo ? 'video' : 'photo',
           updatedAt: new Date().toISOString()
         };
+        if (isVideo) props.video = input.photoName;
+        else delete props.video;
         // 支持 ?db= 指定库（与其它要素接口一致；缺省 trip）
         const photoDb = url.searchParams.get('db') || 'trip';
         const photoPool = getFeaturePool(photoDb);

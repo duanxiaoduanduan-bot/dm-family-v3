@@ -728,3 +728,50 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 - `node --check` + `bash -n` 通过；行尾 LF（CR=0）；server.js 本地/远端 md5 一致 `77fa597bb01bab868e2c9424eb3ad502`
 
 **部署**：`server.js` → `restart dm-DMgeo`；安装脚本随下次安装生效。
+
+## 29. DMgeo map-player · 照片/视频区接入新媒体目录
+
+**需求**：断断上传视频后反馈「前端这个位置并不显示」（照片/视频 tab 空白，提示「拖入视频到 geodata 目录」）。
+
+**根因**（新旧两套媒体目录没打通）：
+- **照片/视频 tab** 读 `geodata-list.json`，由 `scanGeodataWithCache()` 扫描 `paths.data`（`DMgeo/data/`），**只扫根目录 + 一级子目录**当 photo_group
+- **实际上传**落在 `paths.database`（`DMgeo/data/database/<库>/<要素ID>/`），**三级深**，扫描器看不到 → `geodata-list.json` 恒为 `[]` → tab 空白
+- 只有「数据 tab → 附件媒体」走 `/api/geo/media`（新目录）能看到，两者割裂
+
+**改动**（`DMgeo/map-player.html`）：
+- 新增 `loadAttachedMedia()`：拉 `/api/geo/media`，按 `isVideo`/扩展名分入 `photoList`/`videoList`，与 `geodata-list.json` 结果**合并去重**（按 file 路径）
+- `loadGeodata()` 重构：先清空列表 → 读 `geodata-list.json`（含 geojson/gpx 导入，不再空数据直接 return）→ **末尾无条件调用 `loadAttachedMedia()`** → 统一 `renderPhotoGrid()`/`renderVideoGrid()`
+- `attachMedia()` 上传成功后补调 `loadAttachedMedia()`，新传的媒体立即出现在照片/视频 tab
+
+**验证**：
+- 线上 `/api/geo/media` 返回上传的视频（`holo-20260823-134609.mp4` 37.2MB，featureId=general）
+- 用真实 API 数据跑前端归类逻辑：`photoList:0 videoList:1`，src 正确为 `media/geodata/trip/general/...` ✅
+- 内联脚本 `node --check` 通过；行尾 LF（CR=0）；map-player.html 本地/远端 md5 一致 `17853e02255ee0aa24da7f64bc5eeff4`
+
+**部署**：`map-player.html` 静态 → Ctrl+F5（仅前端）。
+
+## 30. DMgeo map-player · 媒体「点选→点地图定位」修复（含刷新不丢坐标）
+
+**需求**：断断「点这个库里面视频再点点，按理说会有位置对应啊」——期望在视频列表点视频、再点地图，把视频定位到地图上。
+
+**定位到 3 个问题**：
+
+1. **视频缩略图点击不进定位模式**：`renderVideoGrid()` 的 `item.onclick` 只设 `activeVideo`，且误判 `if(addPhotoMode)`（复制照片逻辑笔误），从不设 `addVideoMode` → 地图点击的 `else if(addVideoMode&&...)` 分支永不命中。只有先点工具栏「🎬 视频」按钮才行，与直觉不符。
+2. **媒体要素刷新后丢失**：`buildGeoJSON()` 存 marker 用 `media`/`mediaType` 字段，而 `importGeoJSON()` 恢复时找的是 `props.type==='photo'&&props.photo` / `type==='video'&&props.video` —— **字段名完全对不上**，媒体要素重新加载就消失。
+3. **视频定位存储类型错**：`/api/geo/photo-location` 一律写 `type:'photo'`，视频被当照片存 → 恢复走 `addPhotoToMap`（当图片加载）。
+
+**改动**：
+
+- **前端 `map-player.html`**
+  - `renderVideoGrid()` 缩略图 `onclick`：直接 `addVideoMode=true` + 光标 cell + 提示，再点地图即定位（无需先按工具栏按钮）；照片 `renderPhotoGrid()` 同改为直接进 `addPhotoMode`（EXIF 逻辑保留）
+  - `savePhotoLocation(name,disp,lat,lng,isVideo)` 增加 isVideo 参数；调用点：视频拖拽传 `true`、照片拖拽用 `isVideoUrl()` 自动判定
+  - `buildGeoJSON()`：媒体 marker 补 `type` + `photo`/`video` 字段，与恢复逻辑对齐
+  - `importGeoJSON()`：`photo`/`video` 分支统一改走 `addMarker(...)`（内部自动建覆盖层），保证标记列表/拖拽/删除同步
+- **后端 `server.js`**：`/api/geo/photo-location` 接收 `isVideo`（或按扩展名判定），视频写 `type:'video'`+`video:` 字段，照片写 `type:'photo'`+`photo:`；同步维护 `mediaType`
+
+**验证**（线上 192.168.1.9:8084）：
+- POST photo-location（isVideo=true）→ GET `/api/geo?db=trip` 回读：`type=video mediaType=video video=holo-20260823-134609.mp4`，geom `Point [115.5,38.9]` ✅
+- 测后已 DELETE 清理测试要素（`f_1028`），库恢复干净 ✅
+- 内联脚本 `node --check` + `server.js --check` 通过；行尾 LF（CR=0）
+
+**部署**：`server.js` → `restart dm-DMgeo`；`map-player.html` → Ctrl+F5。
