@@ -590,11 +590,12 @@ function addMarker(lat,lng,name,desc,media,note,mediaType){
   popupHtml+='<div class="mp-btns"><button onclick="editMarker(\''+id+'\')">编辑</button><button onclick="deleteMarker(\''+id+'\')" style="color:#e74c3c">删除</button></div></div>';
   m.bindPopup(popupHtml);
 
-  m.on('dragend',function(){var pos=m.getLatLng();var mk=getMarkerById(id);if(mk){mk.lat=pos.lat;mk.lng=pos.lng;updateMarkerPopup(mk);renderMarkerList();renderTable();autoSave()}});
-  m.on('click',function(){if(linkMode){onMarkerClickForLink(mk);return}activeMarker=id;renderMarkerList()});
-
+  // 先建 mk 对象并登记，再绑事件（否则下面闭包引用的 mk 尚未定义 = undefined）
   var mk={id:id,lat:lat,lng:lng,name:name,desc:desc,media:media,note:note,mediaType:mediaType,marker:m};
   markers.push(mk);
+
+  m.on('dragend',function(){var pos=m.getLatLng();var cur=getMarkerById(id);if(cur){cur.lat=pos.lat;cur.lng=pos.lng;updateMarkerPopup(cur);renderMarkerList();renderTable();autoSave()}});
+  m.on('click',function(){if(linkMode){onMarkerClickForLink(mk);return}activeMarker=id;renderMarkerList()});
 
   // 有媒体时添加覆盖层
   if(media){
@@ -802,8 +803,7 @@ async function handleFolderSelect(e){
       if(result.ok){
         var lat=item.gps.lat, lng=item.gps.lng;
         var name=f.name.replace(/\.\w+$/,'');
-        addPhotoToMap(lat,lng,result.file,name);
-        addMarker(lat,lng,name,'',result.file,'','photo');
+        addMarker(lat,lng,name,'',result.file,'','photo');  // 覆盖层由 addMarker 内部创建，勿重复
         placed++;
         if(j%5===0||j===gpsPhotos.length-1)showToast('📍 '+placed+'/'+gpsPhotos.length+' 张已定位');
       }
@@ -1210,8 +1210,7 @@ function renderPhotoGrid(){
         if(d.gps){
           var gpsMsg='EXIF GPS: '+d.gps.lat.toFixed(4)+', '+d.gps.lng.toFixed(4);
           if(confirm('📷 '+p.name+'\n\n检测到 EXIF GPS 坐标：\n'+gpsMsg+'\n\n是否自动定位到该坐标？\n（选"取消"可手动点击地图放置）')){
-            addPhotoToMap(d.gps.lat,d.gps.lng,p.file,p.name);
-            addMarker(d.gps.lat,d.gps.lng,p.name,'',p.file,'','photo');
+            addMarker(d.gps.lat,d.gps.lng,p.name,'',p.file,'','photo');  // 覆盖层由 addMarker 内部创建
             activePhoto=null;addPhotoMode=false;renderPhotoGrid();
             map.getContainer().style.cursor='';
             map.setView([d.gps.lat,d.gps.lng],15);
@@ -1243,16 +1242,16 @@ function onMapClick(e){
   if(drawing||polygonDrawing)return;
   if(addPhotoMode&&activePhoto!==null&&photoList[activePhoto]){
     // 照片模式：在点击位置放照片
+    // 注意：addMarker 内部检测到 media 会自动创建覆盖层（addPhotoToMap），
+    // 这里绝不能再手动调 addPhotoToMap，否则同一张图会叠出 2 份覆盖层 + 1 个标记。
     var p=photoList[activePhoto];
-    addPhotoToMap(e.latlng.lat,e.latlng.lng,p.file,p.name);
-    addMarker(e.latlng.lat,e.latlng.lng,p.name,'',p.file);
+    addMarker(e.latlng.lat,e.latlng.lng,p.name,'',p.file,'','photo');
     activePhoto=null;addPhotoMode=false;renderPhotoGrid();
     map.getContainer().style.cursor='';
     showToast('照片已放置: '+p.name);
   }else if(addVideoMode&&activeVideo!==null&&videoList[activeVideo]){
-    // 视频模式：在点击位置放视频
+    // 视频模式：在点击位置放视频（覆盖层由 addMarker 内部创建，勿重复调用）
     var v=videoList[activeVideo];
-    addVideoToMap(e.latlng.lat,e.latlng.lng,v.file,v.name);
     addMarker(e.latlng.lat,e.latlng.lng,v.name,'',v.file,'','video');
     activeVideo=null;addVideoMode=false;renderVideoGrid();
     map.getContainer().style.cursor='';
@@ -1534,16 +1533,14 @@ function importGeoJSON(geojson,name){
         added++;
       } else if(props.mediaType==='folder'&&props.folderUrls){
         // 文件夹标记：用 addMarker 创建，然后补 folderUrls
-        addMarker(coord[1],coord[0],props.name||'文件夹','',props.desc||'','','folder');
-        var fMk=markers[markers.length-1];
+        var fMk=addMarker(coord[1],coord[0],props.name||'文件夹','',props.desc||'','','folder');
         if(fMk){fMk.dbId=dbId;fMk.folderUrls=props.folderUrls;fMk.marker.off('click');
           fMk.marker.on('click',function(){showFolderPopup(fMk)});}
         added++;
       } else {
         var media=props.media||props.photo||'';
         var mtype=props.mediaType||(media?isVideoUrl(media)?'video':'photo':'');
-        addMarker(coord[1],coord[0],props.name||'导入点',props.desc||'',media,props.note||'',mtype);
-        var nMk=markers[markers.length-1];
+        var nMk=addMarker(coord[1],coord[0],props.name||'导入点',props.desc||'',media,props.note||'',mtype);
         if(nMk)nMk.dbId=dbId;
         added++;
       }
@@ -1633,23 +1630,13 @@ async function uploadAndPlaceMedia(file, lat, lng){
     var result=await r.json();
     if(result.ok){
       var name=file.name.replace(/\.\w+$/,'');
-      if(isVideo){
-        addVideoToMap(lat,lng,result.file,name);
-      }else{
-        addPhotoToMap(lat,lng,result.file,name);
-      }
-      addMarker(lat,lng,name,'',result.file,'',isVideo?'video':'photo');
+      addMarker(lat,lng,name,'',result.file,'',isVideo?'video':'photo');  // 覆盖层由 addMarker 内部创建
       showToast('已放置: '+name);
     }
   }catch(e){
     console.error('上传失败，使用本地URL:',e);
     var url=URL.createObjectURL(file);
     var name=file.name.replace(/\.\w+$/,'');
-    if(isVideo){
-      addVideoToMap(lat,lng,url,name);
-    }else{
-      addPhotoToMap(lat,lng,url,name);
-    }
     addMarker(lat,lng,name,'',url,'',isVideo?'video':'photo');
     showToast('已放置(本地): '+name);
   }
@@ -2014,13 +2001,8 @@ async function processUploadFiles(files){
       var result=await r.json();
       if(result.ok){
         var name=f.name.replace(/\.\w+$/,'');
-        // 在地图中心创建要素
+        // 在地图中心创建要素（覆盖层由 addMarker 内部创建）
         var center=map.getCenter();
-        if(isVideo){
-          addVideoToMap(center.lat,center.lng,result.file,name);
-        }else{
-          addPhotoToMap(center.lat,center.lng,result.file,name);
-        }
         addMarker(center.lat,center.lng,name,'',result.file,'',isVideo?'video':'photo');
         queueEl.innerHTML+='<div style="padding:2px 0;color:#0c0">  ✅ 已挂载: '+esc(name)+'</div>';
       }else{
@@ -2031,8 +2013,6 @@ async function processUploadFiles(files){
       var url=URL.createObjectURL(f);
       var name=f.name.replace(/\.\w+$/,'');
       var center=map.getCenter();
-      if(isVideo){addVideoToMap(center.lat,center.lng,url,name)}
-      else{addPhotoToMap(center.lat,center.lng,url,name)}
       addMarker(center.lat,center.lng,name,'',url,'',isVideo?'video':'photo');
       queueEl.innerHTML+='<div style="padding:2px 0;color:#0c0">  ✅ 本地挂载: '+esc(name)+'</div>';
     }

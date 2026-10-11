@@ -775,3 +775,42 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 - 内联脚本 `node --check` + `server.js --check` 通过；行尾 LF（CR=0）
 
 **部署**：`server.js` → `restart dm-DMgeo`；`map-player.html` → Ctrl+F5。
+
+## 31. DMgeo map-player · addMarker 声明顺序整理（防御性）
+
+**缘起**：上一轮（第 30 节）发现 `addMarker()` 中 `m.on('click', ...)` 引用的 `mk` 在之后才 `var` 定义，怀疑是 bug。
+
+**核实结论**：**不是实际故障**。`m.on('click', fn)` 仅注册回调，回调真正执行（用户点击）时 `mk` 已完成赋值；`var` 提升使闭包捕获同一变量引用。用最小复现验证「修复前后 click 均正确返回 `m_1`」。属于**顺序脆弱**（可读性问题、易误判），非运行错误。
+
+**改动**（`DMgeo/map-player.html`，纯整理，行为不变）：
+- 把 `var mk={...}` + `markers.push(mk)` 上移到 `m.on('dragend'/'click')` 注册**之前**；dragend 内部变量改名 `cur` 避免与外层 `mk` 混淆
+- `importGeoJSON()` 中 folder / 默认分支改用 `addMarker()` 返回值（原先 `markers[markers.length-1]`），与 photo/video 分支一致，避免依赖内部 push 顺序
+
+**验证**：内联脚本 `node --check` 通过；行尾 LF（CR=0）；线上 map-player.html md5 `04ec789e87fde66a1253b110cffa3200`；行为等价（无功能变化）。
+
+**部署**：`map-player.html` → Ctrl+F5。
+
+## 32. DMgeo map-player · 媒体覆盖层重复创建修复（挂好几个）
+
+**需求**：断断「点了图片再点地图怎么感觉会挂好几个？」
+
+**根因**：**双重创建**。`addMarker()` 内部已有「有 media 就自动建覆盖层」的逻辑（第 600-607 行），但多个调用点又**手动先调了一次** `addPhotoToMap()`/`addVideoToMap()`，导致同一媒体被建 2 份覆盖层 + 1 个标记。
+
+**受影响调用点（全部改为只调 `addMarker`）**：
+
+| 位置 | 场景 |
+|---|---|
+| `onMapClick` 照片/视频分支 | 点缩略图 → 点地图放置（**主诉**） |
+| EXIF 自动定位分支 | 点照片 → 检测到 GPS → 自动定位 |
+| GPS 批量导入 | 文件夹导入含 GPS 的照片 |
+| 单文件放置（上传成功 / 本地回退） | 拖文件到地图定位 |
+| 文件夹批量上传（上传成功 / 本地回退） | 批量挂载 |
+
+**保留不变**：`addMarker` 内部建覆盖层（唯一入口）；编辑模式先移除旧覆盖层再重建（第 690-691 行，无重复）。
+
+**验证**（Node mock 量化）：
+- 修复前「点图片→点地图」：照片覆盖层 **2 个** + 标记 1 个（重复）
+- 修复后：照片覆盖层 **1 个** + 标记 1 个 ✅
+- 内联脚本 `node --check` 通过；行尾 LF（CR=0）；线上 md5 `878e691b5c6c0e4e51e483516ce23612`
+
+**部署**：`map-player.html` → Ctrl+F5。
