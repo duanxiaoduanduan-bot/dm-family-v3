@@ -656,7 +656,7 @@ const server = http.createServer(requestHandler);
 const wss = new WebSocketServer({ server });
 let nextId = 1;
 
-wss.on('connection', (ws) => {
+function handleConnection(ws) {
   const userId = 'u' + (nextId++);
   const info = { id: userId, name: '', time: Date.now() };
   clients.set(ws, info);
@@ -881,7 +881,8 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('error', () => {});
-});
+}
+wss.on('connection', handleConnection);
 
 // ===== 启动 =====
 const os = require('os');
@@ -916,7 +917,7 @@ if (fs.existsSync(CERT_KEY) && fs.existsSync(CERT_CRT)) {
   try {
     const tlsOpts = { key: fs.readFileSync(CERT_KEY), cert: fs.readFileSync(CERT_CRT) };
     const httpsServer = https.createServer(tlsOpts, requestHandler);
-    new WebSocketServer({ server: httpsServer }); // 复用同一逻辑，wss:// 自动可用
+    new WebSocketServer({ server: httpsServer }).on('connection', handleConnection); // wss:// 复用同一套消息处理
     httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
       const ips = detectIps();
       console.log('  🔒 DMChat HTTPS 已启用: https://' + (ips[0] || '0.0.0.0') + ':' + HTTPS_PORT + '  （屏幕共享/通话请走这个地址）');
