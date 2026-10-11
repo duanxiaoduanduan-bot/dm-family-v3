@@ -256,10 +256,10 @@ function parseChapters(lines){var chs=[];for(var j=0;j<lines.length;j++){var l=l
 function loadProgress(key){try{var raw=localStorage.getItem('book_progress_'+key);return raw?JSON.parse(raw):null}catch(e){return null}}
 function saveProgress(key,chIdx,scrollPct){try{localStorage.setItem('book_progress_'+key,JSON.stringify({ch:chIdx,scroll:scrollPct,ts:Date.now()}))}catch(e){}}
 // 有声书断点续播：按文件路径存播放进度
-var POS_PREFIX='dmmedia_pos_';
-function savePos(k,t,d){try{localStorage.setItem(POS_PREFIX+k,JSON.stringify({t:t,d:d}))}catch(e){}}
-function loadPos(k){try{var s=localStorage.getItem(POS_PREFIX+k);if(!s)return null;var o=JSON.parse(s);return(o&&typeof o.t==='number')?o:null}catch(e){return null}}
-function clearPos(k){try{localStorage.removeItem(POS_PREFIX+k)}catch(e){}}
+var RESUME_KEY='dmmedia_resume_book';
+function savePos(k,t,d){try{localStorage.setItem(RESUME_KEY,JSON.stringify({k:k,t:t,d:d}))}catch(e){}}
+function loadPos(k){try{var s=localStorage.getItem(RESUME_KEY);if(!s)return null;var o=JSON.parse(s);return(o&&o.k===k&&typeof o.t==='number')?o:null}catch(e){return null}}
+function clearPos(k){try{var o=JSON.parse(localStorage.getItem(RESUME_KEY)||'null');if(o&&o.k===k)localStorage.removeItem(RESUME_KEY)}catch(e){}}
 
 // ===== 渲染当前页 =====
 function renderPage(){
