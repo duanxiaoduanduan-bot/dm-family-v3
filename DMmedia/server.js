@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const dgram = require('dgram');
 
 const PORT = process.env.PORT || 8081;
 const ROOT = __dirname;
@@ -768,3 +769,53 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  ╚══════════════════════════════════════╝');
   console.log('');
 });
+
+// ===== UDP 自动发现：serverId 心跳 + 已登记 remote 的 IP 变动自动修正 =====
+// 每台机器定期广播自己的 serverId；本机收到后，若匹配「已握手」的 remote 且 IP 变了，自动更新地址。
+// 只修正已握手的 remote，不自动添加未知服务器（握手仍是显式信任动作）。
+const DISCOVERY_PORT = 18081;
+
+function startDiscovery() {
+  const sock = dgram.createSocket('udp4');
+
+  sock.on('error', (e) => {
+    console.error('[发现] UDP socket 错误:', e.message);
+  });
+
+  sock.on('message', (msg, rinfo) => {
+    let m;
+    try { m = JSON.parse(msg.toString('utf8')); } catch (e) { return; }
+    if (!m || m.type !== 'dmmedia-hello' || !m.serverId) return;
+    if (m.serverId === config.serverId) return; // 自己的广播，忽略
+
+    const newUrl = 'http://' + rinfo.address + ':' + (m.httpPort || 8081);
+    const remotes = config.remotes || [];
+    const existing = remotes.find((r) => r.id === m.serverId);
+    if (existing && existing.url !== newUrl) {
+      existing.url = newUrl;
+      saveConfig(config);
+      console.log('[发现] 转播服务器 IP 变化，已自动更新：' + (existing.name || m.serverId) + ' → ' + newUrl);
+    }
+    // 未登记的 serverId 不自动添加（需手动握手）
+  });
+
+  sock.bind(DISCOVERY_PORT, () => {
+    try { sock.setBroadcast(true); } catch (e) {}
+    broadcast();
+    setInterval(broadcast, 20000); // 每 20s 广播一次
+  });
+
+  function broadcast() {
+    const payload = JSON.stringify({
+      type: 'dmmedia-hello',
+      serverId: config.serverId,
+      name: config.siteName,
+      httpPort: PORT
+    });
+    try {
+      sock.send(payload, 0, Buffer.byteLength(payload), DISCOVERY_PORT, '255.255.255.255');
+    } catch (e) {}
+  }
+}
+
+startDiscovery();
