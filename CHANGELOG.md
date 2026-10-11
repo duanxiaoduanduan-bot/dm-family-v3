@@ -705,3 +705,26 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 - 上传后 md5 本地/远端一致：`6ac318f59e0acb9b08e9157582e242ba`
 
 **部署**：`dashboard.html` 静态 → Ctrl+F5（仅前端）。
+
+## 28. DMgeo · 照片媒体库目录随安装自动补齐
+
+**需求**：断断发现 `map-player.html` 的照片目录在全新安装时不存在，要求「安装的时候没有也要补上」。
+
+**根因**：
+- map-player 照片区数据来自 `GET /api/geo/media?db=<库>`，扫描 `data/database/<库名>/<featureId>/` 下的图片/视频
+- 原来 `data/database/` **只有在前端实际上传照片时**才由 `/upload-photo` 惰性创建；全新安装后目录为空 → 照片列表恒为空，容易被误认为功能坏了
+- 安装脚本 `05-geodata.sh` 只 `mkdir -p data data/boundaries`，**漏了 `data/database/<featureDb>`**
+
+**改动**：
+
+1. **`DMgeo/server.js`**：新增启动初始化 `ensureRuntimeDirs()`（放在 `server.listen` 之前，进程启动即执行、幂等）——一次性确保 `data/`、`data/boundaries/`、`data/database/`、`data/database/<featureDb>`（默认 `trip`，读取 `storage-config.json`）存在
+   - 注：早先误放在 `http.createServer` 回调内（只在收到请求时执行），已移至启动阶段
+2. **`install/05-geodata.sh`**：数据阶段开头补建目录骨架，`FEATDB` 从 `storage-config.json` 读取（缺省 `trip`），`mkdir -p data/boundaries data/database/$FEATDB`
+
+**验证**（线上 192.168.1.9:8084）：
+- `rm -rf data/database` 后 `restart dm-DMgeo` → 启动自动重建 `data/database/trip/` ✅
+- 上传测试照片 → 落盘 `data/database/trip/45/test_photo.png` → `GET /api/geo/media?db=trip` 正确返回该文件（`featureId:45`）✅
+- 测后已清理测试文件，`api/media` 恢复 `[]`，dm-DMgeo RUNNING ✅
+- `node --check` + `bash -n` 通过；行尾 LF（CR=0）；server.js 本地/远端 md5 一致 `77fa597bb01bab868e2c9424eb3ad502`
+
+**部署**：`server.js` → `restart dm-DMgeo`；安装脚本随下次安装生效。

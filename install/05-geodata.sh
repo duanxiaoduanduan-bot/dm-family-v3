@@ -50,6 +50,14 @@ GEO_DIR="$ROOT/DMgeo"
 [ -d "$GEO_DIR" ] || error "缺少 DMgeo 目录"
 have node || error "需要 node（先跑 ./install.sh dm）"
 
+# ── 目录骨架：data/ 边界 / 照片媒体库 一次性建好 ──
+# database/ 下按「要素库名」分目录（map-player 照片区扫描 data/database/<库名>/）；
+# 不预建的话全新安装时照片目录不存在，照片列表恒为空。
+mkdir -p "$GEO_DIR/data/boundaries"
+FEATDB="$(node -e "try{const c=require('$GEO_DIR/storage-config.json');process.stdout.write((c.database&&c.database.featureDb)||'trip')}catch(e){process.stdout.write('trip')}" 2>/dev/null || echo trip)"
+mkdir -p "$GEO_DIR/data/database/$FEATDB"
+ok "地图目录骨架就绪（data/boundaries、data/database/$FEATDB）"
+
 # ── 依赖：pg 包必须就位（本阶段排在 apps 后；缺失时自动补装）──
 if [ ! -d "$GEO_DIR/node_modules/pg" ]; then
   warn "DMgeo 缺少 node 依赖，自动补装 ..."

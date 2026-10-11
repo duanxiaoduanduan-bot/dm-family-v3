@@ -2621,6 +2621,22 @@ const server = http.createServer((req, res) => {
   serveFile(filePath, res);
 });
 
+// ── 启动初始化：确保运行时目录骨架存在（幂等） ──
+// data/ 与 data/boundaries/、照片媒体库 data/database/<featureDb>/
+// map-player 照片区扫描 data/database/<库名>/；全新安装若不预建，照片目录缺失会导致列表恒空。
+(function ensureRuntimeDirs(){
+  const dirs = [
+    resolveDir(config.paths.data),
+    resolveDir(config.paths.boundaries),
+    resolveDir(config.paths.database),
+    path.join(resolveDir(config.paths.database), (config.database && config.database.featureDb) || 'trip')
+  ];
+  for (const d of dirs) {
+    try { if (d && !fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); }
+    catch (e) { console.error('ensure dir failed:', d, e.message); }
+  }
+})();
+
 server.listen(PORT, '0.0.0.0', () => {
   const os = require('os');
   const { execSync } = require('child_process');
