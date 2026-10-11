@@ -533,13 +533,13 @@ function addPhotoToMap(lat,lng,photoUrl,label){
   return pm;
 }
 
-// 保存照片定位到服务器
+// 保存照片定位到服务器（走 PostGIS 要素表，与主数据同一存储；不再写旧的 map-data.geojson）
 async function savePhotoLocation(photoName,displayName,lat,lng){
   try{
-    await fetch('/api/update-photo-location',{
+    await dbApi('/api/geo/photo-location',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({photoName:photoName,newName:displayName,lat:lat,lng:lng})
+      body:JSON.stringify({photoName:photoName,name:displayName,lat:lat,lng:lng})
     });
   }catch(e){console.error('保存照片定位失败',e)}
 }

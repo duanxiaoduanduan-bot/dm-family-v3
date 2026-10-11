@@ -1345,20 +1345,23 @@ const server = http.createServer((req, res) => {
           type: 'photo',
           updatedAt: new Date().toISOString()
         };
+        // 支持 ?db= 指定库（与其它要素接口一致；缺省 trip）
+        const photoDb = url.searchParams.get('db') || 'trip';
+        const photoPool = getFeaturePool(photoDb);
         // 查找已有照片要素
-        const existing = await pgPool.query(
+        const existing = await photoPool.query(
           `SELECT id FROM features WHERE properties->>'photo' = $1 AND type = 'photo' LIMIT 1`,
           [input.photoName]
         );
         if (existing.rows.length > 0) {
-          props.createdAt = (await pgPool.query(`SELECT properties->>'createdAt' as c FROM features WHERE id=$1`, [existing.rows[0].id])).rows[0]?.c || props.updatedAt;
-          await pgPool.query(
-            `UPDATE features SET geom=ST_SetSRID(ST_MakePoint($1,$2),4326), properties=$3, name=$4, updated_at=NOW() WHERE id=$5`,
+          props.createdAt = (await photoPool.query(`SELECT properties->>'createdAt' as c FROM features WHERE id=$1`, [existing.rows[0].id])).rows[0]?.c || props.updatedAt;
+          await photoPool.query(
+            `UPDATE features SET geom=ST_SetSRID(ST_MakePoint($1,$2),4326), properties=$3, name=$4 WHERE id=$5`,
             [input.lng, input.lat, JSON.stringify(props), input.name || input.photoName, existing.rows[0].id]
           );
         } else {
           props.createdAt = props.updatedAt;
-          await pgPool.query(
+          await photoPool.query(
             `INSERT INTO features (name, type, geom, properties) VALUES ($1,'photo',ST_SetSRID(ST_MakePoint($2,$3),4326),$4)`,
             [input.name || input.photoName, input.lng, input.lat, JSON.stringify(props)]
           );
@@ -1382,7 +1385,8 @@ const server = http.createServer((req, res) => {
     }
     (async () => {
       try {
-        const result = await pgPool.query(
+        const photoDb = url.searchParams.get('db') || 'trip';
+        const result = await getFeaturePool(photoDb).query(
           `DELETE FROM features WHERE properties->>'photo' = $1 AND type = 'photo' RETURNING id`,
           [photoName]
         );

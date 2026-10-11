@@ -439,3 +439,25 @@ map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off →
 - 内联脚本 `node --check` 语法通过；HTTP 拉页面确认 4 个修复点全在
 
 **部署**：静态 HTML，覆盖 `DMgeo/map-player.html` 后 Ctrl+F5 即生效，无需重启服务。
+
+## 18. DMgeo · 照片/视频定位收进 PostGIS（消除双存储）
+
+**现象**：地图上拖动照片/视频图标后，定位写进**旧的 JSON 文件**（`geodata/map-data.geojson`，走 `loadMapDB/saveMapDB`），与主数据（PostGIS `features` 表）**两套存储**，查询/统计对不上。
+
+**改动**：
+
+| 路径 | 说明 |
+|------|------|
+| `DMgeo/map-player.html` | `savePhotoLocation()` 改调 PostGIS 接口 `POST /api/geo/photo-location`（带 `?db=`），不再调旧的 `/api/update-photo-location` |
+| `DMgeo/server.js` | `/api/geo/photo-location` 的 POST/DELETE 改用 `getFeaturePool(?db=)`（原写死 `pgPool`=trip，忽略库选择） |
+
+**顺带修出并修掉一个潜伏 bug**：`/api/geo/photo-location` 的 UPDATE 语句带 `updated_at=NOW()`，但 `features` 表**根本没有 `updated_at` 列**（只有 `created_at`）→ 照片**移动坐标时 400 失败**（旧版写 JSON 所以没人发现）。已删掉该列引用。
+
+**验证**（Ubuntu 真实库）：
+
+- 写 `(100,10)` → 回读 `f_588`；移动到 `(110,20)` → `200 ok`、坐标更新、id 不变；删除 → 残留 0；trip 总数回到 19（未误伤）
+- 前端 HTTP 校验：已调 `/api/geo/photo-location`、不再含 `/api/update-photo-location`
+
+**遗留（未动，断断未要求）**：旧 `/api/update-photo-location`、`/api/geo/export`、`/api/geo/stats` 等仍读 `map-data.geojson`，但**已无任何前端调用**，属无害死代码，保留不动。
+
+**部署**：`server.js` 改动 → `restart dm-DMgeo`；`map-player.html` 静态 → Ctrl+F5。
