@@ -118,11 +118,11 @@ async function loadList(){
   }
 }
 
-function playS(i){if(i<0||i>=sg.length)return;ci=i;var s=sg[i];nt.textContent=s.title;na.textContent=s.artist||'';A.src=s.url;A.play().catch(function(){});pB.textContent='⏸';es.style.display='none';
+function playS(i){if(i<0||i>=sg.length)return;ci=i;var s=sg[i];nt.textContent=s.title;na.textContent=s.artist||'';rB.value=0;cT.textContent='00:00';tT.textContent='00:00';A.src=s.url;A.play().catch(function(){});pB.textContent='⏸';es.style.display='none';
   // 解析歌词：优先用 song 里的 lrc，否则尝试加载同名 .lrc 文件
   loadLyrics(s);
 var _pos=loadPos(s.url),_lastSave=0;
-A.ontimeupdate=function(){if(A.duration&&isFinite(A.duration)&&!dragging){rB.value=(A.currentTime/A.duration)*1000;cT.textContent=f(A.currentTime);syncLyrics(A.currentTime)}if(A.currentTime-_lastSave>5){savePos(s.url,A.currentTime,A.duration);_lastSave=A.currentTime}};A.onloadedmetadata=function(){tT.textContent=f(A.duration);if(_pos&&_pos.t>0&&(!A.duration||_pos.t<A.duration-3)){A.currentTime=_pos.t}up()};A.ondurationchange=function(){if(isFinite(A.duration))tT.textContent=f(A.duration)};A.onended=function(){clearPos(s.url);rB.value=0;cT.textContent='00:00';nx()};A.onerror=function(){rB.value=0;cT.textContent='00:00';nx()};up();}
+A.ontimeupdate=function(){if(A.duration&&isFinite(A.duration)&&!dragging){rB.value=(A.currentTime/A.duration)*1000;cT.textContent=f(A.currentTime);syncLyrics(A.currentTime)}if(A.currentTime-_lastSave>5){savePos(s.url,A.currentTime,A.duration);_lastSave=A.currentTime}};A.onloadedmetadata=function(){tT.textContent=f(A.duration);if(_pos&&_pos.t>0&&(!A.duration||_pos.t<A.duration-3)){A.currentTime=_pos.t;rB.value=(_pos.t/A.duration)*1000;cT.textContent=f(_pos.t);_lastSave=_pos.t}up()};A.ondurationchange=function(){if(isFinite(A.duration))tT.textContent=f(A.duration)};A.onended=function(){clearPos(s.url);rB.value=0;cT.textContent='00:00';nx()};A.onerror=function(){rB.value=0;cT.textContent='00:00';nx()};up();}
 function togP(){if(!sg.length)return;if(ci<0){playS(0);return}if(A.paused){A.play().catch(function(){});pB.textContent='⏸'}else{A.pause();pB.textContent='▶'}}
 function nx(){if(!sg.length)return;var n;if(shf)do{n=Math.floor(Math.random()*sg.length)}while(n===ci&&sg.length>1);else{n=ci+1;if(n>=sg.length)n=0}playS(n)}
 function pr(){if(A.currentTime>3){A.currentTime=0;return}var p=ci-1;if(p<0)p=sg.length-1;playS(p)}

@@ -235,6 +235,7 @@ function backToAlbums(){
 function playS(i){
   if(i<0||i>=sg.length)return;ci=i;var s=sg[i];
   nt.textContent=s.title;na.textContent=(s.album||s.artist||'');
+  rB.value=0;cT.textContent='00:00';tT.textContent='00:00';
   A.src=s.url;A.play().catch(function(){});pB.textContent='⏸';
   // 右侧面板
   es.style.display='none';coverIcon.style.display='block';infoPanel.style.display='block';progressPanel.style.display='block';
@@ -253,7 +254,7 @@ function playS(i){
     }
     if(A.currentTime-_lastSave>5){savePos(s.url,A.currentTime,A.duration);_lastSave=A.currentTime}
   };
-  A.onloadedmetadata=function(){tT.textContent=f(A.duration);infoTotal.textContent=f(A.duration);if(_pos&&_pos.t>0&&(!A.duration||_pos.t<A.duration-3)){A.currentTime=_pos.t}};
+  A.onloadedmetadata=function(){tT.textContent=f(A.duration);infoTotal.textContent=f(A.duration);if(_pos&&_pos.t>0&&(!A.duration||_pos.t<A.duration-3)){A.currentTime=_pos.t;rB.value=(_pos.t/A.duration)*1000;cT.textContent=f(_pos.t);infoCurr.textContent=f(_pos.t);_lastSave=_pos.t}};
   A.ondurationchange=function(){if(isFinite(A.duration)){tT.textContent=f(A.duration);infoTotal.textContent=f(A.duration)}};
   A.onended=function(){clearPos(s.url);rB.value=0;cT.textContent='00:00';infoCurr.textContent='00:00';pdPercent.textContent='0%';pdFill.style.width='0%';seekNext()};
   A.onerror=function(){rB.value=0;cT.textContent='00:00';es.style.display='flex';coverIcon.style.display='none';infoPanel.style.display='none';progressPanel.style.display='none';ht.textContent='加载失败，请重试';pB.textContent='▶'};

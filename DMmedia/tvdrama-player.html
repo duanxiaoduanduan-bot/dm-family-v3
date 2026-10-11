@@ -230,12 +230,13 @@ function playEp(j){
   var s=curSeries();if(!s||!s.episodes||!s.episodes[j])return;ei=j;
   var ep=s.episodes[j];
   nt.textContent=s.name+' - '+ep.title;na.textContent=(j+1)+'/'+s.episodes.length+'集';
+  rB.value=0;cT.textContent='00:00';tT.textContent='00:00';
   V.src=ep.file||ep.url;V.play().catch(function(){});
   V.volume=volBar.value/100;
   pB.textContent='⏸';vo.style.display='none';es.style.display='none';V.style.display='block';
   saveTvState();
   var _k=ep.file||ep.url,_pos=loadPos(_k),_lastSave=0;
-  V.ontimeupdate=function(){if(V.duration&&isFinite(V.duration)&&!dragging){rB.value=(V.currentTime/V.duration)*1000;cT.textContent=f(V.currentTime)}if(V.currentTime-_lastSave>5){savePos(_k,V.currentTime,V.duration);_lastSave=V.currentTime}};V.onloadedmetadata=function(){tT.textContent=f(V.duration);if(_pos&&_pos.t>0&&(!V.duration||_pos.t<V.duration-3)){V.currentTime=_pos.t}};V.ondurationchange=function(){if(isFinite(V.duration))tT.textContent=f(V.duration)};V.onended=function(){clearPos(_k);rB.value=0;cT.textContent='00:00';nextEp()};V.onerror=function(){rB.value=0;cT.textContent='00:00';nextEp()};
+  V.ontimeupdate=function(){if(V.duration&&isFinite(V.duration)&&!dragging){rB.value=(V.currentTime/V.duration)*1000;cT.textContent=f(V.currentTime)}if(V.currentTime-_lastSave>5){savePos(_k,V.currentTime,V.duration);_lastSave=V.currentTime}};V.onloadedmetadata=function(){tT.textContent=f(V.duration);if(_pos&&_pos.t>0&&(!V.duration||_pos.t<V.duration-3)){V.currentTime=_pos.t;rB.value=(_pos.t/V.duration)*1000;cT.textContent=f(_pos.t);_lastSave=_pos.t}};V.ondurationchange=function(){if(isFinite(V.duration))tT.textContent=f(V.duration)};V.onended=function(){clearPos(_k);rB.value=0;cT.textContent='00:00';nextEp()};V.onerror=function(){rB.value=0;cT.textContent='00:00';nextEp()};
   V.onplay=function(){pB.textContent='⏸';vo.style.display='none'};V.onpause=function(){pB.textContent='▶';vo.style.display='flex'};V.onclick=function(e){e.stopPropagation();togP()};
   renderEpBar();up();
 }

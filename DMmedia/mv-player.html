@@ -228,6 +228,7 @@ async function loadList(){
 
 function playS(i){if(i<0||i>=sg.length)return;ci=i;var s=sg[i];nt.textContent=s.title;na.textContent=s.artist||'';fvTitle.textContent=s.title;
   var url=s.url;
+  rB.value=0;cT.textContent='00:00';tT.textContent='00:00';
   [V,FV].forEach(function(el){el.src=url;el.load()});
   var av=activeV();
   av.play().catch(function(){});
@@ -239,7 +240,7 @@ function playS(i){if(i<0||i>=sg.length)return;ci=i;var s=sg[i];nt.textContent=s.
   var _pos=loadPos(url),_lastSave=0;
   var bind=function(el){
     el.ontimeupdate=function(){if(el.duration&&isFinite(el.duration)&&!dragging){rB.value=(el.currentTime/el.duration)*1000;cT.textContent=f(el.currentTime)}if(el.currentTime-_lastSave>5){savePos(url,el.currentTime,el.duration);_lastSave=el.currentTime}};
-    el.onloadedmetadata=function(){tT.textContent=f(el.duration);if(_pos&&_pos.t>0&&(!el.duration||_pos.t<el.duration-3)){el.currentTime=_pos.t}up()};
+    el.onloadedmetadata=function(){tT.textContent=f(el.duration);if(_pos&&_pos.t>0&&(!el.duration||_pos.t<el.duration-3)){el.currentTime=_pos.t;rB.value=(_pos.t/el.duration)*1000;cT.textContent=f(_pos.t);_lastSave=_pos.t}up()};
     el.ondurationchange=function(){if(isFinite(el.duration))tT.textContent=f(el.duration)};
     el.onended=function(){clearPos(url);rB.value=0;cT.textContent='00:00';nx()};
     el.onerror=function(){rB.value=0;cT.textContent='00:00';nx()};
