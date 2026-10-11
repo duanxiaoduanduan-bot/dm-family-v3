@@ -327,3 +327,17 @@ db-manager.html 顶栏新增「📦 整库导出」「📥 整库导入」，用
 - 默认导出勾掉 `stats_features`（它是按库同步的镜像表，不该跟着走）。
 
 **部署**：`git push` → Ubuntu `git checkout origin/main -- DMgeo/` → `sudo supervisorctl -c DMcore/supervisor/supervisord.conf restart dm-DMgeo`。
+
+**实测记录（2026-10-11 · Ubuntu 192.168.1.9 · PostgreSQL 18.6 + PostGIS）**
+
+真实库往返回归通过：源库 5 行（含中文、NULL 几何、`&`/引号特殊字符、JSONB、`numeric(8,2)`、`varchar(32)`、`SERIAL` 主键、GIST 索引）**导出→导入新库后内容指纹完全一致**（`md5(string_agg(...))`：源=目标）；列定义/几何子类型 `Point`/SRID 4326/空间索引/主键均正确还原；`setval` 归位后 `nextval` 返回 6。冲突处理（改名备份 `places_bak_<时间戳>`）、dryRun 冲突探测均验证通过。
+
+**测试中抓到并修掉的 3 个真 bug**
+
+1. 导入到**不存在的库**时报 `database "xxx" does not exist` —— `ensureFeatureStore` 只补 postgis/表，**不负责 CREATE DATABASE**。补：导入前先查 `pg_database`，缺则 `CREATE DATABASE ... OWNER dmuser` 并回报 `autoCreated`。
+2. `SERIAL` 列把原 DEFAULT `nextval('places_id_seq')` 原样带过来 → 新库无该序列，建表失败 `relation "places_id_seq" does not exist`。改：识别 `nextval(...)` 默认值后改写成显式 `SERIAL/BIGSERIAL/SMALLSERIAL`（按内部类型 int4/int8/int2 判），导入后由 `setval` 归位。
+3. 主键未导出 → 数据完整性退化。补：`dumpDatabase` 读 `pg_index.indisprimary` 导出 `primaryKey`，导入后 `ALTER TABLE ... ADD PRIMARY KEY(...)`。
+
+另：dryRun 阶段挪到建库之前（避免对不存在的库开连接）；归档含几何列而目标库无 PostGIS 时，给出**可操作的中文错误**（附 `sudo -u postgres psql -d <库> -c "CREATE EXTENSION postgis;"`），不再抛误导性的 `type "geometry" does not exist`。
+
+> 注意：服务以 `dmuser` 运行，**无权限给新库装 PostGIS**（`dmuser` 非 superuser）。整库导入到全新库时需先由超级用户装好扩展，或由安装脚本预置。此为既有权限模型，本次未改动。

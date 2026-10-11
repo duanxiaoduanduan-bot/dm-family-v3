@@ -610,6 +610,17 @@ async function handlePgApi(req, res, reqPath, method) {
     }
     if (u === 'jsonb') return 'JSONB';
     if (u === 'json') return 'JSON';
+    // 关键：SERIAL 列（默认值形如 nextval('xxx_seq')）不能原样带 DEFAULT——
+    // 旧序列名在新库里不存在，建表会直接失败（relation "xxx_id_seq" does not exist）。
+    // 改成显式 SERIAL/BIGSERIAL，让 PostgreSQL 自己建对应的新序列，导入后由 setval 归位。
+    // 用原始类型名判大小（int4→SERIAL / int8→BIGSERIAL / int2→SMALLSERIAL）。
+    const isSerial = /^nextval\(/i.test(String(c.columnDefault || '').trim());
+    if (isSerial) {
+      const base = /^int8$/i.test(u) ? 'BIGSERIAL' : /^int2$/i.test(u) ? 'SMALLSERIAL' : 'SERIAL';
+      let sdef = base;
+      if (c.isNullable === 'NO') sdef += ' NOT NULL';
+      return sdef;
+    }
     // 用 format_type 的完整类型最稳（varchar(n)/numeric(10,2)/timestamp without time zone 全都对）
     let def = c.fullType || c.dataType || 'TEXT';
     if (c.isNullable === 'NO') def += ' NOT NULL';
@@ -657,13 +668,22 @@ async function handlePgApi(req, res, reqPath, method) {
       }));
       const geomCols = cols.filter(c => c.udt === 'geometry').map(c => c.name);
 
+      // 主键列（还原时补 PRIMARY KEY，保住数据完整性）
+      const pkR = await p.query(
+        `SELECT a.attname AS col FROM pg_index i
+         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+         WHERE i.indrelid = $1::regclass AND i.indisprimary ORDER BY a.attnum`,
+        [tn]
+      ).catch(() => ({ rows: [] }));
+      const primaryKey = pkR.rows.map(r => r.col);
+
       // 数据：几何列转 GeoJSON 文本
       const selectParts = cols.map(c =>
         geomCols.includes(c.name) ? `ST_AsGeoJSON("${c.name}") AS "${c.name}__geojson"` : qIdent(c.name)
       );
       const dataR = await p.query(`SELECT ${selectParts.join(', ')} FROM ${qIdent(tn)}`);
 
-      tables[tn] = { columns: cols, geomColumns: geomCols, rows: dataR.rows };
+      tables[tn] = { columns: cols, geomColumns: geomCols, primaryKey, rows: dataR.rows };
     }
     return {
       format: 'dmgeo-zsql',
@@ -706,21 +726,20 @@ async function handlePgApi(req, res, reqPath, method) {
       const decisions = body.decisions || {};
       const onConflict = body.onConflict || 'ask';
 
-      // 先确保目标库存在且结构齐备（含 PostGIS + features + 授权）
-      const created = await ensureFeatureStore(target, true);
-
-      const p = getFeaturePool(target);
-      const tblR = await p.query(
-        `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`
-      );
-      const existing = new Set(tblR.rows.map(r => r.table_name));
-      const names = Object.keys(tables);
-
-      // dryRun：只回报冲突情况，前端据此弹窗让用户逐表决定
+      // dryRun：只回报冲突情况，前端据此弹窗让用户逐表决定（此阶段不建库、不改任何东西）
       if (body.dryRun) {
+        const dbR = await adminPool.query(`SELECT 1 FROM pg_database WHERE datname=$1`, [target]);
+        let existing = new Set();
+        if (dbR.rows.length) {
+          const tblR0 = await getFeaturePool(target).query(
+            `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`
+          );
+          existing = new Set(tblR0.rows.map(r => r.table_name));
+        }
         return sendJson(res, 200, {
           ok: true, dryRun: true, database: target,
-          tables: names.map(n => ({
+          databaseExists: dbR.rows.length > 0,
+          tables: Object.keys(tables).map(n => ({
             name: n,
             rows: (tables[n].rows || []).length,
             columns: (tables[n].columns || []).length,
@@ -728,6 +747,43 @@ async function handlePgApi(req, res, reqPath, method) {
           }))
         });
       }
+
+      // 目标库不存在则先建（ensureFeatureStore 只补 postgis/表，不负责 CREATE DATABASE）
+      const dbExistsR = await adminPool.query(`SELECT 1 FROM pg_database WHERE datname=$1`, [target]);
+      let autoCreated = false;
+      if (!dbExistsR.rows.length) {
+        await adminPool.query(`CREATE DATABASE ${qIdent(target)} OWNER dmuser`);
+        autoCreated = true;
+      }
+
+      // 确保目标库结构齐备（含 PostGIS + features + 授权）
+      const created = await ensureFeatureStore(target, true);
+
+      // 前置检查：归档里若有几何列，目标库必须已装 postgis，否则建表会在
+      // `type "geometry" does not exist` 上报错（信息很误导）。这里提前给出可操作提示。
+      const needsPostgis = Object.keys(tables).some(tn =>
+        (tables[tn].geomColumns || []).length > 0 ||
+        (tables[tn].columns || []).some(c => (c.udt || '').toLowerCase() === 'geometry')
+      );
+      if (needsPostgis) {
+        const extR = await getFeaturePool(target).query(
+          `SELECT 1 FROM pg_extension WHERE extname='postgis'`
+        ).catch(() => ({ rows: [] }));
+        if (!extR.rows.length) {
+          return sendJson(res, 400, {
+            error: `目标库 ${target} 缺少 PostGIS 扩展，无法还原几何列。` +
+              `请在服务器上以超级用户执行： sudo -u postgres psql -d "${target}" -c "CREATE EXTENSION postgis;"` +
+              ` 然后重试导入。（服务以 dmuser 运行，无权限自行安装扩展）`
+          });
+        }
+      }
+
+      const p = getFeaturePool(target);
+      const tblR = await p.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`
+      );
+      const existing = new Set(tblR.rows.map(r => r.table_name));
+      const names = Object.keys(tables);
 
       const results = [];
       // 单事务：全部成功才提交，失败整体回滚
@@ -759,6 +815,11 @@ async function handlePgApi(req, res, reqPath, method) {
           // 建表：列定义原样还原
           const colDefs = cols.map(c => `${qIdent(c.name)} ${buildColumnDef(c)}`).join(', ');
           await client.query(`CREATE TABLE ${qIdent(workName)} (${colDefs || 'id SERIAL PRIMARY KEY'})`);
+          // 还原主键（pn 去重：SERIAL 列在 buildColumnDef 里没带 PRIMARY KEY，这里统一加）
+          const pk = (t.primaryKey || []).filter(c => cols.some(x => x.name === c));
+          if (pk.length) {
+            await client.query(`ALTER TABLE ${qIdent(workName)} ADD PRIMARY KEY (${pk.map(qIdent).join(', ')})`);
+          }
           // 几何列补空间索引（照抄原表习惯）
           for (const gc of geomCols) {
             await client.query(`CREATE INDEX IF NOT EXISTS ${qIdent('idx_' + workName + '_' + gc)} ON ${qIdent(workName)} USING GIST (${qIdent(gc)})`);
@@ -789,7 +850,7 @@ async function handlePgApi(req, res, reqPath, method) {
         client.release();
       }
 
-      return sendJson(res, 200, { ok: true, database: target, restored: results, initWarning: created && created.ok === false ? created.notes : undefined });
+      return sendJson(res, 200, { ok: true, database: target, autoCreated, restored: results, initWarning: created && created.ok === false ? created.notes : undefined });
     } catch (e) { return sendJson(res, 400, { error: e.message }); }
   }
 
