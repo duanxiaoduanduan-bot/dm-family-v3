@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 8081;
 const ROOT = __dirname;
@@ -20,18 +21,47 @@ const DEFAULT_PATHS = {
   geodata:  { dir: './geodata',  scanType: 'geodata',        exts: [] }
 };
 
+function generateId() {
+  try { return crypto.randomUUID(); }
+  catch (e) { return 's_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+}
+
 function loadConfig() {
+  let raw = null;
   try {
     if (fs.existsSync(CONFIG_PATH)) {
-      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-      const merged = {};
-      for (const key of Object.keys(DEFAULT_PATHS)) {
-        merged[key] = { ...DEFAULT_PATHS[key], ...(raw.paths?.[key] || {}) };
-      }
-      return { paths: merged, siteName: raw.siteName || '杨鑫瑞资料合集' };
+      raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     }
   } catch (e) { console.error('Failed to load config, using defaults:', e.message); }
-  return { paths: { ...DEFAULT_PATHS }, siteName: '杨鑫瑞资料合集' };
+
+  const merged = {};
+  for (const key of Object.keys(DEFAULT_PATHS)) {
+    merged[key] = { ...DEFAULT_PATHS[key], ...((raw && raw.paths && raw.paths[key]) || {}) };
+  }
+
+  // serverId：每台机器唯一标识，缺失则生成并持久化
+  let serverId = (raw && raw.serverId) || '';
+  if (!serverId) {
+    serverId = generateId();
+    try {
+      const toWrite = {
+        paths: (raw && raw.paths) || DEFAULT_PATHS,
+        serverId,
+        remotes: (raw && Array.isArray(raw.remotes)) ? raw.remotes : [],
+        siteName: (raw && raw.siteName) || '断断资料合集'
+      };
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(toWrite, null, 2));
+    } catch (e) { console.error('Failed to persist serverId:', e.message); }
+  }
+
+  const remotes = (raw && Array.isArray(raw.remotes)) ? raw.remotes : [];
+
+  return {
+    paths: merged,
+    siteName: (raw && raw.siteName) || '断断资料合集',
+    serverId,
+    remotes
+  };
 }
 
 function saveConfig(config) {
@@ -268,50 +298,166 @@ function scanAlbumWithCache() {
   return albums;
 }
 
+// ===== 转播服务器（remotes）聚合 =====
+
+// 请求远端某个 list 的 JSON，失败/超时返回 null（静默降级）
+function fetchRemoteJson(remote, listName, timeoutMs) {
+  const t = timeoutMs || 4000;
+  let target;
+  try { target = remote.url.replace(/\/+$/, '') + '/' + listName + '.json'; }
+  catch (e) { return Promise.resolve(null); }
+  return new Promise((resolve) => {
+    const req = http.get(target, { timeout: t }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return resolve(null); }
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch (e) { resolve(null); } });
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+  });
+}
+
+// 远端条目的 file 改写为 remote/<id>/<原路径>
+function prefixRemoteFile(file, rid) {
+  if (!file) return file;
+  const f = String(file);
+  if (f.startsWith('remote/')) return f;
+  return 'remote/' + rid + '/' + f;
+}
+
+// 按 list 类型合并本机 + 远端数据
+function mergeByList(localData, remoteData, remote, listName) {
+  const rid = remote.id;
+  const rname = remote.name || rid;
+  if (listName === 'tvdrama-list') {
+    const rs = (remoteData && Array.isArray(remoteData.series)) ? remoteData.series
+             : (Array.isArray(remoteData) ? remoteData : []);
+    const mapped = rs.map((s) => ({
+      ...s,
+      id: 'r_' + rid + '_' + (s.id || ''),
+      name: rname + ' · ' + (s.name || ''),
+      episodes: (s.episodes || []).map((ep) => ({ ...ep, file: prefixRemoteFile(ep.file, rid) }))
+    }));
+    return (Array.isArray(localData) ? localData : []).concat(mapped);
+  }
+  if (listName === 'album-list') {
+    const ra = Array.isArray(remoteData) ? remoteData : [];
+    const mapped = ra.map((a) => ({
+      ...a,
+      name: rname + ' · ' + (a.name || ''),
+      photos: (a.photos || []).map((p) => ({ ...p, file: prefixRemoteFile(p.file, rid) })),
+      videos: (a.videos || []).map((v) => ({ ...v, file: prefixRemoteFile(v.file, rid) }))
+    }));
+    return (Array.isArray(localData) ? localData : []).concat(mapped);
+  }
+  // 扁平列表：music/video/book/pdf/audio
+  const ra = Array.isArray(remoteData) ? remoteData : [];
+  const mapped = ra.map((it) => ({
+    ...it,
+    _remote: rname,
+    file: prefixRemoteFile(it.file, rid)
+  }));
+  return (Array.isArray(localData) ? localData : []).concat(mapped);
+}
+
+// 聚合响应：本机 + 全部在线 remote；shape = 'flat' | 'series'
+async function respondAggregated(res, listName, localFactory, shape) {
+  try {
+    let merged = localFactory();
+    const remotes = (config.remotes || []).filter((r) => r && r.enabled && r.url);
+    if (remotes.length) {
+      const results = await Promise.all(remotes.map((r) => fetchRemoteJson(r, listName)));
+      remotes.forEach((remote, i) => {
+        if (results[i] != null) merged = mergeByList(merged, results[i], remote, listName);
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
+    const body = shape === 'series' ? { series: merged } : merged;
+    res.end(JSON.stringify(body));
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: e.message }));
+  }
+}
+
+// 反向代理到远端（透传 Range，支持视频拖动）
+function proxyToRemote(remote, rest, req, res) {
+  let target;
+  try { target = remote.url.replace(/\/+$/, '') + '/' + rest; }
+  catch (e) { res.writeHead(404); return res.end('Bad remote url'); }
+
+  const headers = { ...req.headers };
+  try { headers.host = new URL(target).host; } catch (e) {}
+
+  const upstream = http.request(target, { method: req.method, headers }, (upRes) => {
+    res.writeHead(upRes.statusCode || 502, upRes.headers);
+    upRes.pipe(res);
+  });
+  upstream.on('error', () => {
+    try { if (!res.headersSent) res.writeHead(502); res.end('Upstream unreachable'); } catch (e) {}
+  });
+  req.pipe(upstream);
+}
+
+// 探测远端是否在线 + 取身份（/api/hello）
+function probeRemote(url, timeoutMs) {
+  const t = timeoutMs || 5000;
+  let target;
+  try { target = url.replace(/\/+$/, '') + '/api/hello'; }
+  catch (e) { return Promise.resolve(null); }
+  return new Promise((resolve) => {
+    const req = http.get(target, { timeout: t }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return resolve(null); }
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch (e) { resolve(null); } });
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+  });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let reqPath = decodeURIComponent(url.pathname);
 
-  // JSON 请求 → 缓存扫描（每次请求都检查 mtime，变化时重新扫描）
+  // JSON 请求 → 缓存扫描 + 转播服务器聚合（远端离线自动降级，只剩本机）
   if (reqPath === '/music-list.json') {
-    const cfg = config.paths.music;
-    const data = scanWithCache(resolveDir(cfg), cfg.exts, 'music-list', true, 'media/music/');
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
-    return res.end(JSON.stringify(data));
+    return respondAggregated(res, 'music-list', () => {
+      const cfg = config.paths.music;
+      return scanWithCache(resolveDir(cfg), cfg.exts, 'music-list', true, 'media/music/');
+    }, 'flat');
   }
   if (reqPath === '/book-list.json') {
-    const cfg = config.paths.book;
-    const data = scanWithCache(resolveDir(cfg), cfg.exts, 'book-list', true, 'media/book/');
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
-    return res.end(JSON.stringify(data));
+    return respondAggregated(res, 'book-list', () => {
+      const cfg = config.paths.book;
+      return scanWithCache(resolveDir(cfg), cfg.exts, 'book-list', true, 'media/book/');
+    }, 'flat');
   }
   if (reqPath === '/pdf-list.json') {
-    const cfg = config.paths.pdf;
-    const data = scanWithCache(resolveDir(cfg), cfg.exts, 'pdf-list', false, 'media/pdf/');
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
-    return res.end(JSON.stringify(data));
+    return respondAggregated(res, 'pdf-list', () => {
+      const cfg = config.paths.pdf;
+      return scanWithCache(resolveDir(cfg), cfg.exts, 'pdf-list', false, 'media/pdf/');
+    }, 'flat');
   }
   if (reqPath === '/audio-list.json') {
-    const cfg = config.paths.audio;
-    const data = scanWithCache(resolveDir(cfg), cfg.exts, 'audio-list', true, 'media/audio/');
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
-    return res.end(JSON.stringify(data));
+    return respondAggregated(res, 'audio-list', () => {
+      const cfg = config.paths.audio;
+      return scanWithCache(resolveDir(cfg), cfg.exts, 'audio-list', true, 'media/audio/');
+    }, 'flat');
   }
   if (reqPath === '/tvdrama-list.json') {
-    const data = scanSeriesWithCache();
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
-    return res.end(JSON.stringify({ series: data }));
+    return respondAggregated(res, 'tvdrama-list', () => scanSeriesWithCache(), 'series');
   }
   if (reqPath === '/video-list.json') {
-    const cfg = config.paths.video;
-    const data = scanWithCache(resolveDir(cfg), cfg.exts, 'video-list', true, 'media/video/');
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
-    return res.end(JSON.stringify(data));
+    return respondAggregated(res, 'video-list', () => {
+      const cfg = config.paths.video;
+      return scanWithCache(resolveDir(cfg), cfg.exts, 'video-list', true, 'media/video/');
+    }, 'flat');
   }
   if (reqPath === '/album-list.json') {
-    const data = scanAlbumWithCache();
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
-    return res.end(JSON.stringify(data));
+    return respondAggregated(res, 'album-list', () => scanAlbumWithCache(), 'flat');
   }
 
   // GET /api/browse → 浏览目录
@@ -436,6 +582,96 @@ const server = http.createServer((req, res) => {
     });
   }
 
+  // ====== 转播握手 /api/hello 与 /api/remotes ======
+
+  // GET /api/hello → 本机身份（供对端识别/握手）
+  if (reqPath === '/api/hello' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
+    return res.end(JSON.stringify({
+      serverId: config.serverId,
+      siteName: config.siteName,
+      port: PORT,
+      mediaTypes: Object.keys(config.paths)
+    }));
+  }
+
+  // GET /api/remotes → 列表 + 在线状态
+  if (reqPath === '/api/remotes' && req.method === 'GET') {
+    const remotes = (config.remotes || []).map((r) => ({ ...r }));
+    Promise.all(remotes.map((r) => probeRemote(r.url)))
+      .then((probes) => {
+        remotes.forEach((r, i) => { r.online = !!probes[i]; });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
+        res.end(JSON.stringify({ remotes, selfId: config.serverId }));
+      })
+      .catch(() => {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'failed to probe remotes' }));
+      });
+    return;
+  }
+
+  // POST /api/remotes → 握手添加（验证对方 /api/hello 可达后登记）
+  if (reqPath === '/api/remotes' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', async () => {
+      try {
+        const update = JSON.parse(body || '{}');
+        const remoteUrl = String(update.url || '').trim();
+        if (!/^https?:\/\//i.test(remoteUrl)) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ ok: false, error: 'URL 需以 http:// 或 https:// 开头' }));
+        }
+        const hello = await probeRemote(remoteUrl);
+        if (!hello) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ ok: false, error: '握手失败：无法连接到对方 /api/hello' }));
+        }
+        const id = hello.serverId || ('r_' + generateId());
+        const name = String(update.name || '').trim() || hello.siteName || id;
+        const entry = { id, name, url: remoteUrl.replace(/\/+$/, ''), enabled: true };
+        const remotes = config.remotes || [];
+        const existing = remotes.find((r) => r.id === id);
+        if (existing) { Object.assign(existing, entry); }
+        else { remotes.push(entry); }
+        config.remotes = remotes;
+        saveConfig(config);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: true, remote: entry, online: true }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // DELETE /api/remotes?id=xxx → 删除
+  if (reqPath === '/api/remotes' && req.method === 'DELETE') {
+    const id = url.searchParams.get('id');
+    config.remotes = (config.remotes || []).filter((r) => r.id !== id);
+    saveConfig(config);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
+  // POST /api/remotes/reconnect → 一键重连（探测全部，返回状态）
+  if (reqPath === '/api/remotes/reconnect' && req.method === 'POST') {
+    const remotes = (config.remotes || []).map((r) => ({ ...r }));
+    Promise.all(remotes.map((r) => probeRemote(r.url)))
+      .then((probes) => {
+        remotes.forEach((r, i) => { r.online = !!probes[i]; });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...NO_CACHE_HEADERS });
+        res.end(JSON.stringify({ ok: true, remotes }));
+      })
+      .catch(() => {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'failed to reconnect' }));
+      });
+    return;
+  }
+
   // ====== GET /api/ip → 获取本机 IP ======
   if (reqPath === '/api/ip' && req.method === 'GET') {
     const os = require('os');
@@ -466,6 +702,18 @@ const server = http.createServer((req, res) => {
       }
       res.writeHead(403); return res.end('Forbidden');
     }
+  }
+
+  // /remote/<id>/<rest> → 反代到转播服务器（透传 Range）
+  if (reqPath.startsWith('/remote/') || reqPath.startsWith('remote/')) {
+    const without = reqPath.replace(/^\/?remote\//, '');
+    const slash = without.indexOf('/');
+    if (slash <= 0) { res.writeHead(400); return res.end('Bad remote path'); }
+    const remoteId = without.slice(0, slash);
+    const rest = without.slice(slash + 1);
+    const remote = (config.remotes || []).find((r) => r && r.id === remoteId && r.enabled);
+    if (!remote) { res.writeHead(404); return res.end('Remote not found'); }
+    return proxyToRemote(remote, rest, req, res);
   }
 
   const filePath = path.join(ROOT, reqPath);
