@@ -1600,6 +1600,9 @@ function importGeoJSON(geojson,name){
     if(!f.geometry)return;var props=f.properties||{};
     // 数据库主键（形如 f_564）；回读时落到 dbId，删除/编辑才能真正命中后端
     var dbId=f.id||null;
+    // 让库主键同时占据客户端 id：buildGeoJSON 写出的 clientId 从此稳定为库主键，
+    // 后端 UPSERT 不管按 dbId 还是 clientId 都能命中同一条 —— 杜绝自动保存反复新增。
+    if(dbId&&props.clientId!==dbId)props.clientId=dbId;
     var gt=f.geometry.type, coord=f.geometry.coordinates;
     if(gt==='MultiPoint'){gt='Point';if(coord.length)coord=coord[0];}
     else if(gt==='MultiLineString'){gt='LineString';if(coord.length)coord=coord[0];}

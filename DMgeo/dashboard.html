@@ -115,6 +115,12 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 .path-card.open .path-chevron{transform:rotate(90deg);color:#6c5ce7}
 .path-name{flex:1;font-size:13px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .path-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:#888;flex-shrink:0}
+/* 路径卡片头部缩略图（媒体条目；同时可作攻略缩略图） */
+.pc-thumb{width:34px;height:34px;object-fit:cover;border-radius:6px;flex-shrink:0;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04)}
+.pc-thumb-video{display:flex;align-items:center;justify-content:center;font-size:15px;color:#a29bfe}
+/* 节点行缩略图（媒体挂钩节点，照片即攻略缩略图） */
+.stop-thumb{width:30px;height:30px;object-fit:cover;border-radius:5px;flex-shrink:0;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04)}
+.stop-thumb-video{display:flex;align-items:center;justify-content:center;font-size:14px;color:#a29bfe}
 .path-detail{max-height:0;overflow:hidden;transition:max-height .3s ease;background:rgba(0,0,0,.18)}
 .path-card.open .path-detail{max-height:440px}
 .path-detail-inner{padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.04)}
@@ -125,25 +131,6 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 .path-pts .st-name{color:#cdb4ff;font-weight:600}
 .path-pts .st-coord{color:#666;font-size:9px;margin-left:8px}
 .path-pts .st-plain{color:#777}
-
-/* 路径总览：媒体分组（文件路径清单 / 拍摄轨迹） */
-.media-sec{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:10px;margin-bottom:8px;overflow:hidden}
-.media-sec-head{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;transition:background .2s;font-size:12px;color:#ddd}
-.media-sec-head:hover{background:rgba(255,255,255,.04)}
-.media-sec-head .ms-ico{font-size:12px}
-.media-sec-head .ms-cnt{margin-left:auto;font-size:10px;color:#888;flex-shrink:0}
-.media-sec-head .ms-chevron{color:#666;font-size:10px;transition:transform .2s;flex-shrink:0}
-.media-sec.open .media-sec-head .ms-chevron{transform:rotate(90deg);color:#6c5ce7}
-.media-sec-body{max-height:0;overflow:hidden;transition:max-height .3s ease;background:rgba(0,0,0,.18)}
-.media-sec.open .media-sec-body{max-height:520px;overflow-y:auto}
-.media-row{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid rgba(255,255,255,.03);font-size:11px}
-.media-row:hover{background:rgba(255,255,255,.03)}
-.media-row .mr-name{color:#ddd;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.media-row .mr-path{font-family:monospace;font-size:10px;color:#6fb3a8;max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
-.media-row .mr-coord{font-family:monospace;font-size:10px;color:#777;flex-shrink:0}
-.media-row .mr-open{color:#6c5ce7;cursor:pointer;flex-shrink:0;font-size:11px;text-decoration:none}
-.media-row .mr-open:hover{color:#a29bfe}
-.media-empty{padding:10px 12px;font-size:11px;color:#666}
 
 /* 进度条 */
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
@@ -636,18 +623,22 @@ function flatCoords(geom){
   return [];
 }
 
+// 路径总览共享状态：站点索引 + 就近查找（供 renderPathCard 使用）
+var stationIdxRef={};
+var nearestStationRef=function(){return null;};
+
 function renderPathsOverview(mapData){
   if(!mapData||!mapData.features){
     $('pathsOverview').innerHTML='<div class="empty">暂无路径数据</div>';return;
   }
-  // 路径总览：①线路径（LineString/MultiLineString）②媒体文件路径清单 ③媒体拍摄轨迹
+  // 路径总览：①手画线路径（LineString/MultiLineString）②媒体轨迹（同一模具）
   var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='MultiLineString')});
   var mediaFeats=collectMediaFeatures(mapData);
 
-  // 建立站点索引（同库里有名字的点要素）。
-  // 注意：路径顶点与站点要素是两条独立数据，坐标常有几米级偏差（例：枣林庄差 ~45m），
+  // 建立站点索引（同库里有名字的点要素），挂到模块级供共享渲染器 renderPathCard 使用。
+  // 注意：路径顶点与站点要素是两条独立数据，坐标常有几米级偏差（例：枣林庄差 ~41m），
   // 精确 toFixed(5) 匹配会把站点名丢掉 —— 因此同时保留精确表 + 列表，用于「精确 → 就近」两级匹配。
-  var stationIdx={};
+  stationIdxRef={};
   var stationList=[];
   mapData.features.forEach(function(f){
     if(!f.geometry)return;
@@ -661,13 +652,13 @@ function renderPathsOverview(mapData){
       cs.forEach(function(c){
         var lng=Number(c[0]),lat=Number(c[1]);
         if(!isFinite(lng)||!isFinite(lat))return;
-        stationIdx[lat.toFixed(5)+','+lng.toFixed(5)]=nm;
+        stationIdxRef[lat.toFixed(5)+','+lng.toFixed(5)]=nm;
         stationList.push({lng:lng,lat:lat,name:nm});
       });
     }
   });
   // 就近找站点名：容差内取最近的一个（默认 300m，覆盖数据录入/投影带来的微小漂移）
-  function nearestStation(lng,lat,tolM){
+  nearestStationRef=function(lng,lat,tolM){
     tolM=tolM||300;
     var best=null,bestD=tolM/1000; // km
     for(var s=0;s<stationList.length;s++){
@@ -676,78 +667,110 @@ function renderPathsOverview(mapData){
       if(dd<=bestD){bestD=dd;best=st.name;}
     }
     return best;
-  }
+  };
 
   var html='';
   for(var i=0;i<paths.length;i++){
     var p=paths[i],props=p.properties||{};
     var coords=flatCoords(p.geometry);
-    var isLine=true; // 路径总览只收线要素
-    var typeBadge='<span class="badge badge-path">路径</span>';
-
-    var metric,metricLabel;
-    if(isLine){
-      var d=0;
-      for(var j=1;j<coords.length;j++){
-        d+=haversineKm(coords[j-1][1],coords[j-1][0],coords[j][1],coords[j][0]);
-      }
-      metric=d<1?(d*1000).toFixed(0)+'m':d.toFixed(2)+'km';
-      metricLabel='长度';
-    }else{
-      metric=coords.length+' 顶点';
-      metricLabel='顶点';
-    }
-
-    // 途经站点（每条最多渲染前 300 个点；有名字的点要素显示站点名，否则退化为坐标）
-    var ptsHtml='';
-    var shown=Math.min(coords.length,300);
-    var namedCount=0;
-    for(var k=0;k<shown;k++){
-      var c=coords[k];
-      var lng=Number(c[0]),lat=Number(c[1]);
-      // 两级匹配：先精确（快、无歧义），再就近（容差 300m，兜住坐标漂移）
-      var st=stationIdx[lat.toFixed(5)+','+lng.toFixed(5)] || nearestStation(lng,lat);
-      if(st)namedCount++;
-      if(st){
-        ptsHtml+='<span class="pt"><b class="st-name">'+esc(st)+'</b><span class="st-coord">'+lat.toFixed(5)+', '+lng.toFixed(5)+'</span></span>';
-      }else{
-        ptsHtml+='<span class="pt st-plain">'+lat.toFixed(5)+', '+lng.toFixed(5)+'</span>';
-      }
-    }
-    if(coords.length>shown)ptsHtml+='<span class="pt st-plain">… 其余 '+(coords.length-shown)+' 点</span>';
-
-    var stationLabel=namedCount>0?('途经站点 ('+namedCount+')'):'轨迹点';
-    var mediaRow=props&&props.media?'<div class="pd-row"><span class="pd-label">媒体</span><span>'+esc(String(props.media))+'</span></div>':'';
-
-    var detail='<div class="path-detail"><div class="path-detail-inner">'+
-      '<div class="pd-row"><span class="pd-label">类型</span>'+typeBadge+'</div>'+
-      '<div class="pd-row"><span class="pd-label">'+metricLabel+'</span><span>'+metric+'</span></div>'+
-      '<div class="pd-row"><span class="pd-label">顶点数</span><span>'+coords.length+'</span></div>'+
-      mediaRow+
-      (props&&props.created?'<div class="pd-row"><span class="pd-label">创建</span><span>'+esc(String(props.created))+'</span></div>':'')+
-      '<div class="pd-label" style="margin:8px 0 2px">'+stationLabel+'</div>'+
-      '<div class="path-pts">'+ptsHtml+'</div>'+
-      '</div></div>';
-
-    html+='<div class="path-card" id="pathCard'+i+'">'+
-      '<div class="path-head" onclick="togglePath('+i+')">'+
-      '<span class="path-chevron">▶</span>'+
-      '<span class="path-name">'+esc(props.name||'未命名')+'</span>'+
-      typeBadge+
-      '<span class="path-meta">'+coords.length+'点 · '+metric+'</span>'+
-      '</div>'+detail+'</div>';
+    html+=renderPathCard(i,props.name||'未命名',coords,
+      '<span class="badge badge-path">路径</span>',props);
   }
-  // ── 路径总览追加：媒体（照片/视频）文件路径清单 + 拍摄轨迹 ──
-  html+=renderMediaPathSection(mediaFeats);
-  html+=renderMediaTrackSection(mediaFeats);
+
+  // ── 媒体（照片/视频）：每个媒体自己就是一条「路径」条目，与手画线**逐个并列** ──
+  // 断断：「直接按点来跟前面那个路径一样就行」→ 不揉成聚合线，一个媒体一张卡；
+  // 好处：下方「挂钩路径」下拉里能像选路径一样选照片，照片还能当攻略缩略图。
+  mediaFeats.forEach(function(m,mi){
+    html+=renderPathCard('m'+mi, m.name, [[m.lng,m.lat]],
+      m.mediaType==='video'
+        ?'<span class="badge badge-video">视频</span>'
+        :'<span class="badge badge-photo">照片</span>',
+      {name:m.name,mediaType:m.mediaType,thumbUrl:m.mediaType==='video'?'':m.file},
+      mediaMetaRow(m), true);
+  });
 
   if(!html)$('pathsOverview').innerHTML='<div class="empty">暂无路径</div>';
   else $('pathsOverview').innerHTML=html;
 }
 
-// 收集库内带媒体的点要素（照片/视频），返回统一结构
+// 通用「路径卡片」渲染 —— 手画线与媒体（照片/视频）共用同一模具
+// idx 为数字（手画线）或字符串（媒体 'm0'/'m1'…），用于 pathCard 的 id
+// isMedia=true 时按「单点媒体」展示（定位/缩略图），否则按多顶点路径展示
+function renderPathCard(idx,name,coords,typeBadge,props,metaExtra,isMedia){
+  var prefix=(typeof idx==='number')?'pathCard':'pathCard_';
+  var d=0;
+  for(var j=1;j<coords.length;j++){
+    d+=haversineKm(coords[j-1][1],coords[j-1][0],coords[j][1],coords[j][0]);
+  }
+  var metric=d<1?(d*1000).toFixed(0)+'m':d.toFixed(2)+'km';
+  var ptCount=coords.length;
+  // 单点（媒体）无长度可言 —— 头部与明细都用「—」占位，其余格式与手画线完全一致
+  var metricTxt=(ptCount<2)?'—':metric;
+
+  // 途经站点（最多渲染前 300 个点；有名字的点要素显示站点名，否则退化为坐标）
+  var ptsHtml='';
+  var shown=Math.min(coords.length,300);
+  var namedCount=0;
+  for(var k=0;k<shown;k++){
+    var c=coords[k];
+    var lng=Number(c[0]),lat=Number(c[1]);
+    // 两级匹配：先精确（快、无歧义），再就近（容差 300m，兜住坐标漂移）
+    var st=stationIdxRef[lat.toFixed(5)+','+lng.toFixed(5)] || nearestStationRef(lng,lat);
+    if(st)namedCount++;
+    if(st){
+      ptsHtml+='<span class="pt"><b class="st-name">'+esc(st)+'</b><span class="st-coord">'+lat.toFixed(5)+', '+lng.toFixed(5)+'</span></span>';
+    }else{
+      ptsHtml+='<span class="pt st-plain">'+lat.toFixed(5)+', '+lng.toFixed(5)+'</span>';
+    }
+  }
+  if(coords.length>shown)ptsHtml+='<span class="pt st-plain">… 其余 '+(coords.length-shown)+' 点</span>';
+
+  var stationLabel=namedCount>0?('途经站点 ('+namedCount+')'):'轨迹点';
+  var mediaRow=props&&props.media?'<div class="pd-row"><span class="pd-label">媒体</span><span>'+esc(String(props.media))+'</span></div>':'';
+
+  // 媒体卡片头部带缩略图（照片可作攻略缩略图；视频用图标）
+  var thumbHtml='';
+  if(isMedia&&props&&props.thumbUrl){
+    thumbHtml='<img class="pc-thumb" src="'+esc(props.thumbUrl)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+  }else if(isMedia&&props&&props.mediaType==='video'){
+    thumbHtml='<span class="pc-thumb pc-thumb-video" title="视频">🎬</span>';
+  }
+
+  // 头部格式与手画线**完全一致**：名称 [类型] N点 · 距离
+  var detail='<div class="path-detail"><div class="path-detail-inner">'+
+    '<div class="pd-row"><span class="pd-label">类型</span>'+typeBadge+'</div>'+
+    '<div class="pd-row"><span class="pd-label">长度</span><span>'+metricTxt+'</span></div>'+
+    '<div class="pd-row"><span class="pd-label">顶点数</span><span>'+ptCount+'</span></div>'+
+    (metaExtra||'')+mediaRow+
+    (props&&props.created?'<div class="pd-row"><span class="pd-label">创建</span><span>'+esc(String(props.created))+'</span></div>':'')+
+    '<div class="pd-label" style="margin:8px 0 2px">'+stationLabel+'</div>'+
+    '<div class="path-pts">'+ptsHtml+'</div>'+
+    '</div></div>';
+
+  return '<div class="path-card" id="'+prefix+idx+'">'+
+    '<div class="path-head" onclick="togglePath(\''+idx+'\')">'+
+    '<span class="path-chevron">▶</span>'+
+    thumbHtml+
+    '<span class="path-name">'+esc(name||'未命名')+'</span>'+
+    typeBadge+
+    '<span class="path-meta">'+ptCount+'点 · '+metricTxt+'</span>'+
+    '</div>'+detail+'</div>';
+}
+
+// 媒体卡片明细里的「文件路径」行（可点开，兼作缩略图来源）
+function mediaMetaRow(m){
+  var isV=(m.mediaType==='video');
+  return '<div class="pd-row" style="align-items:flex-start"><span class="pd-label">文件</span>'+
+    '<a href="'+esc(m.file)+'" target="_blank" style="color:#6fb3a8;font-family:monospace;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">'+esc(m.file)+'</a></div>'+
+    (isV?'':'<div class="pd-row" style="margin-top:6px"><img src="'+esc(m.file)+'" alt="" loading="lazy" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid rgba(255,255,255,.08)" onerror="this.style.display=\'none\'"></div>');
+}
+
+
+// 收集库内带媒体的点要素（照片/视频），返回统一结构。
+// 同一文件可能被定位多次（多条要素）—— 按「文件名」去重，只保留最新一条。
 function collectMediaFeatures(mapData){
   var out=[];
+  var byFile={};
   if(!mapData||!mapData.features)return out;
   mapData.features.forEach(function(f){
     if(!f.geometry)return;
@@ -764,67 +787,16 @@ function collectMediaFeatures(mapData){
     var cs=gt==='Point'?[f.geometry.coordinates]:f.geometry.coordinates;
     if(!cs||!cs.length)return;
     var c=cs[0];
-    out.push({
+    var rec={
       id:f.id, name:p.name||file, file:file, mediaType:mt,
       lng:Number(c[0]), lat:Number(c[1]),
       desc:p.desc||'', at:p.updatedAt||p.created||''
-    });
+    };
+    // 同文件：后出现的（通常是最新定位）覆盖先出现的
+    byFile[file]=rec;
   });
+  Object.keys(byFile).forEach(function(k){out.push(byFile[k])});
   return out;
-}
-
-// ① 媒体文件路径清单
-function renderMediaPathSection(list){
-  if(!list.length)return '';
-  var rows=list.map(function(m){
-    var badge=m.mediaType==='video'?'<span class="badge badge-video">视频</span>':'<span class="badge badge-photo">照片</span>';
-    // 文件路径：去掉 ?db 前缀噪音，直观显示 media/geodata/<库>/...
-    var p=m.file.replace(/^\/+/,'');
-    return '<div class="media-row">'+badge+
-      '<span class="mr-name" title="'+esc(m.name)+'">'+esc(m.name)+'</span>'+
-      '<span class="mr-path" title="'+esc(p)+'">'+esc(p)+'</span>'+
-      '<span class="mr-coord">'+m.lat.toFixed(4)+', '+m.lng.toFixed(4)+'</span>'+
-      '<a class="mr-open" href="'+esc(m.file)+'" target="_blank" title="打开文件">打开</a>'+
-      '</div>';
-  }).join('');
-  return '<div class="media-sec" id="mediaPathSec"><div class="media-sec-head" onclick="toggleMediaSec(\'mediaPathSec\')">'+
-    '<span class="ms-chevron">▶</span><span class="ms-ico">📷</span><span>媒体文件路径</span>'+
-    '<span class="ms-cnt">'+list.length+' 个文件</span></div>'+
-    '<div class="media-sec-body">'+rows+'</div></div>';
-}
-
-// ② 媒体拍摄轨迹：把有坐标的媒体按采集顺序连成折线（含每段距离），并给出总长
-function renderMediaTrackSection(list){
-  if(list.length<2)return '';
-  var pts=list.slice().sort(function(a,b){
-    var ta=a.at?new Date(a.at).getTime():0, tb=b.at?new Date(b.at).getTime():0;
-    return (ta||0)-(tb||0);
-  });
-  // 同名照片可能被重复定位，这里按「文件+坐标」去重，避免轨迹原地打结
-  var seen={},uniq=[];
-  pts.forEach(function(m){
-    var k=m.file+'@'+m.lat.toFixed(6)+','+m.lng.toFixed(6);
-    if(seen[k])return;seen[k]=1;uniq.push(m);
-  });
-  if(uniq.length<2)return '';
-
-  var total=0,steps='';
-  for(var i=1;i<uniq.length;i++){
-    var a=uniq[i-1],b=uniq[i];
-    var d=haversineKm(a.lat,a.lng,b.lat,b.lng);
-    total+=d;
-    var isV=(a.mediaType==='video'||b.mediaType==='video');
-    steps+='<div class="media-row"><span class="mr-name">'+esc(a.name)+' → '+esc(b.name)+'</span>'+
-      '<span class="mr-coord">'+(d<1?(d*1000).toFixed(0)+' m':d.toFixed(2)+' km')+'</span>'+
-      (isV?'<span class="badge badge-video">含视频</span>':'')+'</div>';
-  }
-  var totalTxt=total<1?(total*1000).toFixed(0)+' m':total.toFixed(2)+' km';
-  var ph=uniq.filter(function(m){return m.mediaType!=='video'}).length;
-  var vd=uniq.length-ph;
-  return '<div class="media-sec" id="mediaTrackSec"><div class="media-sec-head" onclick="toggleMediaSec(\'mediaTrackSec\')">'+
-    '<span class="ms-chevron">▶</span><span class="ms-ico">🧭</span><span>媒体拍摄轨迹</span>'+
-    '<span class="ms-cnt">'+uniq.length+' 点 · 照片 '+ph+' / 视频 '+vd+' · 全长 '+totalTxt+'</span></div>'+
-    '<div class="media-sec-body">'+steps+'</div></div>';
 }
 
 // 球面距离（km），与既有线路径口径一致
@@ -834,15 +806,9 @@ function haversineKm(lat1,lon1,lat2,lon2){
   return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// 媒体分组折叠
-function toggleMediaSec(id){
-  var el=document.getElementById(id);
-  if(el)el.classList.toggle('open');
-}
-
-// 路径总览：折叠/展开单条线路明细
+// 路径总览：折叠/展开单条线路明细（数字索引=手画线，'media'=媒体轨迹）
 function togglePath(i){
-  var el=document.getElementById('pathCard'+i);
+  var el=document.getElementById(typeof i==='number'?('pathCard'+i):('pathCard_'+i));
   if(el)el.classList.toggle('open');
 }
 
@@ -851,24 +817,34 @@ var _planEditing=null;  // 正在编辑的任务 id（null=新增）
 var _plansCache=[];     // 最近一次列表缓存（编辑时按 id 取）
 var _hookFeatures=[];   // 地图上可挂钩的要素（路径/地点）[{id,name,kind}]
 var _mapFeaturesById={};// id -> 原始要素（取几何用）
-var _stopsSeed=[];      // 当前表单里的途经点草稿 [{stop_name,lng,lat,stop_at,stop_task,stop_note}]
+var _stopsSeed=[];      // 当前表单里的途经点草稿 [{stop_name,lng,lat,stop_at,stop_task,stop_note,thumb}]
 var _planParentId=null; // 正在编辑的是节点子任务时，记录其父计划 id
 
 function planUrl(u){return u+(u.indexOf('?')>=0?'&':'?')+'db='+encodeURIComponent(currentDb)}
 
-// 收集当前库地图上可挂钩的要素：**只收路径（线）**
-// 挂钩标的 = 一条路径；保存后自动拆出沿途节点子任务（单点任务不在下拉里做）
+// 收集当前库地图上可挂钩的要素：**路径（线）+ 照片/视频**
+// 挂钩标的 = 一条路径（保存后拆出沿途节点子任务）；或一个媒体点（保存后成为单节点，
+// 照片可作为攻略缩略图，见 _stopsSeed[].thumb）。
 function collectHookFeatures(mapData){
   var out=[];
   if(mapData&&mapData.features){
     mapData.features.forEach(function(f){
       if(!f.geometry)return;
       var gt=f.geometry.type;
-      var nm=(f.properties&&f.properties.name);
+      var props=f.properties||{};
+      var nm=props.name;
       if(!nm)return;
       if(gt==='LineString'||gt==='MultiLineString'){
         out.push({code:f.id||nm,name:nm,kind:'路径',feature:f});
+        return;
       }
+      // 媒体点（照片/视频）也进挂钩下拉：kind「照片」/「视频」
+      var file=props.photo||props.video||props.media||'';
+      if(!file)return;
+      if(gt!=='Point'&&gt!=='MultiPoint')return;
+      var mt=props.mediaType||props.type||'';
+      if(mt!=='photo'&&mt!=='video')mt=/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(file)?'video':'photo';
+      out.push({code:f.id||nm,name:nm,kind:mt==='video'?'视频':'照片',feature:f,file:file,mediaType:mt});
     });
   }
   return out;
@@ -915,7 +891,7 @@ function fillHookOptions(mapData){
   sel.innerHTML=opts;
   if(cur)sel.value=cur;
 }
-// 挂钩选择变化：若选的是「路径」，拆出途经点渲染逐点编辑行；选「地点」则隐藏逐点区
+// 挂钩选择变化：路径 → 拆出途经点逐点编辑行；媒体（照片/视频）→ 单节点 + 缩略图
 function onHookChange(){
   var val=($('planFeature').value||'');
   var wrap=$('planStopsWrap');
@@ -925,6 +901,22 @@ function onHookChange(){
   var f=_mapFeaturesById[fid];
   var gt=f&&f.geometry?f.geometry.type:'';
   var isLine=(gt==='LineString'||gt==='MultiLineString');
+  // 媒体挂钩：单节点（带缩略图，可作攻略缩略图）
+  if(!isLine&&f){
+    var props=f.properties||{};
+    var file=props.photo||props.video||props.media||'';
+    if(file){
+      var mt=props.mediaType||props.type||'';
+      if(mt!=='photo'&&mt!=='video')mt=/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(file)?'video':'photo';
+      _stopsSeed=[{
+        stop_name:props.name||file, lng:f.geometry.coordinates[0], lat:f.geometry.coordinates[1],
+        stop_at:'', stop_task:'', stop_note:'', thumb:mt==='photo'?file:'', mediaType:mt, file:file
+      }];
+      renderStops();
+      wrap.style.display='block';
+      return;
+    }
+  }
   if(!isLine){wrap.style.display='none';_stopsSeed=[];$('planStops').innerHTML='';return}
   var stops=f?extractStops(f,_pointIdxGlobal):[];
   // 若之前已填过（编辑态）且点数一致，用之前的备注/时间回填
@@ -945,8 +937,15 @@ function renderStops(){
   var html='';
   _stopsSeed.forEach(function(s,i){
     var has=s.stop_at?true:false;
-    html+='<div class="stop-row">'+
-      '<div class="stop-head"><span class="stop-seq">'+(i+1)+'</span><span class="stop-name">'+esc(s.stop_name)+'</span></div>'+
+    // 媒体节点：头部显示缩略图（照片可作攻略缩略图），视频显示图标
+    var thumb='';
+    if(s.thumb){
+      thumb='<img class="stop-thumb" src="'+esc(s.thumb)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+    }else if(s.mediaType==='video'){
+      thumb='<span class="stop-thumb stop-thumb-video" title="视频">🎬</span>';
+    }
+    html+='<div class="stop-row'+(s.thumb||s.mediaType==='video'?' stop-media':'')+'">'+
+      '<div class="stop-head">'+(thumb||'')+'<span class="stop-seq">'+(i+1)+'</span><span class="stop-name">'+esc(s.stop_name)+'</span></div>'+
       '<div class="stop-fields">'+
         '<div class="stop-field sf-time"><span class="sf-label">到达时间（可选）</span>'+
           '<div class="time-wrap'+(has?' has-val':'')+'" id="stopTimeWrap_'+i+'">'+

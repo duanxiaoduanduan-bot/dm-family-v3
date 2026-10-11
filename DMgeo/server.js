@@ -2082,22 +2082,61 @@ const server = http.createServer((req, res) => {
           const r = await p.query("DELETE FROM features WHERE properties->>'clientId' = ANY($1::text[])", [geojson.deleted.map(String)]);
           removed += r.rowCount || 0;
         }
-        // 按 clientId 做 UPSERT（兼容旧数据无 clientId 时用 name+type 匹配）
+        // 按「库主键偏好」做 UPSERT，避免自动保存把整份数据反复复制入库。
+        // 匹配优先级：dbId（库主键，形如 f_2186）> clientId（前端会话 id）> name+type（旧数据兜底）。
+        // 历史 bug：前端每次 buildGeoJSON 都会为「从库里读回来的要素」生成一个新的 clientId，
+        // 而库里存的是旧 clientId → 两边对不上 → 老逻辑 DELETE 删不到、于是每次保存都 INSERT 一份，
+        // 反复刷新+自动保存就指数级堆积重复要素。
         for (const f of geojson.features) {
           if (!f || !f.geometry) continue;
           const props = f.properties || {};
+          // 库主键：兼容 'f_2186' / '2186' / 数字三种写法
+          let dbId = props.dbId;
+          if (dbId != null) {
+            const m = String(dbId).match(/(\d+)\s*$/);
+            dbId = m ? parseInt(m[1], 10) : null;
+          } else {
+            dbId = null;
+          }
           const cid = props.clientId;
           const type = props.type || (f.geometry.type === 'Point' ? 'point' : f.geometry.type === 'LineString' ? 'line' : 'polygon');
-          if (cid) {
-            await p.query("DELETE FROM features WHERE properties->>'clientId' = $1", [cid]);
-          } else {
-            // 无 clientId 的旧数据：按 name + type 去重
-            await p.query("DELETE FROM features WHERE properties->>'name' = $1 AND type = $2", [props.name || '', type]);
+
+          let existing = null;
+          if (dbId) {
+            const r0 = await p.query('SELECT id FROM features WHERE id = $1', [dbId]);
+            if (r0.rowCount) existing = r0.rows[0].id;
           }
-          await p.query(
-            'INSERT INTO features (name, type, geom, properties) VALUES ($1, $2, ST_Multi(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))), $4)',
-            [props.name || '', type, JSON.stringify(f.geometry), JSON.stringify(props)]
-          );
+          if (!existing && cid) {
+            const r1 = await p.query("SELECT id FROM features WHERE properties->>'clientId' = $1", [cid]);
+            if (r1.rowCount) existing = r1.rows[0].id;
+          }
+          if (!existing) {
+            // 兜底：按 name + type 找（同一 name 可能有多条，取最早一条合并）
+            const r2 = await p.query(
+              "SELECT id FROM features WHERE properties->>'name' = $1 AND type = $2 ORDER BY id LIMIT 1",
+              [props.name || '', type]
+            );
+            if (r2.rowCount) existing = r2.rows[0].id;
+          }
+
+          if (existing) {
+            // 更新：保留原 id，改几何与属性（把库主键回写进 properties，供下次匹配）
+            props.dbId = 'f_' + existing;
+            await p.query(
+              'UPDATE features SET name=$1, type=$2, geom=ST_Multi(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))), properties=$4 WHERE id=$5',
+              [props.name || '', type, JSON.stringify(f.geometry), JSON.stringify(props), existing]
+            );
+          } else {
+            const ins = await p.query(
+              'INSERT INTO features (name, type, geom, properties) VALUES ($1, $2, ST_Multi(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))), $4) RETURNING id',
+              [props.name || '', type, JSON.stringify(f.geometry), JSON.stringify(props)]
+            );
+            if (ins.rowCount) {
+              const newId = ins.rows[0].id;
+              // 回写 dbId，前端下次保存即可精确命中同一条
+              await p.query("UPDATE features SET properties = properties || jsonb_build_object('dbId', $1) WHERE id = $2", ['f_' + newId, newId]);
+            }
+          }
           added++;
         }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });

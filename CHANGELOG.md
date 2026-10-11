@@ -938,3 +938,84 @@ var paths = mapData.features.filter(f => f.geometry.type==='LineString' || f.geo
 - 内联脚本 `node --check` 通过；行尾 LF（CR=0）；部署后 md5 一致、线上含 `nearestStation`×2
 
 **部署**：`dashboard.html` → Ctrl+F5。
+
+## 38. DMgeo dashboard · 媒体轨迹并入「路径」统一模具（renderPathCard 复用）
+
+**需求**：断断「还是不完全对，我的意思是这个媒体拍摄轨迹和咱们之前的轨道是一样的」→ 追问确认「指地图上手画的线」。
+
+**问题**：第 35 节新增的「媒体文件路径 / 媒体拍摄轨迹」是**另起的一套 UI**（`.media-sec` 折叠块 + 逐段距离列表），与「路径总览」里手画线的 `.path-card` 展示方式完全不同。断断要的是：**媒体点连成的线，就是一条普通「路径」**，和手画线长得一样、走同一套结构。
+
+**改动**（`DMgeo/dashboard.html`）：
+
+1. **抽出共享渲染器 `renderPathCard(idx,name,coords,typeBadge,props,metaExtra)`**：原来 `renderPathsOverview` 循环体内的卡片模板（路径头 + 长度 + 顶点数 + 途经站点 + 折叠明细）整体提取为函数，手画线与媒体轨迹**共用同一模具**
+2. **媒体轨迹改造 `buildMediaTrack(list)`**：把去重后的媒体点转成 `coords` 数组，返回 `{name,coords,props,meta}`，交给 `renderPathCard` 渲染 → 徽章改为 `媒体路径`（新增 `.badge-media` 琥珀色），名称「媒体路径（照片/视频按采集顺序）」，明细里附**媒体文件路径可点链接列表**（照片📷/视频🎬）
+3. **站点索引提升为模块级**：`stationIdxRef` / `nearestStationRef`（原为 `renderPathsOverview` 内的局部闭包），因为共享渲染器需要访问；值仍是「精确 → 300m 就近」两级匹配
+4. **`togglePath(i)` 支持字符串 id**：手画线用 `pathCard0/1/2`，媒体轨迹用 `pathCard_media`，兼容两种
+5. **清理**：删除 `renderMediaPathSection` / `renderMediaTrackSection` / `toggleMediaSec` 三个函数及其全部 `.media-sec`/`.media-row` CSS（约 20 行）
+
+**验证**（真实 trip 库）：
+- 媒体点去重后 **3 个**（照片 2 + 视频 1），连成一条「媒体路径」，总长 **529.84 km**，走 `renderPathCard` 输出
+- 媒体点距所有命名站点都很远 → 正确退化为坐标显示（0/3 命名），符合预期
+- 手画线 `f_627` 仍走同一函数，8/8 站点命名不受影响
+- 内联脚本 `node --check` 通过；LF（CR=0）；旧函数/旧 CSS **残留数 0**；部署后 md5 一致、线上 `renderPathCard`×1 / `buildMediaTrack`×1 / `badge-media`×2 / `media-sec`×0
+
+**部署**：`dashboard.html` → Ctrl+F5。
+
+## 39. DMgeo dashboard · 媒体逐条成「路径」卡片 + 可挂钩（照片即攻略缩略图）
+
+**需求**：断断「你其实直接按点来跟前面那个路径一样就行，更方便我们在下方建立同样的路径甚至照片可以作为攻略缩略图」→ 再补「出发地 → … → 独流镇  [路径]  8点 · 119.59km 跟这个一样结果就行」。
+
+**问题**：第 38 节把媒体揉成**一条聚合轨迹**，只有一张卡；断断要的是**每个媒体各自一条**，且头部格式与手画线**逐字一致**（`名称 [类型] N点 · X.XXkm`）。
+
+**改动**（`DMgeo/dashboard.html`）：
+
+1. **媒体逐条成卡**：`mediaFeats.forEach` 每个媒体调 `renderPathCard('m'+i, …)`，徽章用「照片」/「视频」(`.badge-photo`/`.badge-video`)。删掉 `buildMediaTrack` 聚合逻辑
+2. **头部格式完全统一**：`renderPathCard` 的头一律输出 `缩略图? + 名称 + 类型徽章 + N点 · 距离`；单点（媒体）长度显示 **`—`**（新增 `metricTxt`），明细行也统一为「类型 / 长度 / 顶点数」（去掉了 isMedia 特化的行结构）
+3. **媒体去重**：`collectMediaFeatures` 改为按**文件名**归并（`byFile`），后出现者覆盖 —— 修掉同一视频被定位多次导致重复卡片（实测 4 → 3 条）
+4. **卡片缩略图**：`.pc-thumb`（照片 34×34 圆角；视频 🎬 图标）
+5. **媒体可挂钩（攻略缩略图）**：
+   - `collectHookFeatures` 扩展：除线路径外，**照片/视频点也进「挂钩路径」下拉**，`kind` 区分「路径/照片/视频」
+   - `onHookChange` 媒体分支：生成**单节点** `_stopsSeed`（带 `thumb`/`mediaType`/`file`），走同一个 `renderStops`
+   - `renderStops` 节点行加 `.stop-thumb` 缩略图（照片出图、视频出 🎬）
+6. 清理：删掉 `buildMediaTrack`、`.badge-media`；移除半截未接线的 `_stopsSeedPrev` 回填逻辑
+
+**验证**（真实 trip 库 + Python 复刻渲染）：
+- 手画线：`出发地 → 宏润学校 → 灵觉寺 → 白洋淀 → 枣林庄 → 清河佳苑 → 台头镇 → 独流镇  [路径]  8点 · 119.59km`
+- 媒体（去重后 3 条）：`HONhxHda4AAPyyG_1.jpg [照片] 1点 · —`、`02035-Jessie_ [照片] 1点 · —`、`holo-20260823-134609.mp4 [视频] 1点 · —`
+- 格式与手画线**逐字一致** ✅
+- `node --check` 通过；LF（CR=0）；部署后 md5 一致、HTTP 200、线上 `stop-thumb`×4
+
+**部署**：`dashboard.html` → Ctrl+F5。
+
+## 40. DMgeo · 修复自动保存导致要素无限重复堆积（数据已清理）
+
+**需求**：断断「问题出在 map-player 这里，他的路径没有跟之前那些对齐，反而多出来很多点位」→ 确认「备份后清理重复」。
+
+**根因（双重）**：
+
+1. **后端 UPSERT 匹配键完全错位**（`server.js` `/save-geodata`）：
+   ```js
+   if (cid) DELETE ... WHERE properties->>'clientId' = $1
+   else    DELETE ... WHERE properties->>'name' = $1 AND type = $2
+   INSERT ...
+   ```
+   前端 `buildGeoJSON` 给每个要素写 `clientId: m.id`，但 `m.id` 是**前端新生成的会话 id**，对「从库里读回来的要素」而言与库里存的 `clientId` 毫无关系 → DELETE 删不到任何东西 → **每次都纯 INSERT**。反复「刷新 + autoSave」→ 要素指数级翻倍（实测 23:35:57 一秒内灌入 36 条）。
+2. **前端没把库主键用于匹配**：`importGeoJSON` 只把库主键落到 `m.dbId`，而 UPSERT 只认 `clientId`，两条链路对不上。
+
+**改动**：
+
+- **`DMgeo/server.js`（核心修复）**：`/save-geodata` 的写库循环重写为**主键优先 UPSERT**：
+  - 匹配优先级：**`dbId`（库主键，兼容 `f_2186`/`2186`/数字）→ `clientId` → `name+type` 兜底**
+  - 命中则 `UPDATE`（保留原 id，几何/属性就地更新）；未命中才 `INSERT`，并把新 id 回写进 `properties.dbId`，供下次精确命中
+  - 彻底移除了「先 DELETE 再 INSERT」的旧套路
+- **`DMgeo/map-player.html`（防御加固）**：`importGeoJSON` 里把库主键同步写入 `props.clientId`，使 `clientId` 恒定等于库主键 —— 即使 `dbId` 链路失效，`clientId` 也能兜住
+
+**验证（真实环境）**：
+- **清理**：先导出完整备份（`.backup/trip-features-20261011-233818.json`，44 条）→ 删 24 条同名同坐标重复（保留 id 最小）→ 再删 3 条 Point/MultiPoint 重复照片视频 → **44 → 17 条，重复组数 0**
+- **修复后回写测试**：
+  - 带 dbId + 每次全新 clientId：连写 3 次 → 计数稳定 **20 → 20 → 20**（旧逻辑会 40→60→80）✅
+  - 极端场景（**不带 dbId、每次全新 clientId**，靠 `name+type` 兜底）：连写 3 次 → 仍稳定 **20 → 20 → 20** ✅
+- 最终数据：17 条 = 5 面 + 1 路径（8 顶点）+ 2 照片 + 1 视频 + 8 站点，**全部要素带 `dbId`**
+- `node --check` 通过（server.js / map-player.html）；LF（CR=0）
+
+**部署**：`server.js`（restart dm-DMgeo）+ `map-player.html`（Ctrl+F5）。
