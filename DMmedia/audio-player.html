@@ -143,7 +143,7 @@ function addLocal(fl){
     sg.push({title:t,artist:ar,album:ar,url:URL.createObjectURL(f),_local:true});
     added++;
   }
-  if(added){st.textContent='📂 '+sg.length+'个';ht.textContent='';albums=buildAlbums();up();if(ci<0)playS(0)}
+  if(added){st.textContent='📂 '+sg.length+'个';ht.textContent='';albums=buildAlbums();up();if(ci<0&&!resumeLast())playS(0)}
 }
 
 // 从服务器加载
@@ -159,7 +159,7 @@ async function loadList(){
     ht.textContent='';
     albums=buildAlbums();
     up();
-    if(sg.length&&ci<0)showAlbums();
+    if(sg.length&&ci<0){if(!resumeLast())showAlbums()}
   }catch(e){
     st.textContent='📂 本地模式';
     ht.innerHTML='拖拽音频文件到窗口<br>或点「选文件」<br><br>将文件夹放入 Audio 目录<br>自动按专辑分组';
@@ -283,6 +283,7 @@ var RESUME_KEY='dmmedia_resume_audio';
 function savePos(k,t,d){try{localStorage.setItem(RESUME_KEY,JSON.stringify({k:k,t:t,d:d}))}catch(e){}}
 function loadPos(k){try{var s=localStorage.getItem(RESUME_KEY);if(!s)return null;var o=JSON.parse(s);return(o&&o.k===k&&typeof o.t==='number')?o:null}catch(e){return null}}
 function clearPos(k){try{var o=JSON.parse(localStorage.getItem(RESUME_KEY)||'null');if(o&&o.k===k)localStorage.removeItem(RESUME_KEY)}catch(e){}}
+function resumeLast(){try{var s=localStorage.getItem(RESUME_KEY);if(!s)return false;var o=JSON.parse(s);if(!o||!o.k)return false;for(var i=0;i<sg.length;i++){if((sg[i].url||sg[i].file)===o.k){playS(i);return true}}}catch(e){}return false}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
 function up(){pl.innerHTML='';if(albums.length)showAlbums();else{pl.innerHTML='<div style="padding:24px;text-align:center;color:#555;font-size:12px">暂无内容</div>';sc.textContent=''}}

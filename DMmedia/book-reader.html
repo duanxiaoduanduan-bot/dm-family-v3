@@ -237,7 +237,7 @@ async function loadBooks(){
   try{var r=await fetch('book-list.json?_='+Date.now());if(r.ok){(await r.json()).forEach(function(s){all.push({title:s.title||s.name,author:s.author||'',type:'txt',url:s.file||s.url,key:s.file||s.url})})}}catch(e2){}
   try{r=await fetch('pdf-list.json?_='+Date.now());if(r.ok){(await r.json()).forEach(function(s){all.push({title:s.title||s.name,author:s.author||'',type:'pdf',url:s.file||s.url,key:s.file||s.url})})}}catch(e2){}
   try{r=await fetch('audio-list.json?_='+Date.now());if(r.ok){(await r.json()).forEach(function(s){all.push({title:s.title||s.name,author:s.author||'',type:'audio',url:s.file||s.url,key:s.file||s.url})})}}catch(e2){}
-  if(all.length){bk=all;st.textContent='📖 '+bk.length+'本';ht.textContent='';up();return}
+  if(all.length){bk=all;st.textContent='📖 '+bk.length+'本';ht.textContent='';up();resumeLastBook();return}
   st.textContent='📂 本地模式';ht.innerHTML='拖拽文件到窗口<br>或点「选文件」';
 }
 
@@ -260,6 +260,9 @@ var RESUME_KEY='dmmedia_resume_book';
 function savePos(k,t,d){try{localStorage.setItem(RESUME_KEY,JSON.stringify({k:k,t:t,d:d}))}catch(e){}}
 function loadPos(k){try{var s=localStorage.getItem(RESUME_KEY);if(!s)return null;var o=JSON.parse(s);return(o&&o.k===k&&typeof o.t==='number')?o:null}catch(e){return null}}
 function clearPos(k){try{var o=JSON.parse(localStorage.getItem(RESUME_KEY)||'null');if(o&&o.k===k)localStorage.removeItem(RESUME_KEY)}catch(e){}}
+// 记住上次打开的书（打开页面自动跳回）
+function saveLastBook(k){try{localStorage.setItem('dmmedia_last_book',k)}catch(e){}}
+function resumeLastBook(){try{var k=localStorage.getItem('dmmedia_last_book');if(!k)return;for(var i=0;i<bk.length;i++){if((bk[i].key||bk[i].url)===k){openB(i);return}}}catch(e){}}
 
 // ===== 渲染当前页 =====
 function renderPage(){
@@ -297,7 +300,7 @@ async function openB(i){
   if(i<0||i>=bk.length)return;ci=i;var b=bk[i];
   rt.textContent=b.title||b.name;ra.textContent=b.author||'';
   rh.style.display='flex';rb.innerHTML='';chapters=[];allLines=[];currentCh=-1;currentPage=0;
-  currentBookKey=b.key||b.title||b.name;
+  currentBookKey=b.key||b.title||b.name;saveLastBook(currentBookKey);
   footerBar.style.display='none';tocBtn.style.opacity='.3';ttsBtn.style.opacity='.3';
 
   if(b.type=='txt'){

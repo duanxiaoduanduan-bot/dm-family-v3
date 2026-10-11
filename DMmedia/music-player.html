@@ -97,7 +97,7 @@ document.addEventListener('dragover',function(e){e.preventDefault();dz.classList
 document.addEventListener('dragleave',function(){dz.classList.remove('show')});
 document.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('show');addLocal(e.dataTransfer.files)});
 
-function addLocal(fl){var n=0;for(var i=0;i<fl.length;i++){var f=fl[i];if(!f.name.match(/\.(mp3|wav|flac|ogg|aac|m4a)$/i))continue;var t=f.name.replace(/\.\w+$/,''),ar='',di=t.lastIndexOf(' - ');if(di>0){ar=t.slice(0,di);t=t.slice(di+3)}sg.push({title:t,artist:ar,url:URL.createObjectURL(f)});n++}if(n){st.textContent='📂 '+sg.length+'首';ht.textContent='';up();if(ci<0)playS(0)}}
+function addLocal(fl){var n=0;for(var i=0;i<fl.length;i++){var f=fl[i];if(!f.name.match(/\.(mp3|wav|flac|ogg|aac|m4a)$/i))continue;var t=f.name.replace(/\.\w+$/,''),ar='',di=t.lastIndexOf(' - ');if(di>0){ar=t.slice(0,di);t=t.slice(di+3)}sg.push({title:t,artist:ar,url:URL.createObjectURL(f)});n++}if(n){st.textContent='📂 '+sg.length+'首';ht.textContent='';up();if(ci<0&&!resumeLast())playS(0)}}
 
 // 从服务器加载（每次请求都重新扫描）
 async function loadList(){
@@ -111,7 +111,7 @@ async function loadList(){
     st.textContent='🎵 '+sg.length+'首';
     ht.textContent='';
     up();
-    if(sg.length&&ci<0)playS(0);
+    if(sg.length&&ci<0&&!resumeLast())playS(0);
   }catch(e){
     st.textContent='📂 本地模式';
     ht.innerHTML='拖拽音乐到窗口<br>或点「选文件」';
@@ -136,6 +136,7 @@ var RESUME_KEY='dmmedia_resume_music';
 function savePos(k,t,d){try{localStorage.setItem(RESUME_KEY,JSON.stringify({k:k,t:t,d:d}))}catch(e){}}
 function loadPos(k){try{var s=localStorage.getItem(RESUME_KEY);if(!s)return null;var o=JSON.parse(s);return(o&&o.k===k&&typeof o.t==='number')?o:null}catch(e){return null}}
 function clearPos(k){try{var o=JSON.parse(localStorage.getItem(RESUME_KEY)||'null');if(o&&o.k===k)localStorage.removeItem(RESUME_KEY)}catch(e){}}
+function resumeLast(){try{var s=localStorage.getItem(RESUME_KEY);if(!s)return false;var o=JSON.parse(s);if(!o||!o.k)return false;for(var i=0;i<sg.length;i++){if((sg[i].url||sg[i].file)===o.k){playS(i);return true}}}catch(e){}return false}
 
 // ===== 歌词系统 =====
 var lrcLines=[],lastLrcIdx=-1;
