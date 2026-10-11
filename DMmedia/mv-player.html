@@ -236,11 +236,12 @@ function playS(i){if(i<0||i>=sg.length)return;ci=i;var s=sg[i];nt.textContent=s.
   // 同步音量
   [V,FV].forEach(function(el){el.volume=volBar.value/100});
 
+  var _pos=loadPos(url),_lastSave=0;
   var bind=function(el){
-    el.ontimeupdate=function(){if(el.duration&&isFinite(el.duration)&&!dragging){rB.value=(el.currentTime/el.duration)*1000;cT.textContent=f(el.currentTime)}};
-    el.onloadedmetadata=function(){tT.textContent=f(el.duration);up()};
+    el.ontimeupdate=function(){if(el.duration&&isFinite(el.duration)&&!dragging){rB.value=(el.currentTime/el.duration)*1000;cT.textContent=f(el.currentTime)}if(el.currentTime-_lastSave>5){savePos(url,el.currentTime,el.duration);_lastSave=el.currentTime}};
+    el.onloadedmetadata=function(){tT.textContent=f(el.duration);if(_pos&&_pos.t>0&&(!el.duration||_pos.t<el.duration-3)){el.currentTime=_pos.t}up()};
     el.ondurationchange=function(){if(isFinite(el.duration))tT.textContent=f(el.duration)};
-    el.onended=function(){rB.value=0;cT.textContent='00:00';nx()};
+    el.onended=function(){clearPos(url);rB.value=0;cT.textContent='00:00';nx()};
     el.onerror=function(){rB.value=0;cT.textContent='00:00';nx()};
     el.onplay=function(){pB.textContent='⏸';vo.style.display='none';fvOverlay.style.display='none'};
     el.onpause=function(){pB.textContent='▶';vo.style.display='flex';fvOverlay.style.display='flex'};
@@ -307,6 +308,11 @@ function skDrag(){if(!dragging)return;var av=activeV();var d=av.duration;if(!d||
 function skEnd(){dragging=false;var av=activeV();var d=av.duration;if(!d||!isFinite(d))return;var t=(rB.value/1000)*d;if(t>=0&&t<=d){V.currentTime=t;FV.currentTime=t}}
 
 function f(s){if(!s||isNaN(s)||!isFinite(s))return'00:00';return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0')}
+// 断点续播：按文件路径存进度（localStorage）
+var POS_PREFIX='dmmedia_pos_';
+function savePos(k,t,d){try{localStorage.setItem(POS_PREFIX+k,JSON.stringify({t:t,d:d}))}catch(e){}}
+function loadPos(k){try{var s=localStorage.getItem(POS_PREFIX+k);if(!s)return null;var o=JSON.parse(s);return(o&&typeof o.t==='number')?o:null}catch(e){return null}}
+function clearPos(k){try{localStorage.removeItem(POS_PREFIX+k)}catch(e){}}
 function up(){pl.innerHTML='';sc.textContent='('+sg.length+'个)';if(!sg.length){pl.innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px;">暂无</div>';return}
 for(var i=0;i<sg.length;i++){var s=sg[i],dt=s.title,da=s.artist,di=s.title.lastIndexOf(' - ');if(di>0&&!s.artist){da=s.title.slice(0,di);dt=s.title.slice(di+3)}var r=document.createElement('div');r.className='sr'+(i===ci?' act':'');r.innerHTML='<div class="ix">'+(i+1)+'</div><div class="nf"><div class="nm">'+dt+'</div><div class="ar">'+da+'</div></div>';r.onclick=function(j){return function(){if(j===ci)togP();else playS(j)}}(i);pl.appendChild(r)}}
 document.addEventListener('keydown',function(e){if(e.key===' '){e.preventDefault();togP()}if(e.key==='f'||e.key==='F'){toggleFS()}if(e.key==='ArrowUp'){volBar.value=Math.min(100,+volBar.value+5);setVol()}if(e.key==='ArrowDown'){volBar.value=Math.max(0,+volBar.value-5);setVol()}if(e.key==='m'||e.key==='M'){toggleMute()}});

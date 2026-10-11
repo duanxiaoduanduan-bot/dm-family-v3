@@ -181,21 +181,24 @@ async function loadList(){
     var d=await r.json();
     if(!d||!d.series||!d.series.length)throw Error('empty');
     sg=d.series;st.textContent='📺 '+sg.length+'部';ht.textContent='';es.style.display='none';
-    up();if(ci<0)selectSeries(0);
+    up();
+    var _st=loadTvState();
+    if(_st&&_st.ci>=0&&_st.ci<sg.length){selectSeries(_st.ci,_st.ei);}
+    else if(ci<0)selectSeries(0);
   }catch(e){
     st.textContent='📂 本地模式';
     ht.innerHTML='拖拽电视剧到窗口<br>或点「选文件」';
   }
 }
 
-function selectSeries(i){
+function selectSeries(i,startEp){
   if(i<0||i>=sg.length)return;ci=i;ei=-1;
   var s=sg[i];
   nt.textContent=s.name;na.textContent=(s.episodes?.length||0)+'集';
   V.pause();V.src='';V.style.display='none';vo.style.display='none';es.style.display='none';
   pB.textContent='▶';rB.value=0;cT.textContent='00:00';tT.textContent='00:00';
   up();renderEpBar();
-  if(s.episodes&&s.episodes.length)playEp(0);
+  if(s.episodes&&s.episodes.length)playEp((typeof startEp==='number'&&startEp>=0&&startEp<s.episodes.length)?startEp:0);
 }
 
 function renderEpBar(){
@@ -230,7 +233,9 @@ function playEp(j){
   V.src=ep.file||ep.url;V.play().catch(function(){});
   V.volume=volBar.value/100;
   pB.textContent='⏸';vo.style.display='none';es.style.display='none';V.style.display='block';
-  V.ontimeupdate=function(){if(V.duration&&isFinite(V.duration)&&!dragging){rB.value=(V.currentTime/V.duration)*1000;cT.textContent=f(V.currentTime)}};V.onloadedmetadata=function(){tT.textContent=f(V.duration)};V.ondurationchange=function(){if(isFinite(V.duration))tT.textContent=f(V.duration)};V.onended=function(){rB.value=0;cT.textContent='00:00';nextEp()};V.onerror=function(){rB.value=0;cT.textContent='00:00';nextEp()};
+  saveTvState();
+  var _k=ep.file||ep.url,_pos=loadPos(_k),_lastSave=0;
+  V.ontimeupdate=function(){if(V.duration&&isFinite(V.duration)&&!dragging){rB.value=(V.currentTime/V.duration)*1000;cT.textContent=f(V.currentTime)}if(V.currentTime-_lastSave>5){savePos(_k,V.currentTime,V.duration);_lastSave=V.currentTime}};V.onloadedmetadata=function(){tT.textContent=f(V.duration);if(_pos&&_pos.t>0&&(!V.duration||_pos.t<V.duration-3)){V.currentTime=_pos.t}};V.ondurationchange=function(){if(isFinite(V.duration))tT.textContent=f(V.duration)};V.onended=function(){clearPos(_k);rB.value=0;cT.textContent='00:00';nextEp()};V.onerror=function(){rB.value=0;cT.textContent='00:00';nextEp()};
   V.onplay=function(){pB.textContent='⏸';vo.style.display='none'};V.onpause=function(){pB.textContent='▶';vo.style.display='flex'};V.onclick=function(e){e.stopPropagation();togP()};
   renderEpBar();up();
 }
@@ -267,6 +272,15 @@ function skStart(){dragging=true}
 function skDrag(){if(!dragging)return;var d=V.duration;if(!d||!isFinite(d))return;cT.textContent=f((rB.value/1000)*d)}
 function skEnd(){dragging=false;var d=V.duration;if(!d||!isFinite(d))return;var t=(rB.value/1000)*d;if(t>=0&&t<=d)V.currentTime=t}
 function f(s){if(!s||isNaN(s)||!isFinite(s))return'00:00';return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0')}
+// 断点续播：按文件路径存进度（localStorage）
+var POS_PREFIX='dmmedia_pos_';
+function savePos(k,t,d){try{localStorage.setItem(POS_PREFIX+k,JSON.stringify({t:t,d:d}))}catch(e){}}
+function loadPos(k){try{var s=localStorage.getItem(POS_PREFIX+k);if(!s)return null;var o=JSON.parse(s);return(o&&typeof o.t==='number')?o:null}catch(e){return null}}
+function clearPos(k){try{localStorage.removeItem(POS_PREFIX+k)}catch(e){}}
+// 电视剧：记住上次看到第几部第几集
+var TV_STATE='dmmedia_tv_state';
+function saveTvState(){try{localStorage.setItem(TV_STATE,JSON.stringify({ci:ci,ei:ei}))}catch(e){}}
+function loadTvState(){try{var s=localStorage.getItem(TV_STATE);if(!s)return null;return JSON.parse(s)}catch(e){return null}}
 function up(){pl.innerHTML='';sc.textContent='('+sg.length+'部)';if(!sg.length){pl.innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px;">暂无</div>';return}
 for(var i=0;i<sg.length;i++){var s=sg[i];var r=document.createElement('div');r.className='sr'+(i===ci?' act':'');r.innerHTML='<div class="ix">'+(i+1)+'</div><div class="nf"><div class="nm">'+s.name+'</div><div class="ar">'+(s.episodes?s.episodes.length+'集':'')+'</div></div>';r.onclick=function(j){return function(){if(j===ci)return;selectSeries(j)}}(i);pl.appendChild(r)}}
 document.addEventListener('keydown',function(e){if(e.key===' '){e.preventDefault();togP()}if(e.key==='f'||e.key==='F'){toggleFS()}if(e.key==='ArrowUp'&&ei>0)playEp(ei-1);if(e.key==='ArrowDown'&&curSeries()&&ei<curSeries().episodes.length-1)playEp(ei+1);if(e.key==='m'||e.key==='M'){toggleMute()}});

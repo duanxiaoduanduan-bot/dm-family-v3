@@ -255,6 +255,11 @@ function parseChapters(lines){var chs=[];for(var j=0;j<lines.length;j++){var l=l
 
 function loadProgress(key){try{var raw=localStorage.getItem('book_progress_'+key);return raw?JSON.parse(raw):null}catch(e){return null}}
 function saveProgress(key,chIdx,scrollPct){try{localStorage.setItem('book_progress_'+key,JSON.stringify({ch:chIdx,scroll:scrollPct,ts:Date.now()}))}catch(e){}}
+// 有声书断点续播：按文件路径存播放进度
+var POS_PREFIX='dmmedia_pos_';
+function savePos(k,t,d){try{localStorage.setItem(POS_PREFIX+k,JSON.stringify({t:t,d:d}))}catch(e){}}
+function loadPos(k){try{var s=localStorage.getItem(POS_PREFIX+k);if(!s)return null;var o=JSON.parse(s);return(o&&typeof o.t==='number')?o:null}catch(e){return null}}
+function clearPos(k){try{localStorage.removeItem(POS_PREFIX+k)}catch(e){}}
 
 // ===== 渲染当前页 =====
 function renderPage(){
@@ -333,8 +338,17 @@ async function openB(i){
     footerBar.style.display='none';tocBtn.style.opacity='.3';ttsBtn.style.opacity='.3';ttsPanel.classList.remove('show');
   }
   else if(b.type=='audio'){
-    rb.innerHTML='<div class="ap"><div class="ac audio">🎧</div><div style="margin-bottom:8px;font-weight:600">'+(b.title||b.name)+'</div><audio controls autoplay src="'+b.url+'"></audio></div>';
+    rb.innerHTML='<div class="ap"><div class="ac audio">🎧</div><div style="margin-bottom:8px;font-weight:600">'+(b.title||b.name)+'</div><audio id="bookAudio" controls src="'+b.url+'"></audio></div>';
     footerBar.style.display='none';tocBtn.style.opacity='.3';ttsBtn.style.opacity='.3';ttsPanel.classList.remove('show');
+    // 有声书断点续播
+    setTimeout(function(){
+      var aEl=document.getElementById('bookAudio');if(!aEl)return;
+      var _k=b.key||b.url,_pos=loadPos(_k),_lastSave=0;
+      aEl.onloadedmetadata=function(){if(_pos&&_pos.t>0&&(!aEl.duration||_pos.t<aEl.duration-3)){aEl.currentTime=_pos.t}};
+      aEl.ontimeupdate=function(){if(aEl.currentTime-_lastSave>5){savePos(_k,aEl.currentTime,aEl.duration);_lastSave=aEl.currentTime}};
+      aEl.onended=function(){clearPos(_k)};
+      aEl.play().catch(function(){});
+    },50);
   }
   up();
 }

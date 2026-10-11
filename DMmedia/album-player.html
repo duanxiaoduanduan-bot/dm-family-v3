@@ -249,6 +249,11 @@ function renderContent(){
 }
 
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+// 断点续播：按文件路径存进度（localStorage）
+var POS_PREFIX='dmmedia_pos_';
+function savePos(k,t,d){try{localStorage.setItem(POS_PREFIX+k,JSON.stringify({t:t,d:d}))}catch(e){}}
+function loadPos(k){try{var s=localStorage.getItem(POS_PREFIX+k);if(!s)return null;var o=JSON.parse(s);return(o&&typeof o.t==='number')?o:null}catch(e){return null}}
+function clearPos(k){try{localStorage.removeItem(POS_PREFIX+k)}catch(e){}}
 
 // ===== 幻灯片控制 =====
 function goSlide(i){
@@ -283,7 +288,11 @@ function stopAuto(){clearInterval(autoTimer);autoTimer=null}
 function openVideo(j){
   var a=albums[curAlbum];if(!a||!a.videos||!a.videos[j])return;
   var v=a.videos[j];
-  vmVid.src=v.url||v.file;vmTitle.textContent=v.name;
+  var _k=v.url||v.file,_pos=loadPos(_k),_lastSave=0;
+  vmVid.src=_k;vmTitle.textContent=v.name;
+  vmVid.onloadedmetadata=function(){if(_pos&&_pos.t>0&&(!vmVid.duration||_pos.t<vmVid.duration-3)){vmVid.currentTime=_pos.t}};
+  vmVid.ontimeupdate=function(){if(vmVid.currentTime-_lastSave>5){savePos(_k,vmVid.currentTime,vmVid.duration);_lastSave=vmVid.currentTime}};
+  vmVid.onended=function(){clearPos(_k)};
   vModal.classList.add('open');vmVid.play().catch(function(){});
 }
 function closeVideo(){

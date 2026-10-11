@@ -242,6 +242,7 @@ function playS(i){
   // 如果当前在专辑视图里，更新高亮
   if(currentAlbum)showAlbum(currentAlbum);else showAlbums();
 
+  var _pos=loadPos(s.url),_lastSave=0;
   A.ontimeupdate=function(){
     if(A.duration&&isFinite(A.duration)&&!dragging){
       rB.value=(A.currentTime/A.duration)*1000;
@@ -250,10 +251,11 @@ function playS(i){
       var pct=Math.round((A.currentTime/A.duration)*100);
       pdPercent.textContent=pct+'%';pdFill.style.width=pct+'%';
     }
+    if(A.currentTime-_lastSave>5){savePos(s.url,A.currentTime,A.duration);_lastSave=A.currentTime}
   };
-  A.onloadedmetadata=function(){tT.textContent=f(A.duration);infoTotal.textContent=f(A.duration)};
+  A.onloadedmetadata=function(){tT.textContent=f(A.duration);infoTotal.textContent=f(A.duration);if(_pos&&_pos.t>0&&(!A.duration||_pos.t<A.duration-3)){A.currentTime=_pos.t}};
   A.ondurationchange=function(){if(isFinite(A.duration)){tT.textContent=f(A.duration);infoTotal.textContent=f(A.duration)}};
-  A.onended=function(){rB.value=0;cT.textContent='00:00';infoCurr.textContent='00:00';pdPercent.textContent='0%';pdFill.style.width='0%';seekNext()};
+  A.onended=function(){clearPos(s.url);rB.value=0;cT.textContent='00:00';infoCurr.textContent='00:00';pdPercent.textContent='0%';pdFill.style.width='0%';seekNext()};
   A.onerror=function(){rB.value=0;cT.textContent='00:00';es.style.display='flex';coverIcon.style.display='none';infoPanel.style.display='none';progressPanel.style.display='none';ht.textContent='加载失败，请重试';pB.textContent='▶'};
 }
 
@@ -276,6 +278,11 @@ function skStart(){dragging=true}
 function skDrag(){if(!dragging)return;var d=A.duration;if(!d||!isFinite(d))return;cT.textContent=f((rB.value/1000)*d)}
 function skEnd(){dragging=false;var d=A.duration;if(!d||!isFinite(d))return;var t=(rB.value/1000)*d;if(t>=0&&t<=d)A.currentTime=t}
 function f(s){if(!s||isNaN(s)||!isFinite(s))return'00:00';return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0')}
+// 断点续播：按文件路径存进度（localStorage）
+var POS_PREFIX='dmmedia_pos_';
+function savePos(k,t,d){try{localStorage.setItem(POS_PREFIX+k,JSON.stringify({t:t,d:d}))}catch(e){}}
+function loadPos(k){try{var s=localStorage.getItem(POS_PREFIX+k);if(!s)return null;var o=JSON.parse(s);return(o&&typeof o.t==='number')?o:null}catch(e){return null}}
+function clearPos(k){try{localStorage.removeItem(POS_PREFIX+k)}catch(e){}}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
 function up(){pl.innerHTML='';if(albums.length)showAlbums();else{pl.innerHTML='<div style="padding:24px;text-align:center;color:#555;font-size:12px">暂无内容</div>';sc.textContent=''}}
