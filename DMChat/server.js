@@ -635,6 +635,23 @@ const requestHandler = (req, res) => {
 
   if (reqPath === '/') reqPath = '/index.html';
 
+  // === CA 信任证书下载（供各设备导入以消除 HTTPS 警告；仅公开公钥证书，不含私钥）===
+  if (reqPath === '/rootCA.crt') {
+    const rootCrt = path.join(ROOT, 'certs', 'rootCA.crt');
+    if (fs.existsSync(rootCrt)) {
+      res.writeHead(200, { 'Content-Type': 'application/x-x509-ca-cert', 'Content-Length': fs.statSync(rootCrt).size });
+      fs.createReadStream(rootCrt).pipe(res);
+    } else {
+      res.writeHead(404); res.end('Not Found');
+    }
+    return;
+  }
+
+  // 禁止静态托管暴露证书私钥（certs/dmchat.key 等）
+  if (reqPath.startsWith('/certs/') || path.extname(reqPath).toLowerCase() === '.key') {
+    res.writeHead(403); return res.end('Forbidden');
+  }
+
   const filePath = path.join(ROOT, reqPath);
   if (path.normalize(filePath).indexOf(path.normalize(ROOT)) !== 0) {
     res.writeHead(403); return res.end('Forbidden');

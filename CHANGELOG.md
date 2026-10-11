@@ -279,3 +279,19 @@ dm → postgis → apps → geodata → start
 - 语音依赖浏览器 `getUserMedia`，需 HTTPS（自签 `https://192.168.1.9:8443`）或 localhost，HTTP 下会明确提示。
 
 **部署**：`git push` → Ubuntu `git checkout origin/main -- DMChat/` → `sudo supervisorctl -c DMcore/supervisor/supervisord.conf restart dm-DMChat`。
+
+---
+
+## 12. DMChat HTTPS 证书方案（语音/通话/投屏）
+
+语音消息 / 视频通话 / 屏幕共享需要浏览器「安全上下文」（HTTPS 或 localhost），HTTP 下被浏览器禁用。
+
+| 路径 | 说明 |
+|------|------|
+| `DMChat/install.sh` | 证书生成改为 **mkcert 优先**（本地 CA，设备导入 CA 后绿锁）+ openssl 自签兜底；同时生成可分发的 `certs/rootCA.crt` |
+| `DMChat/server.js` | 新增 `/rootCA.crt` 下载路由（供各设备导入）；禁止静态托管暴露 `certs/` 目录与 `.key` 私钥 |
+| `DMChat/HTTPS.md` | 新增：为什么需要 HTTPS、证书方案对比、各设备（Windows/Android/iOS）导入 CA 步骤、常见问题 |
+
+**使用**：各设备浏览器打开 `http://<IP>:8083/rootCA.crt` 下载并导入一次，之后 `https://<IP>:8443` 免警告、语音/通话/投屏可用。
+
+**注意**：证书解决「红字警告」；若 `https://IP:8443` 根本连不上（「无法连接」），是本机代理软件拦截内网 HTTPS，需关代理或加直连规则，两码事。

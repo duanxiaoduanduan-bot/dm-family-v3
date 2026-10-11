@@ -68,33 +68,53 @@ else
 fi
 echo "[OK] 依赖安装完成"
 
-# === 2.5 签发自签 HTTPS 证书（屏幕共享/通话需要安全上下文）===
+# === 2.5 签发 HTTPS 证书（语音/通话/投屏需要安全上下文）===
 echo "[*] 准备 HTTPS 证书..."
 mkdir -p "$SCRIPT_DIR/certs"
 CERT_KEY="$SCRIPT_DIR/certs/dmchat.key"
 CERT_CRT="$SCRIPT_DIR/certs/dmchat.crt"
+ROOT_CRT="$SCRIPT_DIR/certs/rootCA.crt"
 if [ -f "$CERT_KEY" ] && [ -f "$CERT_CRT" ]; then
   echo "[OK] 证书已存在，跳过"
+  [ -f "$ROOT_CRT" ] || echo "[提示] 如需各设备免 HTTPS 警告，导入 certs/rootCA.crt（下载 http://<IP>:8083/rootCA.crt）"
 else
   # Termux 的 hostname 不支持 -I，先试 ip addr 再回落 hostname
   CERT_IP=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v 127.0.0.1 | head -1 | awk '{print $2}' | cut -d/ -f1)
   [ -z "$CERT_IP" ] && CERT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
   [ -z "$CERT_IP" ] && CERT_IP="127.0.0.1"
-  # Termux 默认不带 openssl CLI（只带 libssl），缺则从 termux 官方源补装，
-  # 否则证书静默生成不了 → 8443 HTTPS 起不来 → 通话/投屏因非安全上下文被浏览器禁用。
-  if ! command -v openssl &>/dev/null && $IS_TERMUX; then
-    echo "[*] Termux 缺少 openssl，安装 openssl-tool（签发 HTTPS 证书用）..."
-    pkg install -y openssl-tool
+
+  # 优先 mkcert（本地 CA，设备导入 CA 后绿锁、免警告）；否则 openssl 自签兜底
+  if command -v mkcert &>/dev/null; then
+    echo "[*] 用 mkcert 生成本地 CA 证书..."
+    mkcert -cert-file "$CERT_CRT" -key-file "$CERT_KEY" "$CERT_IP" localhost 127.0.0.1 ::1 2>/dev/null
+    if [ -f "$CERT_CRT" ]; then
+      CAROOT="$(mkcert -CAROOT 2>/dev/null)"
+      [ -n "$CAROOT" ] && cp "$CAROOT/rootCA.pem" "$ROOT_CRT" 2>/dev/null
+      echo "[OK] mkcert 证书已生成；分发 certs/rootCA.crt 给各设备即可免警告"
+    else
+      echo "[warn] mkcert 生成失败，回退 openssl 自签"
+    fi
   fi
-  if command -v openssl &>/dev/null; then
-    openssl req -x509 -newkey rsa:2048 -nodes \
-      -keyout "$CERT_KEY" -out "$CERT_CRT" -days 3650 \
-      -subj "/CN=dmchat" \
-      -addext "subjectAltName=IP:$CERT_IP,IP:127.0.0.1,DNS:localhost" 2>/dev/null \
-      && echo "[OK] 自签证书已生成 (certs/dmchat.crt)，浏览器首次访问需手动信任" \
-      || echo "[warn] 证书生成失败，屏幕共享/通话将不可用（仍可用 HTTP 聊天）"
-  else
-    echo "[warn] 未找到 openssl，跳过证书生成。屏幕共享/通话需 HTTPS，可手动放置 certs/dmchat.key+crt"
+
+  # 仍未生成（无 mkcert 或 mkcert 失败）→ openssl 自签
+  if [ ! -f "$CERT_KEY" ] || [ ! -f "$CERT_CRT" ]; then
+    # Termux 默认不带 openssl CLI（只带 libssl），缺则从 termux 官方源补装，
+    # 否则证书静默生成不了 → 8443 HTTPS 起不来 → 语音/通话/投屏被浏览器禁用。
+    if ! command -v openssl &>/dev/null && $IS_TERMUX; then
+      echo "[*] Termux 缺少 openssl，安装 openssl-tool（签发 HTTPS 证书用）..."
+      pkg install -y openssl-tool
+    fi
+    if command -v openssl &>/dev/null; then
+      openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "$CERT_KEY" -out "$CERT_CRT" -days 3650 \
+        -subj "/CN=dmchat" \
+        -addext "subjectAltName=IP:$CERT_IP,IP:127.0.0.1,DNS:localhost" 2>/dev/null \
+        && cp "$CERT_CRT" "$ROOT_CRT" \
+        && echo "[OK] 自签证书已生成；分发 certs/rootCA.crt 给各设备（首次访问需手动信任一次）" \
+        || echo "[warn] 证书生成失败，语音/通话/投屏不可用（HTTP 聊天正常）"
+    else
+      echo "[warn] 未找到 mkcert/openssl，跳过证书生成。语音/通话/投屏需 HTTPS，可手动放置 certs/dmchat.key+crt"
+    fi
   fi
 fi
 
@@ -162,7 +182,10 @@ echo "  ✅ 安装完成！"
 echo ""
 echo "  💬 DMChat:  http://$IP:8083"
 if [ -f "$SCRIPT_DIR/certs/dmchat.crt" ]; then
-echo "  💬 DMChat:  https://$IP:8443  (屏幕共享/通话请走这个)"
+echo "  💬 DMChat:  https://$IP:8443  (语音/通话/投屏请走这个)"
+fi
+if [ -f "$SCRIPT_DIR/certs/rootCA.crt" ]; then
+echo "  🔒 信任证书: http://$IP:8083/rootCA.crt  (各设备导入后 HTTPS 免警告，步骤见 HTTPS.md)"
 fi
 echo ""
 if $IS_TERMUX; then
