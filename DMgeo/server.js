@@ -1228,6 +1228,36 @@ const server = http.createServer((req, res) => {
     return children;
   }
 
+  // 把一条「路径类」计划的所有途经点刷成节点子任务（幂等 + 自愈）。
+  // 与 materializeChildren 的区别：不看「有没有子任务」就跳过，而是比对节点数量；
+  // 数量一致才算已拆解，否则整批重建 —— 这样线要素能随路径顶点一起被统计。
+  // 仅供内部自动同步使用（顶层计划详情处不再暴露手动按钮）。
+  async function syncPathChildren(pool, parent, stops) {
+    if (!parent || parent.parent_id) return [];
+    if (!Array.isArray(stops) || !stops.length) return [];
+    const chk = await pool.query('SELECT COUNT(*)::int AS n FROM plans WHERE parent_id=$1', [parent.id]);
+    if (chk.rows[0] && chk.rows[0].n === stops.length) return [];
+    await pool.query('DELETE FROM plans WHERE parent_id=$1', [parent.id]);
+    const children = [];
+    for (let i = 0; i < stops.length; i++) {
+      const s = stops[i] || {};
+      const nm = String(s.stop_name || ('点' + (i + 1)));
+      const cr = await pool.query(
+        `INSERT INTO plans (title, detail, plan_at, done, priority,
+                            feature_id, feature_name, place_note, time_note, task_note,
+                            parent_id, stop_seq)
+         VALUES ($1, '', $2, FALSE, 'normal', $3, $4, $5, '', $6, $7, $8)
+         RETURNING id, title, detail, plan_at, done, priority,
+                   feature_id, feature_name, place_note, time_note, task_note,
+                   parent_id, stop_seq, created_at, updated_at`,
+        [nm, normPlanTime(s.stop_at), parent.feature_id, nm,
+         String(s.stop_note || ''), String(s.stop_task || ''), parent.id, i]
+      );
+      children.push(cr.rows[0]);
+    }
+    return children;
+  }
+
   // GET /api/plans?db= → 列出计划任务（顶层计划 + 各计划下的节点子任务）
   // 全链计划：路径主计划(parent_id IS NULL)+ 沿途每个节点子任务(parent_id 指向主计划)
   if (reqPath === '/api/plans' && req.method === 'GET') {
@@ -1304,6 +1334,7 @@ const server = http.createServer((req, res) => {
         const plan = r.rows[0];
         if (input.stops !== undefined) await replacePlanStops(p, plan.id, input.stops);
         // 全链计划：顶层计划（非子任务）带途经点时，自动为每个节点生成一条子任务
+        // （幂等：已拆解过的路径不会重复生成；节点数变化时由 PUT 侧的 syncPathChildren 自愈）
         const children = (!plan.parent_id && Array.isArray(input.stops) && input.stops.length)
           ? await materializeChildren(p, plan) : [];
         sendJson(res, 200, { ok: true, plan, children });
@@ -1377,7 +1408,15 @@ const server = http.createServer((req, res) => {
           const chk = await p.query('SELECT id FROM plans WHERE id=$1', [id]);
           if (!chk.rows.length) return sendJson(res, 404, { ok: false, error: '任务不存在' });
         }
-        if (hasStops) await replacePlanStops(p, id, input.stops);
+        if (hasStops) {
+          await replacePlanStops(p, id, input.stops);
+          // 路径类计划：途经点变了就把节点子任务同步刷成一致
+          // （媒体等单节点计划同样适用：1 个节点 = 1 条子任务，于是「照片连线」也能被统计）
+          const fchk = await p.query('SELECT id, parent_id, feature_id FROM plans WHERE id=$1', [id]);
+          if (fchk.rows.length && !fchk.rows[0].parent_id) {
+            await syncPathChildren(p, fchk.rows[0], input.stops);
+          }
+        }
         sendJson(res, 200, { ok: true, plan: updated || { id } });
       } catch (e) { sendJson(res, 400, { ok: false, error: e.message }); }
     })();

@@ -1019,3 +1019,38 @@ var paths = mapData.features.filter(f => f.geometry.type==='LineString' || f.geo
 - `node --check` 通过（server.js / map-player.html）；LF（CR=0）
 
 **部署**：`server.js`（restart dm-DMgeo）+ `map-player.html`（Ctrl+F5）。
+
+## 41. DMgeo · 「照片连线」要素纳入节点任务统计（路径类计划自动同步）
+
+**需求**：断断「这个照片连线的线要素怎么不会像点连线的线一样被统计？」
+
+**根因分析（三条链路比对）**：手画线之所以"被统计"，靠的是挂计划时把线拆成 N 条**节点子任务**（`plans.parent_id`），
+侧栏「沿途节点任务 0/8」与时间统计都读这里。而照片连线断在三处：
+
+1. **渲染**：`collectMediaFeatures` 只收 `Point/MultiPoint`，**LineString 形式的手画照片连线根本进不了路径总览**
+   （老逻辑里媒体卡片只有"一个点"这种形态）。
+2. **挂钩**：`collectHookFeatures` 同样只把点媒体放进下拉，线媒体不进。
+3. **落库**：更关键的是 —— `materializeChildren` 只在 **POST 新建**时调用，且**只看"有没有子任务"**；
+   用 PUT 改过 stops（编辑计划）后节点数变了也不会重建，于是节点数量与子任务永久脱节，统计自然对不上。
+
+**改动**：
+
+- **`DMgeo/server.js`**：新增 `syncPathChildren(pool, parent, stops)` —— 与 `materializeChildren` 的差别是
+  **不"有子任务就跳过"，而是比对节点数量**：数量一致才算已拆解，否则整批重建（`DELETE ... WHERE parent_id` 后重插）。
+  PUT `/api/plans/:id` 在 `hasStops` 分支里 **无条件调用**（顶层计划才调用，子任务不递归），
+  且不区分几何形态 —— 所以**线要素、单节点媒体都走同一条路**：1 个节点 = 1 条子任务。
+- **`DMgeo/dashboard.html`**：
+  - `renderPathsOverview` 收集当前库**所有**照片/视频点（含手画照片连线）；
+    同名的手画线已在前面渲染过时 **跳过媒体行**，避免同一条路径出现两行。
+  - `onHookChange` 的媒体分支：`MultiPoint` 取首点，其余逻辑与手画线一致（同样展开成节点行）。
+- **不再暴露手动「生成节点任务」按钮**：节点同步已完全自动，`materializePlan` 调用点废弃（接口保留，向后兼容）。
+
+**验证（真实环境 192.168.1.9:8084）**：
+
+- 新建 3 节点计划 → **children=3**；PUT 把 stops 从 3 改成 2 → **复查 children=2**（旧的 3 条被整批重建，无残留、无孤儿）✅
+- 造一条 `LineString` 形态的「照片连线」（`f_2222`）挂计划 → **children=3**，三个节点各是一条独立子任务 ✅
+- 测试数据全部清理，库回到 **17 条要素 + 1 条计划（8 节点）**
+- `node --check` 通过（server.js / 抽取的主脚本块）；LF（CR=0）；线上关键字校验通过
+
+**部署**：`server.js`（md5 `2419872c6da1ca39e13f083147640479`，restart dm-DMgeo）
++ `dashboard.html`（md5 `bf52f5e63e9c4f82d779d7bfd52639b7`，Ctrl+F5）。

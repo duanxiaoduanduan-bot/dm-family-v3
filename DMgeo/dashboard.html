@@ -632,8 +632,12 @@ function renderPathsOverview(mapData){
     $('pathsOverview').innerHTML='<div class="empty">暂无路径数据</div>';return;
   }
   // 路径总览：①手画线路径（LineString/MultiLineString）②媒体轨迹（同一模具）
+  // 媒体路径 = 库内**所有**照片/视频点（也含用户手画连起来的「照片连线」，
+  // 线与点名称一致时会归并到同一条，避免重复两行）。
   var paths=mapData.features.filter(function(f){return f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='MultiLineString')});
   var mediaFeats=collectMediaFeatures(mapData);
+  var pathNames={};
+  paths.forEach(function(p){var n=(p.properties&&p.properties.name)||'';if(n)pathNames[n]=true});
 
   // 建立站点索引（同库里有名字的点要素），挂到模块级供共享渲染器 renderPathCard 使用。
   // 注意：路径顶点与站点要素是两条独立数据，坐标常有几米级偏差（例：枣林庄差 ~41m），
@@ -681,6 +685,8 @@ function renderPathsOverview(mapData){
   // 断断：「直接按点来跟前面那个路径一样就行」→ 不揉成聚合线，一个媒体一张卡；
   // 好处：下方「挂钩路径」下拉里能像选路径一样选照片，照片还能当攻略缩略图。
   mediaFeats.forEach(function(m,mi){
+    // 同名的手画线已在上面渲染过 —— 跳过，防止同一条路径出现两行
+    if(m.name&&pathNames[m.name])return;
     html+=renderPathCard('m'+mi, m.name, [[m.lng,m.lat]],
       m.mediaType==='video'
         ?'<span class="badge badge-video">视频</span>'
@@ -901,15 +907,17 @@ function onHookChange(){
   var f=_mapFeaturesById[fid];
   var gt=f&&f.geometry?f.geometry.type:'';
   var isLine=(gt==='LineString'||gt==='MultiLineString');
-  // 媒体挂钩：单节点（带缩略图，可作攻略缩略图）
+  // 媒体挂钩：同样展开成「节点行」——1 个媒体 = 1 个节点。
+  // 与手画线走完全相同的流程，所以照片/视频同样会被拆成节点子任务、进入导航统计。
   if(!isLine&&f){
     var props=f.properties||{};
     var file=props.photo||props.video||props.media||'';
     if(file){
       var mt=props.mediaType||props.type||'';
       if(mt!=='photo'&&mt!=='video')mt=/\.(mp4|webm|mkv|mov|avi|flv|wmv)$/i.test(file)?'video':'photo';
+      var mc=f.geometry.type==='MultiPoint'?f.geometry.coordinates[0]:f.geometry.coordinates;
       _stopsSeed=[{
-        stop_name:props.name||file, lng:f.geometry.coordinates[0], lat:f.geometry.coordinates[1],
+        stop_name:props.name||file, lng:mc[0], lat:mc[1],
         stop_at:'', stop_task:'', stop_note:'', thumb:mt==='photo'?file:'', mediaType:mt, file:file
       }];
       renderStops();
