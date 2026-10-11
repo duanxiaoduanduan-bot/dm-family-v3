@@ -2088,6 +2088,20 @@ const server = http.createServer((req, res) => {
 
   // ====== 兼容旧接口（保留向后兼容） ======
 
+  // 剥掉几何里的 Z/M 维度：features 表列是二维 geometry(Geometry,4326)，
+  // 前端（或导入的 GPX/GeoJSON）可能带高程坐标 [lng,lat,z]，PostGIS 会报
+  // "Geometry has Z dimension but column does not"。写入前统一降为 [lng,lat]。
+  function stripZ(coords) {
+    if (!Array.isArray(coords)) return coords;
+    // 到达坐标对层级：元素是数字 → 只保留前两位
+    if (coords.length && typeof coords[0] === 'number') return coords.slice(0, 2);
+    return coords.map(stripZ);
+  }
+  function sanitizeGeometry(geom) {
+    if (!geom || typeof geom !== 'object' || !Array.isArray(geom.coordinates)) return geom;
+    return Object.assign({}, geom, { coordinates: stripZ(geom.coordinates) });
+  }
+
   // POST /save-geodata → 写入数据库(支持 ?db=)
   if (reqPath === '/save-geodata' && req.method === 'POST') {
     let body = '';
@@ -2129,6 +2143,8 @@ const server = http.createServer((req, res) => {
         for (const f of geojson.features) {
           if (!f || !f.geometry) continue;
           const props = f.properties || {};
+          // 写库前剥 Z：见 stripZ/sanitizeGeometry 定义处注释
+          f.geometry = sanitizeGeometry(f.geometry);
           // 库主键：兼容 'f_2186' / '2186' / 数字三种写法
           let dbId = props.dbId;
           if (dbId != null) {

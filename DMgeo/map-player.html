@@ -1572,19 +1572,21 @@ async function saveToServer(geojson){
     var payload=geojson||buildGeoJSON();
     if(!payload.features)payload.features=[];
     if(pendingDeleted.length)payload.deleted=pendingDeleted.slice();
-    var r=await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(r.ok){pendingDeleted=[];showToast('已同步')}
-    else{
-      // 保存失败必须显式告警：历史 bug（PG 参数类型推断失败）曾静默返回 ok:false，
-      // 前端只 console.error，用户以为"存上了"，刷新才发现丢失。
-      saveFailCount++;
-      console.error('保存被服务端拒绝',r);
-      showToast('⚠️ 保存失败: '+(r.error||('HTTP '+r.status))+'（修改不会保留，请截图反馈）');
-      if(saveFailCount===3)alert('连续 3 次保存失败，修改可能丢失：\n'+(r.error||'未知错误'));
-    }
+    var resp=await dbApi('/save-geodata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    // ⚠️ dbApi 返回的是 fetch 的 Response，不是 JSON —— 必须显式解析后再看业务 ok 字段。
+    // 之前直接读 r.error 会拿到 undefined，提示变成「保存失败: HTTP undefined」。
+    var data=null;
+    try{data=await resp.json()}catch(_){data=null}
+    if(resp.ok&&data&&data.ok){pendingDeleted=[];saveFailCount=0;showToast('已同步');return}
+    // 失败：HTTP 层 或 业务层（后端返回 ok:false 并带 error）都要报出来
+    saveFailCount++;
+    var why=(data&&data.error)||('HTTP '+resp.status);
+    console.error('保存被服务端拒绝',resp.status,data);
+    showToast('⚠️ 保存失败: '+why+'（修改不会保留）');
+    if(saveFailCount===3)alert('连续 3 次保存失败，修改可能丢失：\n'+why);
   }catch(e){
     saveFailCount++;
-    console.error('保存失败',e);
+    console.error('保存请求失败',e);
     showToast('⚠️ 保存请求失败: '+e.message);
   }
 }

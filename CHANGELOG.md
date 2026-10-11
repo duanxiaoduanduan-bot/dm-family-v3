@@ -1103,3 +1103,76 @@ var paths = mapData.features.filter(f => f.geometry.type==='LineString' || f.geo
 
 **遗留建议（未实施）**：`saveToServer` 失败时只 `console.error`，用户看不到 —— 建议补一个失败 toast，
 避免今后再出现"静默不保存"。
+
+## 43. DMgeo map-player · 修正保存失败提示本身有 bug（Response 未解析）
+
+**需求**：断断「我 push 完了，它说保存失败」。
+
+**排查**：第 42 节加的失败告警**自己写错了** ——
+```js
+var r = await dbApi('/save-geodata', ...);   // dbApi 直接 return fetch(...) → r 是 Response
+if (r.ok) { ... } else { showToast(r.error) } // Response 上没有 error 字段！
+```
+`dbApi()` 的实现是 `return fetch(url,opts)`，**没有解析 body**。所以：
+- 成功时 `r.ok === true`（HTTP 2xx），走成功分支 —— **功能正常**
+- 但一旦真的失败，`r.error` 是 `undefined`，提示会显示 `保存失败: HTTP undefined`
+- 更糟的是：**如果服务端返回 200 但业务层 `ok:false`，`r.ok` 仍是 true → 完全静默**
+
+**改动（`DMgeo/map-player.html`）**：`saveToServer` 显式解析响应体后按「HTTP 层 + 业务层」双重判断：
+
+```js
+var resp = await dbApi('/save-geodata', {...});
+var data = null;
+try { data = await resp.json() } catch(_) { data = null }
+if (resp.ok && data && data.ok) { pendingDeleted=[]; saveFailCount=0; showToast('已同步'); return }
+var why = (data && data.error) || ('HTTP ' + resp.status);
+saveFailCount++;
+showToast('⚠️ 保存失败: ' + why + '（修改不会保留）');
+if (saveFailCount === 3) alert('连续 3 次保存失败，修改可能丢失：\n' + why);
+```
+
+**同时验证后端确实无恙**（192.168.1.9:8084 实测）：
+
+| 用例 | 结果 |
+|---|---|
+| 全量回写 17 要素 | `{"ok":true,"added":17}` ✅ |
+| 2.2MB / 4000 要素大包 | `{"ok":true,"added":4000}`（无 body 限制）✅ |
+| 坐标字符串 / null / 单点线 / 未闭合多边形 / 300 字名称 / 引号转义 | 全部 `ok:true` ✅ |
+
+**顺带**：排查过程中误用 `deleted` 数组删掉了两条真实要素（`f_623` 太西智慧酒店、`f_1549` HONhxHda4AAPyyG_1.jpg），
+已从 `.backup/trip-features-20261011-233818.json` 完整恢复（含 `features_id_seq` 校正），
+库现为 **18 条要素**，测试数据（ZZ*/BIG_* 前缀）全部清理。
+
+**部署**：`server.js`（md5 `d302d56fb15147d3475dc02bd54466e1`）+ `map-player.html`（md5 `bfd907135e168b1ac494382336697921`，Ctrl+F5）。
+
+## 44. DMgeo · 修复「Geometry has Z dimension but column does not」（三维坐标拒存）
+
+**需求**：断断截图 —— 弹窗「连续 3 次保存失败，修改可能丢失：**Geometry has Z dimension but column does not**」。
+（第 43 节的告警修复立功了：真实错误第一次显形。）
+
+**根因**：`features` 表的几何列是**二维** `geometry(Geometry,4326)`，而前端某些来源的坐标带**高程 Z**（如
+GPS 导入的照片、某些图源/手环轨迹、浏览器定位 API 的 altitude），形如 `[lng, lat, 55.5]`。
+PostGIS 写入时严格校验维度 → 三维几何直接拒收，且**带 Z 的那批要素每次保存都失败**（整包一起发，一个失败整包 400）。
+
+**改动（`DMgeo/server.js`）**：`/save-geodata` 写库循环里，每个要素先过 `sanitizeGeometry()`：
+
+```js
+function stripZ(coords) {
+  if (!Array.isArray(coords)) return coords;
+  if (coords.length && typeof coords[0] === 'number') return coords.slice(0, 2); // [lng,lat,z] → [lng,lat]
+  return coords.map(stripZ);
+}
+function sanitizeGeometry(geom) { ...coordinates: stripZ(geom.coordinates)... }
+```
+
+INSERT / UPDATE 走同一入口，Point/Line/Polygon/Multi* 全覆盖；Z 只在**写库时**剥掉，前端内存里的不动。
+
+**验证（真实环境 192.168.1.9:8084）**：
+
+| 用例 | 结果 |
+|---|---|
+| 带 Z 的照片连线 `[116,38,55.5]...` 保存 | `{"ok":true,"added":1}` ✅ |
+| 回读 | 自动降为二维 `[116,38],[116.1,38.1],[116.2,38.2]` ✅ |
+| 二维数据回归 | 不受影响（stripZ 对二维是恒等变换）✅ |
+
+测试数据已清理。**部署**：`server.js`（md5 `7d5fec44256552d2c83162bae150fd59`，restart dm-DMgeo）。
