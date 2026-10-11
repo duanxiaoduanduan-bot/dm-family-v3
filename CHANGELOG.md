@@ -341,3 +341,34 @@ db-manager.html 顶栏新增「📦 整库导出」「📥 整库导入」，用
 另：dryRun 阶段挪到建库之前（避免对不存在的库开连接）；归档含几何列而目标库无 PostGIS 时，给出**可操作的中文错误**（附 `sudo -u postgres psql -d <库> -c "CREATE EXTENSION postgis;"`），不再抛误导性的 `type "geometry" does not exist`。
 
 > 注意：服务以 `dmuser` 运行，**无权限给新库装 PostGIS**（`dmuser` 非 superuser）。整库导入到全新库时需先由超级用户装好扩展，或由安装脚本预置。此为既有权限模型，本次未改动。
+
+---
+
+## 14. DMgeo map-player · 修复「用过线/面之后📍 点失效」
+
+**现象**：打开 `map-player.html`，先点「✏️ 线」画过一条线（或「⬠ 面」画过面）之后，再点「📍 点」并点击地图，**创建面板不再弹出**，点也建不出来。
+
+**根因**：Leaflet 的 `map.off('click')` **不带 handler 参数时会移除该事件上的全部监听器**。而地图点击分发器（负责照片/视频/标点三种模式）是匿名函数一次性注册的：
+
+```js
+map.on('click', function(e){ ... })        // 总处理器（匿名，无法精确移除）
+...
+map.off('click'); map.on('click', onDrawClick);   // ✏️ 线：无参 off → 顺手把总处理器删了
+```
+
+于是**只要用过一次线/面，总处理器就永久失效**，之后「📍 点」自然没反应。且 `finishDraw()` / `finishPolygonDraw()` 只摘掉自己的 handler，**从未把总处理器挂回去**。
+
+| 路径 | 说明 |
+|------|------|
+| `DMgeo/map-player.html` | 总处理器提取为具名函数 `onMapClick`；所有 `off/on` 一律带 handler 参数；`finishDraw`/`finishPolygonDraw` 结束时恢复 `onMapClick` |
+
+**修复要点**
+
+- `map.on('click', onMapClick)`（具名，可精确增删）。
+- `startDraw` / `startPolygonDraw`：`map.off('click', onMapClick)` 只摘总处理器，不再用无参 `off`。
+- `finishDraw` / `finishPolygonDraw`：`map.off('click', onMapClick); map.on('click', onMapClick)` **恢复**总处理器（顺带防重复挂载）。
+- `onMapClick` 开头 `if(drawing||polygonDrawing) return;` 作为双保险。
+
+**验证**：按 Leaflet `Events` 语义做事件级模拟——修复后「标点→画线→标点→画面→标点」三次都弹面板；旧代码复现只弹 1 次。静态 HTML，浏览器刷新即生效。
+
+**部署**：`git push` → Ubuntu 覆盖 `DMgeo/map-player.html`（静态文件，无需重启服务，Ctrl+F5 强刷）。

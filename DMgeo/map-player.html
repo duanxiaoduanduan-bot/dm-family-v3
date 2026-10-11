@@ -852,7 +852,8 @@ function startDraw(){
   if(!drawLayer){drawLayer=L.layerGroup().addTo(map)}
   tempLine=L.polyline([],{color:'#00cec9',weight:3,dashArray:'8,6'}).addTo(drawLayer);
   map.getContainer().style.cursor='crosshair';
-  map.off('click');map.on('click',onDrawClick);
+  map.off('click',onMapClick);   // 只摘总处理器，别用无参 off（会连自己一起删）
+  map.on('click',onDrawClick);
 }
 function onDrawClick(e){if(!drawing)return;drawPoints.push([e.latlng.lat,e.latlng.lng]);tempLine.setLatLngs(drawPoints);L.circleMarker(e.latlng,{radius:4,color:'#00cec9',fillColor:'#fff',fillOpacity:1,weight:2}).addTo(drawLayer)}
 function finishDraw(){
@@ -862,6 +863,8 @@ function finishDraw(){
   document.getElementById('drawBtn').style.borderColor='';
   map.getContainer().style.cursor='';
   map.off('click',onDrawClick);
+  map.off('click',onMapClick);   // 防重复挂载
+  map.on('click',onMapClick);    // 恢复总处理器（否则画完线后「📍 点」失效）
   if(drawPoints.length<2){if(drawLayer)drawLayer.clearLayers();drawPoints=[];showToast('至少需要2个点');return}
   var name=prompt('线名称','线 '+(pathId+1));if(!name){if(drawLayer)drawLayer.clearLayers();drawPoints=[];return}
   var id='p_'+(++pathId);
@@ -887,7 +890,8 @@ function startPolygonDraw(){
   if(!drawLayer){drawLayer=L.layerGroup().addTo(map)}
   tempPolygon=L.polygon([],{color:'#a29bfe',weight:2,fillColor:'#a29bfe',fillOpacity:0.15,dashArray:'6,4'}).addTo(drawLayer);
   map.getContainer().style.cursor='crosshair';
-  map.off('click');map.on('click',onPolygonClick);
+  map.off('click',onMapClick);   // 同上：精确摘除总处理器
+  map.on('click',onPolygonClick);
   map.on('dblclick',function(e){if(polygonDrawing){L.DomEvent.stop(e);finishPolygonDraw()}});
 }
 function onPolygonClick(e){
@@ -903,6 +907,8 @@ function finishPolygonDraw(){
   document.getElementById('polyBtn').style.borderColor='';
   map.getContainer().style.cursor='';
   map.off('click',onPolygonClick);
+  map.off('click',onMapClick);   // 防重复挂载
+  map.on('click',onMapClick);    // 恢复总处理器（否则画完面后「📍 点」失效）
   if(polygonPoints.length<3){if(drawLayer)drawLayer.clearLayers();polygonPoints=[];showToast('至少需要3个点');return}
   var name=prompt('区域名称','区域 '+(pathId+1));if(!name){if(drawLayer)drawLayer.clearLayers();polygonPoints=[];return}
   var id='p_'+(++pathId);
@@ -1173,9 +1179,14 @@ function renderPhotoGrid(){
   }
 }
 
-// ===== 地图点击 =====
-map.on('click',function(e){
-  if(drawing)return;
+// ===== 地图点击（总分发器）=====
+// 注意：这是唯一的「总点击处理器」，负责 照片/视频/标点 三种模式。
+// 画线/画面的临时处理器只能「精确增删自己」——
+// 早期代码里用无参 `map.off('click')` 会把本处理器一起摘掉，
+// 导致用过一次「✏️ 线」之后「📍 点」再点地图就没反应（创建面板弹不出来）。
+// 所以这里用具名函数，所有 off/on 都必须带上 handler 参数。
+function onMapClick(e){
+  if(drawing||polygonDrawing)return;
   if(addPhotoMode&&activePhoto!==null&&photoList[activePhoto]){
     // 照片模式：在点击位置放照片
     var p=photoList[activePhoto];
@@ -1201,7 +1212,8 @@ map.on('click',function(e){
     pendingMarker={lat:e.latlng.lat,lng:e.latlng.lng};
     showMarkerCreatePanel(e.latlng.lat,e.latlng.lng);
   }
-});
+}
+map.on('click',onMapClick);
 
 // ===== 灯箱 =====
 function openLightbox(url,info,isVideo){
