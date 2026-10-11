@@ -85,6 +85,8 @@ tr.sel{background:rgba(0,206,201,.04)}tr.sel td{color:#fff}
   <select id="dbSel" onchange="pickDb(this.value)" style="padding:3px 6px;border-radius:5px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--tx);font-size:10px;outline:none"></select>
   <button onclick="showRenameDb()" style="padding:3px 8px;font-size:9px" title="重命名">✏️</button>
   <button onclick="showDropDb()" class="dg" style="padding:3px 8px;font-size:9px" title="删除">🗑</button>
+  <button onclick="showExportDb()" style="padding:3px 10px;font-size:10px;border-radius:5px;border:1px solid var(--bd);background:rgba(46,204,113,.12);color:var(--sc);cursor:pointer" title="整库导出为 .zsql 归档">📦 整库导出</button>
+  <button onclick="showImportDb()" style="padding:3px 10px;font-size:10px;border-radius:5px;border:1px solid var(--bd);background:rgba(108,92,231,.14);color:var(--a2);cursor:pointer" title="从 .zsql 归档导入整库">📥 整库导入</button>
   <a href="/storage-manager.html">⚙️ 存储</a><a href="/admin-regions.html">📍 区划</a><a href="/index.html">← DMgeo</a>
 </div>
 <div class="layout">
@@ -338,6 +340,109 @@ async function doRenameDb(){var n=(document.getElementById('f_drn').value||'').t
 function showDropDb(){if(cur.db==='trip'){T('不能删 trip');return}var n=prompt('⚠️ 输入库名确认删除: '+cur.db);if(n===cur.db)doDropDb();else if(n!==null)T('不匹配')}
 async function doDropDb(){
   try{var r=await api('/api/pg/databases/'+encodeURIComponent(cur.db),{method:'DELETE'});if(r.ok){T('✅');closeMo();cur.db='dmpageo';dbs=dbs.filter(function(d){return d!==cur.db});loadTabs();doTree()}else T(r.error)}catch(e){T(e.message)}}
+
+// ===== 整库导出 / 导入（zsql 归档） =====
+// 导出：后端遍历 information_schema，把每张表的列定义(含几何子类型/SRID/默认值/NOT NULL)
+// 与全部行(几何转 GeoJSON)打成一个 .zsql JSON 文件流式下载。
+// 导入：先 dryRun 探测冲突 → 弹窗让用户逐表选 覆盖/跳过/改名备份 → 再正式导入(单事务)。
+// 定式：避免只搬 features 表而漏掉区划表/自定义表；避免 db 池串库；避免半截库。
+var IMP_LIMIT = 80*1024*1024; // 归档文件上限 80MB（前端读进内存的护栏）
+
+function showExportDb(){
+  fetch('/api/pg/tables?db='+encodeURIComponent(cur.db)).then(function(r){return r.json()}).then(function(ts){
+    if(!Array.isArray(ts))ts=[];
+    var skip=['stats_features'];
+    var chk=ts.map(function(n){
+      var def=skip.indexOf(n)>=0;
+      return '<label style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;cursor:pointer"><input type="checkbox" class="chk" id="ex_'+E(n)+'" '+(def?'':'checked')+'> '+E(n)+'</label>';
+    }).join('')||'<span style="color:var(--di);font-size:10px">无表</span>';
+    mo('📦 整库导出 — '+E(cur.db),
+      '<p style="color:var(--di);font-size:10px;margin-bottom:8px">勾选要打包的表（几何列会原样还原，含 SRID 与子类型）</p>'+
+      '<div style="max-height:220px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;padding:8px">'+chk+'</div>'+
+      '<p style="color:var(--di);font-size:9px;margin-top:8px">生成文件：<b>'+E(cur.db)+'_日期.zsql</b>，可直接用于「整库导入」</p>',
+      doExportDb,'ok');
+  }).catch(function(e){T(e.message)});
+}
+function doExportDb(){
+  var skip=[];
+  Array.prototype.forEach.call(document.querySelectorAll('.mc .chk'),function(cb){
+    if(cb.id && cb.id.indexOf('ex_')===0 && !cb.checked) skip.push(cb.id.slice(3));
+  });
+  var a=document.createElement('a');
+  a.href='/api/pg/databases/'+encodeURIComponent(cur.db)+'/export?skip='+encodeURIComponent(skip.join(','));
+  a.download=cur.db+'.zsql';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  closeMo(); T('⏳ 导出中，请留意浏览器下载...');
+}
+
+function showImportDb(){
+  var f='<div class="fd"><label>归档文件 (.zsql)</label><input type="file" id="f_zsql" accept=".zsql,.json"></div>'+
+    '<div class="fd"><label>导入到哪个库（可填新库名，不存在会自动创建）</label><input id="f_idb" value="'+E(cur.db)+'"></div>'+
+    '<p style="color:var(--di);font-size:9px">导入后如遇同名表，会让你逐表选择处理方式</p>';
+  mo('📥 整库导入',f,doImportPick,'ok');
+}
+function doImportPick(){
+  var fi=document.getElementById('f_zsql');
+  if(!fi||!fi.files||!fi.files.length){T('选择 .zsql 文件');return}
+  var file=fi.files[0];
+  if(file.size>IMP_LIMIT){T('文件过大(>80MB)，请拆分后再导入');return}
+  var target=(document.getElementById('f_idb').value||'').trim()||cur.db;
+  T('⏳ 读取归档...');
+  var fr=new FileReader();
+  fr.onload=function(){
+    var arch;
+    try{arch=JSON.parse(fr.result)}catch(e){T('解析失败，不是有效的 zsql 文件');return}
+    if(!arch||arch.format!=='dmgeo-zsql'){T('不是 dmgeo 归档格式');return}
+    // dryRun：探测目标库冲突
+    fetch('/api/pg/databases/'+encodeURIComponent(target)+'/import',{method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},body:JSON.stringify({archive:{format:'dmgeo-zsql',tables:arch.tables},dryRun:true})})
+    .then(function(r){return r.json()}).then(function(d){
+      if(d.error){T(d.error);return}
+      askConflicts(arch,target,d.tables||[]);
+    }).catch(function(e){T(e.message)});
+  };
+  fr.readAsText(file);
+}
+// 冲突决策弹窗：逐表选 覆盖(DROP重建) / 跳过 / 改名备份
+function askConflicts(arch,target,list){
+  var conflicts=list.filter(function(t){return t.conflict});
+  var rows=list.map(function(t){
+    var sel='';
+    if(t.conflict){
+      sel='<select id="dc_'+E(t.name)+'" style="padding:2px 6px;border-radius:4px;border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--tx);font-size:10px">'+
+        '<option value="overwrite">覆盖(删旧建新)</option>'+
+        '<option value="backup" selected>改名备份</option>'+
+        '<option value="skip">跳过</option></select>';
+    }else{
+      sel='<span style="color:var(--sc);font-size:10px">✓ 新建</span>';
+    }
+    return '<tr><td style="padding:3px 6px;font-size:11px">'+E(t.name)+'</td><td style="padding:3px 6px;font-size:10px;color:var(--di)">'+t.rows+' 行 · '+t.columns+' 列</td><td style="padding:3px 6px">'+sel+'</td></tr>';
+  }).join('');
+  var warn=conflicts.length?'<p style="color:var(--wn);font-size:10px;margin-bottom:8px">⚠️ '+conflicts.length+' 张表在【'+E(target)+'】中已存在，请逐表选择处理方式</p>':'<p style="color:var(--sc);font-size:10px;margin-bottom:8px">✓ 无冲突，全部新建</p>';
+  mo('📥 导入确认 → '+E(target),
+    warn+'<div style="max-height:260px;overflow-y:auto"><table style="width:100%"><thead><tr><th style="font-size:10px;text-align:left;padding:3px 6px">表</th><th style="font-size:10px;text-align:left;padding:3px 6px">归档内容</th><th style="font-size:10px;text-align:left;padding:3px 6px">冲突处理</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<p style="color:var(--dg);font-size:9px;margin-top:8px">导入在单事务中执行，任一表失败会整体回滚</p>',
+    function(){doImportExec(arch,target,list)},'ok');
+}
+function doImportExec(arch,target,list){
+  var decisions={};
+  list.forEach(function(t){
+    if(!t.conflict)return;
+    var el=document.getElementById('dc_'+t.name);
+    decisions[t.name]=el?el.value:'backup';
+  });
+  closeMo(); T('⏳ 导入中，请稍候（大库可能需数十秒）...');
+  fetch('/api/pg/databases/'+encodeURIComponent(target)+'/import',{method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},body:JSON.stringify({archive:arch,decisions:decisions})})
+  .then(function(r){return r.json()}).then(function(d){
+    if(d.error){T('❌ '+d.error);return}
+    var okRows=(d.restored||[]).filter(function(r){return r.rows}).reduce(function(a,r){return a+r.rows},0);
+    var sk=(d.restored||[]).filter(function(r){return r.action==='skipped'}).length;
+    var bak=(d.restored||[]).filter(function(r){return r.action==='backup'}).length;
+    T('✅ 导入完成：'+okRows+' 行'+(bak?'，'+bak+' 表已备份':'' )+(sk?'，'+sk+' 表跳过':''));
+    if(target!==cur.db){cur.db=target;localStorage.setItem('pgm_db',target);}
+    api('/api/pg/databases').then(function(ds){dbs=ds;doTree()}).catch(function(){});
+    loadTabs(); doTree();
+  }).catch(function(e){T(e.message)});
+}
 
 // ===== 跨库迁移 =====
 function showCopyDb(){if(!cur.tbl){T('先选表');return}

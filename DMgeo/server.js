@@ -594,6 +594,224 @@ async function handlePgApi(req, res, reqPath, method) {
     } catch(e) { return sendJson(res, 500, { error: e.message }); }
   }
 
+  // ===== 整库导出 / 导入（zsql JSON 归档）=====
+  // 设计要点：
+  //  1. 不用 pg_dump/pg_restore —— 纯 Node 实现，跨机器、跨 PG 版本都能用。
+  //  2. 表名/列名/列顺序/几何列名全部按原样还原，不做任何猜测。
+  //  3. 导入走单事务，失败整体回滚，不留半截库。
+
+  // 把归档里的列信息还原成可执行的列定义（字段名须与 dumpDatabase 产出一致）
+  const buildColumnDef = (c) => {
+    const u = (c.udt || '').toLowerCase();
+    if (u === 'geometry') {
+      const gt = c.geometryType || 'Geometry';
+      const srid = c.srid === null || c.srid === undefined ? 4326 : c.srid;
+      return `geometry(${gt},${srid})`;
+    }
+    if (u === 'jsonb') return 'JSONB';
+    if (u === 'json') return 'JSON';
+    // 用 format_type 的完整类型最稳（varchar(n)/numeric(10,2)/timestamp without time zone 全都对）
+    let def = c.fullType || c.dataType || 'TEXT';
+    if (c.isNullable === 'NO') def += ' NOT NULL';
+    if (c.columnDefault) def += ` DEFAULT ${c.columnDefault}`;
+    return def;
+  };
+
+  // 读取某库的完整结构 + 数据
+  async function dumpDatabase(dbName, opts) {
+    const o = opts || {};
+    const p = getFeaturePool(dbName);
+    const tblR = await p.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name`
+    );
+    const tables = {};
+    for (const { table_name: tn } of tblR.rows) {
+      if (o.skip && o.skip.includes(tn)) continue;
+      // 列信息：从 pg_catalog 取，才能拿到几何子类型与 SRID（information_schema 看不到）
+      const colR = await p.query(
+        `SELECT a.attname AS column_name,
+                format_type(a.atttypid, a.atttypmod) AS full_type,
+                t.typname AS udt_name,
+                CASE WHEN t.typname='geometry' THEN (SELECT gc.type FROM geometry_columns gc WHERE gc.f_table_schema='public' AND gc.f_table_name=$1 AND gc.f_geometry_column=a.attname LIMIT 1) END AS geometry_type,
+                CASE WHEN t.typname='geometry' THEN (SELECT gc.srid FROM geometry_columns gc WHERE gc.f_table_schema='public' AND gc.f_table_name=$1 AND gc.f_geometry_column=a.attname LIMIT 1) END AS srid,
+                NOT a.attnotnull AS nullable,
+                pg_get_expr(d.adbin, d.adrelid) AS column_default
+         FROM pg_attribute a
+         JOIN pg_type t ON t.oid = a.atttypid
+         LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+         WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped
+         ORDER BY a.attnum`,
+        [tn]
+      ).catch(() => ({ rows: [] }));
+
+      const cols = colR.rows.map(c => ({
+        name: c.column_name,
+        udt: (c.udt_name || '').toLowerCase(),
+        fullType: c.full_type,
+        dataType: c.full_type,
+        geometryType: c.geometry_type,
+        srid: c.srid === null || c.srid === undefined ? 4326 : Number(c.srid),
+        isNullable: c.nullable ? 'YES' : 'NO',
+        columnDefault: c.column_default
+      }));
+      const geomCols = cols.filter(c => c.udt === 'geometry').map(c => c.name);
+
+      // 数据：几何列转 GeoJSON 文本
+      const selectParts = cols.map(c =>
+        geomCols.includes(c.name) ? `ST_AsGeoJSON("${c.name}") AS "${c.name}__geojson"` : qIdent(c.name)
+      );
+      const dataR = await p.query(`SELECT ${selectParts.join(', ')} FROM ${qIdent(tn)}`);
+
+      tables[tn] = { columns: cols, geomColumns: geomCols, rows: dataR.rows };
+    }
+    return {
+      format: 'dmgeo-zsql',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      database: dbName,
+      tables
+    };
+  }
+
+  // GET /api/pg/databases/:name/export → 整库导出（zsql JSON 归档）
+  //   查询串：?skip=表1,表2  排除某些表
+  if (pathParts[0] === 'databases' && pathParts[2] === 'export' && method === 'GET') {
+    try {
+      const target = pathParts[1];
+      if (!target) throw new Error('未指定数据库');
+      const skip = (url.searchParams.get('skip') || '').split(',').map(s => s.trim()).filter(Boolean);
+      const archive = await dumpDatabase(target, { skip });
+      const body = JSON.stringify(archive, null, 2);
+      const fname = `${target}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_${Date.now().toString(36)}.zsql`;
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(fname)}"`,
+        'Content-Length': Buffer.byteLength(body)
+      });
+      return res.end(body);
+    } catch (e) { return sendJson(res, 500, { error: e.message }); }
+  }
+
+  // POST /api/pg/databases/:name/import → 整库导入
+  //   body: { archive, onConflict: 'ask'|'overwrite'|'skip'|'backup', decisions: {表名: 'overwrite'|'skip'|'backup'}, dryRun?: bool }
+  if (pathParts[0] === 'databases' && pathParts[2] === 'import' && method === 'POST') {
+    try {
+      const target = pathParts[1];
+      if (!target) throw new Error('未指定数据库');
+      const body = JSON.parse(await getBody());
+      const archive = body.archive;
+      if (!archive || archive.format !== 'dmgeo-zsql') throw new Error('不是有效的 zsql 归档文件');
+      const tables = archive.tables || {};
+      const decisions = body.decisions || {};
+      const onConflict = body.onConflict || 'ask';
+
+      // 先确保目标库存在且结构齐备（含 PostGIS + features + 授权）
+      const created = await ensureFeatureStore(target, true);
+
+      const p = getFeaturePool(target);
+      const tblR = await p.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`
+      );
+      const existing = new Set(tblR.rows.map(r => r.table_name));
+      const names = Object.keys(tables);
+
+      // dryRun：只回报冲突情况，前端据此弹窗让用户逐表决定
+      if (body.dryRun) {
+        return sendJson(res, 200, {
+          ok: true, dryRun: true, database: target,
+          tables: names.map(n => ({
+            name: n,
+            rows: (tables[n].rows || []).length,
+            columns: (tables[n].columns || []).length,
+            conflict: existing.has(n)
+          }))
+        });
+      }
+
+      const results = [];
+      // 单事务：全部成功才提交，失败整体回滚
+      const client = await p.connect();
+      try {
+        await client.query('BEGIN');
+        for (const tn of names) {
+          const t = tables[tn];
+          const cols = t.columns || [];
+          const geomCols = t.geomColumns || cols.filter(c => c.udt === 'geometry').map(c => c.name);
+          const conflict = existing.has(tn);
+          let action = decisions[tn] || (conflict
+            ? (onConflict === 'skip' ? 'skip' : onConflict === 'overwrite' ? 'overwrite' : onConflict === 'backup' ? 'backup' : 'ask')
+            : 'create');
+          if (action === 'ask') { results.push({ name: tn, action: 'skipped', reason: '未决定' }); continue; }
+          if (action === 'skip') { results.push({ name: tn, action: 'skipped', rows: 0 }); continue; }
+
+          let workName = tn;
+          if (conflict) {
+            if (action === 'backup') {
+              const bak = `${tn}_bak_${new Date().toISOString().slice(0, 17).replace(/[-:T]/g, '')}`;
+              await client.query(`ALTER TABLE ${qIdent(tn)} RENAME TO ${qIdent(bak)}`);
+              results.push({ name: tn, action: 'backup', backupName: bak });
+            } else {
+              await client.query(`DROP TABLE ${qIdent(tn)} CASCADE`);
+            }
+          }
+
+          // 建表：列定义原样还原
+          const colDefs = cols.map(c => `${qIdent(c.name)} ${buildColumnDef(c)}`).join(', ');
+          await client.query(`CREATE TABLE ${qIdent(workName)} (${colDefs || 'id SERIAL PRIMARY KEY'})`);
+          // 几何列补空间索引（照抄原表习惯）
+          for (const gc of geomCols) {
+            await client.query(`CREATE INDEX IF NOT EXISTS ${qIdent('idx_' + workName + '_' + gc)} ON ${qIdent(workName)} USING GIST (${qIdent(gc)})`);
+          }
+          // 导数据：逐行参数化插入（几何走 ST_GeomFromGeoJSON，避免拼接注入与转义地狱）
+          let n = 0;
+          for (const row of (t.rows || [])) n += await insertArchivedRow(client, workName, cols, geomCols, row);
+          // 序列归位：SERIAL 主键导入后要 setval，否则下一条插入撞主键
+          const serialCols = cols.filter(c => (c.columnDefault || '').startsWith('nextval('));
+          for (const sc of serialCols) {
+            await client.query(
+              `SELECT setval(pg_get_serial_sequence($1, $2), COALESCE((SELECT MAX(${qIdent(sc.name)}) FROM ${qIdent(workName)}), 1))`,
+              [`public.${workName}`, sc.name]
+            );
+          }
+          // 授权 dmuser（保障各服务能读写）
+          try {
+            await client.query(`GRANT ALL ON ${qIdent(workName)} TO dmuser`);
+            await client.query(`GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO dmuser`);
+          } catch (_) {}
+          results.push({ name: tn, action: conflict ? action : 'created', rows: n });
+        }
+        await client.query('COMMIT');
+      } catch (e) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
+        throw new Error('导入失败，已整体回滚：' + e.message);
+      } finally {
+        client.release();
+      }
+
+      return sendJson(res, 200, { ok: true, database: target, restored: results, initWarning: created && created.ok === false ? created.notes : undefined });
+    } catch (e) { return sendJson(res, 400, { error: e.message }); }
+  }
+
+  // 写入一行（几何列转 ST_GeomFromGeoJSON），列名按归档原样
+  async function insertArchivedRow(client, table, cols, geomCols, row) {
+    const keys = [], vals = [], params = [];
+    for (const c of cols) {
+      if (geomCols.includes(c.name)) {
+        const gj = row[c.name + '__geojson'];
+        if (gj === null || gj === undefined || gj === '') { keys.push(qIdent(c.name)); vals.push('NULL'); }
+        else { keys.push(qIdent(c.name)); vals.push(`ST_SetSRID(ST_GeomFromGeoJSON($${params.push(gj)}), ${c.srid || 4326})`); }
+      } else {
+        const v = row[c.name];
+        if (v === null || v === undefined) { keys.push(qIdent(c.name)); vals.push('NULL'); }
+        else { keys.push(qIdent(c.name)); vals.push(`$${params.push(v)}`); }
+      }
+    }
+    if (!keys.length) return 0;
+    await client.query(`INSERT INTO ${qIdent(table)} (${keys.join(',')}) VALUES (${vals.join(',')})`, params);
+    return 1;
+  }
+
   // POST /api/pg/tables/:name/upload → 上传 GeoJSON/CSV
   if (pathParts[1] === 'upload' && method === 'POST') {
     try {

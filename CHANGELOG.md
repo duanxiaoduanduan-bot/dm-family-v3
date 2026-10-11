@@ -295,3 +295,35 @@ dm → postgis → apps → geodata → start
 **使用**：各设备浏览器打开 `http://<IP>:8083/rootCA.crt` 下载并导入一次，之后 `https://<IP>:8443` 免警告、语音/通话/投屏可用。
 
 **注意**：证书解决「红字警告」；若 `https://IP:8443` 根本连不上（「无法连接」），是本机代理软件拦截内网 HTTPS，需关代理或加直连规则，两码事。
+
+---
+
+## 13. DMgeo · 整库导出 / 导入（zsql 归档）
+
+db-manager.html 顶栏新增「📦 整库导出」「📥 整库导入」，用于**整个数据库**的备份与迁移（原来是单表级 GeoJSON/CSV）。
+
+| 路径 | 说明 |
+|------|------|
+| `DMgeo/server.js` | `GET /api/pg/databases/:name/export`（导出）+ `POST /api/pg/databases/:name/import`（导入，含 dryRun 冲突探测） |
+| `DMgeo/db-manager.html` | 导出勾选面板、导入确认与**逐表冲突决策**弹窗 |
+
+**格式**：单文件 `.zsql`（未压缩 JSON）
+
+```json
+{ "format":"dmgeo-zsql", "version":1, "exportedAt":"...", "database":"trip",
+  "tables": { "features": { "columns":[...], "geomColumns":["geom"], "rows":[...] } } }
+```
+
+**为什么不用 pg_dump/pg_restore**：纯 Node 实现，不依赖外部二进制，跨机器、跨 PG 版本都能用；导出的文本文件出问题能手查。
+
+**实现要点**
+
+- 列定义从 `pg_catalog` 取（`format_type` + `geometry_columns`），**几何子类型/SRID/默认值/NOT NULL 全部原样还原**；`information_schema` 看不到几何子类型，故不用它。
+- 几何列导出 `ST_AsGeoJSON`、导入 `ST_SetSRID(ST_GeomFromGeoJSON(...))`，**参数化绑定**，不拼字符串。
+- 序列归位：导入后对 `nextval` 默认值列 `setval`，否则下一条插入撞主键。
+- 导入**单事务**：任一表失败整体回滚，不留半截库。
+- 冲突（目标库已有同名表）→ 前端逐表选 **覆盖 / 改名备份(`xxx_bak_时间戳`) / 跳过**。
+- 目标库不存在则自动建 + 补 PostGIS + 授权（复用 `ensureFeatureStore`）。
+- 默认导出勾掉 `stats_features`（它是按库同步的镜像表，不该跟着走）。
+
+**部署**：`git push` → Ubuntu `git checkout origin/main -- DMgeo/` → `sudo supervisorctl -c DMcore/supervisor/supervisord.conf restart dm-DMgeo`。
