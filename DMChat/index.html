@@ -678,7 +678,13 @@ function sendVoiceMessage(){
     try{ btn.setPointerCapture(e.pointerId); }catch(_){}
     if(voiceRecording) return;
     if(!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
-      toast('语音需要 HTTPS 安全上下文，请用 https://192.168.1.9:8443 访问','error'); return;
+      const httpsUrl='https://'+location.hostname+':8443';
+      if(confirm('语音需要 HTTPS 安全上下文（浏览器限制，图片不受此限）。\n\n是否跳转到 '+httpsUrl+' 使用语音？')){
+        location.href=httpsUrl;
+      } else {
+        toast('语音需 HTTPS，请用 '+httpsUrl+' 访问','error');
+      }
+      return;
     }
     try{
       const stream=await navigator.mediaDevices.getUserMedia({audio:true});
