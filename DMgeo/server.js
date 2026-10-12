@@ -2093,8 +2093,10 @@ const server = http.createServer((req, res) => {
   // "Geometry has Z dimension but column does not"。写入前统一降为 [lng,lat]。
   function stripZ(coords) {
     if (!Array.isArray(coords)) return coords;
-    // 到达坐标对层级：元素是数字 → 只保留前两位
-    if (coords.length && typeof coords[0] === 'number') return coords.slice(0, 2);
+    // 到达坐标对层级：首个元素是标量（数字或字符串，兼容坐标被 JSON 序列化成字符串）→ 只保留前两位
+    if (coords.length && (typeof coords[0] === 'number' || typeof coords[0] === 'string')) {
+      return coords.slice(0, 2);
+    }
     return coords.map(stripZ);
   }
   function sanitizeGeometry(geom) {
@@ -2107,10 +2109,14 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
+      // 诊断用：dbName/geojson 提前声明在 try 外，catch 里才能真正读到（try 内 const 是块级作用域，catch 访问不到）
+      let _diagDb = null, _diagGeo = null;
       try {
         const dbName = url.searchParams.get('db') || 'trip';
+        _diagDb = dbName;
         const p = getFeaturePool(dbName);
         const geojson = JSON.parse(body);
+        _diagGeo = geojson;
         if (!geojson.features) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ ok: false, error: '缺少 features 数组' }));
@@ -2203,15 +2209,15 @@ const server = http.createServer((req, res) => {
         // 落盘诊断日志：save-geodata 失败时记录 db、要素数、首个失败几何与错误。
         // 用 fs 直接追加文件（console.error 走 stderr，supervisor 可能没合并进日志）。
         // 注意：dbName/geojson 是 try 块内的 const，catch 里访问不到（块级作用域），
-        // 必须用 typeof 保护，否则 ReferenceError 会被下面的 catch(_) 吞掉、日志永不落盘。
+        // 已在上方用 _diagDb/_diagGeo 提前声明承载，这里直接读它们。
         try {
           const dbg = { at: new Date().toISOString(), err: e.message };
-          if (typeof dbName !== 'undefined') dbg.db = dbName;
-          if (typeof geojson !== 'undefined') {
-            dbg.featureCount = Array.isArray(geojson.features) ? geojson.features.length : 'n/a';
-            const fc = Array.isArray(geojson.features) ? geojson.features : [];
+          if (_diagDb) dbg.db = _diagDb;
+          if (_diagGeo) {
+            dbg.featureCount = Array.isArray(_diagGeo.features) ? _diagGeo.features.length : 'n/a';
+            const fc = Array.isArray(_diagGeo.features) ? _diagGeo.features : [];
             const bad = fc.find(x => x && x.geometry);
-            if (bad) dbg.firstGeometry = { type: bad.geometry.type, coordSample: JSON.stringify(bad.geometry.coordinates).slice(0, 400) };
+            if (bad) dbg.firstGeometry = { type: bad.geometry.type, coordSample: JSON.stringify(bad.geometry.coordinates).slice(0, 500) };
           }
           fs.appendFileSync(path.join(ROOT, 'save-fail.log'), JSON.stringify(dbg) + '\n');
         } catch (_) {}
