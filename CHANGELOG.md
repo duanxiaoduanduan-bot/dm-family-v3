@@ -1265,3 +1265,12 @@ Polygon 需要这层（环数组），LineString 不需要。多一层的 LineSt
 **部署**：dashboard.html（md5 `f924befb`，静态）；server.js（md5 `b3083b51`，restart dm-DMgeo，已执行补列 `plan_stops.thumb`）。
 
 **补充**：缩略图加灯箱（点开看大图）——`openLightbox(this.src)` 复用单个遮罩节点，点遮罩/✕ 关闭；三处缩略图（编辑表单节点、计划子任务、未拆解途经点）均已挂 onclick。dashboard.html md5 `d9d272f0`。
+
+## 49. DMgeo map-player · 新增谷歌底图（街道/卫星/混合）
+
+**改动**：`map-player.html` 多底图 `baseDefs` 增加三个 Google 瓦片源，底图选择器加对应按钮：
+- 谷歌街道 `lyrs=m`、谷歌卫星 `lyrs=s`、谷歌混合 `lyrs=y`，`mt{s}.google.com/vt/...`，子域 `1234`，maxZoom 20。
+
+**⚠️ 网络提醒**：Google 瓦片域名在中国大陆通常被墙、直连不可达，需浏览器走代理/VPN 才能显示；无代理时切到谷歌底图会灰屏，属正常。高德/OSM 仍为大陆可用默认。
+
+**部署**：map-player.html（md5 `8ab0060c`，静态文件，覆盖无需重启）。

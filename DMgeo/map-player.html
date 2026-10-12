@@ -186,6 +186,9 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
       <button class="bs-btn" data-base="amap-sat" onclick="switchBase('amap-sat',this)">🛰 高德卫星</button>
       <button class="bs-btn" data-base="osm" onclick="switchBase('osm',this)">🌍 OSM</button>
       <button class="bs-btn" data-base="dark" onclick="switchBase('dark',this)">🌙 暗色</button>
+      <button class="bs-btn" data-base="google-m" onclick="switchBase('google-m',this)">🌐 谷歌街道</button>
+      <button class="bs-btn" data-base="google-s" onclick="switchBase('google-s',this)">🌐 谷歌卫星</button>
+      <button class="bs-btn" data-base="google-y" onclick="switchBase('google-y',this)">🌐 谷歌混合</button>
     </div>
     <select id="dbSelect" onchange="switchDb(this.value)" style="padding:3px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#aaa;font-size:10px;outline:none">
       
@@ -434,7 +437,10 @@ var baseDefs={
   amap:{name:'高德街道',url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',attr:'&copy; 高德',maxZoom:18,subdomains:'1234'},
   'amap-sat':{name:'高德卫星',url:'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',attr:'&copy; 高德',maxZoom:18,subdomains:'1234'},
   osm:{name:'OSM街道',url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',attr:'&copy; OSM',maxZoom:19},
-  dark:{name:'暗色',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',attr:'&copy; CartoDB',maxZoom:19}
+  dark:{name:'暗色',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',attr:'&copy; CartoDB',maxZoom:19},
+  'google-m':{name:'谷歌街道',url:'https://mt{s}.google.com/vt/lyrs=m&hl=zh-CN&x={x}&y={y}&z={z}',attr:'&copy; Google',maxZoom:20,subdomains:'1234'},
+  'google-s':{name:'谷歌卫星',url:'https://mt{s}.google.com/vt/lyrs=s&hl=zh-CN&x={x}&y={y}&z={z}',attr:'&copy; Google',maxZoom:20,subdomains:'1234'},
+  'google-y':{name:'谷歌混合',url:'https://mt{s}.google.com/vt/lyrs=y&hl=zh-CN&x={x}&y={y}&z={z}',attr:'&copy; Google',maxZoom:20,subdomains:'1234'}
 };
 
 var map=L.map('map',{center:[35,105],zoom:5,zoomControl:true});
