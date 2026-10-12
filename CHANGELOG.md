@@ -1176,3 +1176,34 @@ INSERT / UPDATE 走同一入口，Point/Line/Polygon/Multi* 全覆盖；Z 只在
 | 二维数据回归 | 不受影响（stripZ 对二维是恒等变换）✅ |
 
 测试数据已清理。**部署**：`server.js`（md5 `7d5fec44256552d2c83162bae150fd59`，restart dm-DMgeo）。
+
+---
+
+## 45. DMgeo · Z 维度拒存「加固」—— SQL 层 ST_Force2D 兜底 + GeometryCollection 递归剥 Z
+
+**现象**：第 44 节 stripZ 落地后，断断继续 push 仍报「Geometry has Z dimension but column does not」。
+`save-fail.log` 显示 `firstGeometry.coordSample` 已是**二维** `[115.849, 28.689]` —— 说明 stripZ 漏了一种坐标形态。
+
+**根因**：`GeometryCollection` 类型没有 `coordinates` 字段（只有 `geometries[]`），第 44 节的
+`sanitizeGeometry` 走 `Array.isArray(geom.coordinates)` 分支判断为 false → **直接原样放行**，其中的带 Z 子几何原封不动进了 SQL。
+
+**改动（`DMgeo/server.js`）三重加固**：
+
+1. **SQL 层 `ST_Force2D` 兜底**（最彻底，无论前端怎么漏都强制降 2D）：
+   ```sql
+   -- INSERT / UPDATE 两处统一
+   geom = ST_Multi(ST_MakeValid(ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))))
+   ```
+2. `sanitizeGeometry` 补 `GeometryCollection` 递归剥 Z（`geometries.map(sanitizeGeometry)`）；
+3. 诊断日志增强：新增 `coordMaxDim()`，在剥 Z **前**扫描所有要素，抓到真正带 Z 的原始坐标记入 `zFeature`
+   （旧日志只记第一个要素，且 catch 里读到的是已剥完的二维，永远定位不到元凶）。
+
+**验证（真实环境 192.168.1.9:8084，restart 后实测）**：
+
+| 用例 | 结果 |
+|---|---|
+| 三维 Point `[116.4,39.9,55.5]` | `{"ok":true,"added":1}` ✅ |
+| GeometryCollection 含三维 Point | `{"ok":true,"added":1}` ✅ |
+| psql 回读 `ST_NDims / ST_Zmflag / ST_AsGeoJSON` | `2 / 0 / MultiPoint[[116.4,39.9]]`（Z 已剥）✅ |
+
+测试数据已清理（`remaining test rows: 0`）。**部署**：`server.js`（md5 `fbc6fa606e7b8a1041ce9ef9e0560af1`，restart dm-DMgeo）。

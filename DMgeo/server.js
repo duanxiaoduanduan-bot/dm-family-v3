@@ -2100,8 +2100,23 @@ const server = http.createServer((req, res) => {
     return coords.map(stripZ);
   }
   function sanitizeGeometry(geom) {
-    if (!geom || typeof geom !== 'object' || !Array.isArray(geom.coordinates)) return geom;
-    return Object.assign({}, geom, { coordinates: stripZ(geom.coordinates) });
+    if (!geom || typeof geom !== 'object') return geom;
+    if (Array.isArray(geom.coordinates)) {
+      return Object.assign({}, geom, { coordinates: stripZ(geom.coordinates) });
+    }
+    // GeometryCollection 没有 coordinates，只有 geometries[]，需递归剥 Z
+    if (geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
+      return Object.assign({}, geom, { geometries: geom.geometries.map(sanitizeGeometry) });
+    }
+    return geom;
+  }
+  // 检测坐标最大维度（用于诊断日志定位带 Z 的要素）
+  function coordMaxDim(coords) {
+    if (!Array.isArray(coords)) return 0;
+    if (coords.length && (typeof coords[0] === 'number' || typeof coords[0] === 'string')) return coords.length;
+    let m = 0;
+    for (const c of coords) m = Math.max(m, coordMaxDim(c));
+    return m;
   }
 
   // POST /save-geodata → 写入数据库(支持 ?db=)
@@ -2110,7 +2125,7 @@ const server = http.createServer((req, res) => {
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       // 诊断用：dbName/geojson 提前声明在 try 外，catch 里才能真正读到（try 内 const 是块级作用域，catch 访问不到）
-      let _diagDb = null, _diagGeo = null;
+      let _diagDb = null, _diagGeo = null, _diagZ = null;
       try {
         const dbName = url.searchParams.get('db') || 'trip';
         _diagDb = dbName;
@@ -2149,6 +2164,13 @@ const server = http.createServer((req, res) => {
         for (const f of geojson.features) {
           if (!f || !f.geometry) continue;
           const props = f.properties || {};
+          // 诊断：sanitize 前检测带 Z 的要素，抓到确切坐标（供 save-fail.log 定位）
+          const _z = (f.geometry.coordinates && coordMaxDim(f.geometry.coordinates) > 2)
+            ? { type: f.geometry.type, coordSample: JSON.stringify(f.geometry.coordinates).slice(0, 1000) }
+            : (f.geometry.type === 'GeometryCollection' && Array.isArray(f.geometry.geometries)
+                ? (() => { const g = f.geometry.geometries.find(x => x && x.coordinates && coordMaxDim(x.coordinates) > 2); return g ? { type: 'GeometryCollection>'+g.type, coordSample: JSON.stringify(g.coordinates).slice(0, 1000) } : null; })()
+                : null);
+          if (_z) _diagZ = Object.assign({ name: props.name }, _z);
           // 写库前剥 Z：见 stripZ/sanitizeGeometry 定义处注释
           f.geometry = sanitizeGeometry(f.geometry);
           // 库主键：兼容 'f_2186' / '2186' / 数字三种写法
@@ -2184,12 +2206,12 @@ const server = http.createServer((req, res) => {
             // 更新：保留原 id，改几何与属性（把库主键回写进 properties，供下次匹配）
             props.dbId = 'f_' + existing;
             await p.query(
-              'UPDATE features SET name=$1, type=$2, geom=ST_Multi(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))), properties=$4 WHERE id=$5',
+              'UPDATE features SET name=$1, type=$2, geom=ST_Multi(ST_MakeValid(ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON($3),4326)))), properties=$4 WHERE id=$5',
               [props.name || '', type, JSON.stringify(f.geometry), JSON.stringify(props), existing]
             );
           } else {
             const ins = await p.query(
-              'INSERT INTO features (name, type, geom, properties) VALUES ($1, $2, ST_Multi(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($3),4326))), $4) RETURNING id',
+              'INSERT INTO features (name, type, geom, properties) VALUES ($1, $2, ST_Multi(ST_MakeValid(ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON($3),4326)))), $4) RETURNING id',
               [props.name || '', type, JSON.stringify(f.geometry), JSON.stringify(props)]
             );
             if (ins.rowCount) {
@@ -2213,6 +2235,7 @@ const server = http.createServer((req, res) => {
         try {
           const dbg = { at: new Date().toISOString(), err: e.message };
           if (_diagDb) dbg.db = _diagDb;
+          if (_diagZ) dbg.zFeature = _diagZ; // sanitize 前抓到带 Z 的要素（真正的元凶）
           if (_diagGeo) {
             dbg.featureCount = Array.isArray(_diagGeo.features) ? _diagGeo.features.length : 'n/a';
             const fc = Array.isArray(_diagGeo.features) ? _diagGeo.features : [];
