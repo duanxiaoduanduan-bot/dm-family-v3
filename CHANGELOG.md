@@ -1234,3 +1234,32 @@ Polygon 需要这层（环数组），LineString 不需要。多一层的 LineSt
 **教训**：PostgreSQL `LIKE` 里 `_` 是单字符通配符，字面下划线需 `ESCAPE` 或用 `=` 精确匹配。清理测试数据一律用 `name IN (...)` 精确匹配，禁止 `LIKE '__%'`。
 
 **部署**：map-player.html（md5 `dc1eefa0`）；server.js（md5 `fbc6fa60`）。
+
+## 47. DMgeo dashboard · 路径总览「展不开」+ 去掉照片点
+
+**现象**：断断反馈 dashboard.html「📐 路径总览」下的路径卡片点开无反应，且下面不该显示照片点。
+
+**根因 1（展不开）**：`renderPathCard` 生成头部 onclick 时把数字索引也包成字符串 `togglePath('0')`，而 `togglePath` 用 `typeof i==='number'` 判断去拼 id（`pathCard0` vs `pathCard_0`），字符串传进去查不到 `pathCard0`，展开失效。修复：按 idx 类型拼参数 —— 数字不带引号、字符串带引号。
+
+**改动 2（去照片点）**：路径总览只渲染手画线路径（LineString/MultiLineString），删除「媒体（照片/视频）逐条成卡」的渲染逻辑；并删除随之失效的 `collectMediaFeatures` / `mediaMetaRow` 死函数。
+
+**部署**：dashboard.html（md5 `c0287dff`，静态文件，直接覆盖无需重启）。
+
+## 48. DMgeo · 挂钩路径去照片 + 路径站点挂照片缩略图（持久化）
+
+**需求**（断断）：①「补充时间计划」的「挂钩路径」下拉里**不要照片/视频**，只保留路径；②但计划选中某条路径后，路径上的站点能**就近把照片缩略图挂过来**，且保存后「最终结果」（计划列表的节点子任务/途经点）里能看到缩略图。
+
+**前端（dashboard.html）**：
+- `collectHookFeatures` 改为**只收路径（线）**，删掉照片/视频入下拉逻辑。
+- 新增 `collectPhotoPoints`：收集库内照片点（坐标+文件路径，排除视频）。
+- `extractStops(feature, pointIdx, photoPts)`：每个站点就近匹配（300m 内）挂照片缩略图到 `thumb`。
+- `fillHookOptions` 收集 `_photoPtsGlobal`；`onHookChange` 传参。
+- 计划列表渲染：节点子任务（按 `stop_seq` 关联 `plan_stops.thumb`）与未拆解途经点均显示缩略图；编辑回填也保留 `thumb`。
+
+**后端（server.js）**：
+- `plan_stops` 表新增 `thumb TEXT DEFAULT ''`（DDL + `DDL_PLANS_MIGRATE` 补列）。
+- `replacePlanStops` / `materializeChildren`（读+force 重建）/ 读取 stops 的 SELECT 全部带上 `thumb`。
+
+**验证**：POST 带 `thumb` 的计划 → GET 回读 `stops[0].thumb="/media/photoA.jpg"` 持久化成功，子任务正常生成；测试数据已清。
+
+**部署**：dashboard.html（md5 `f924befb`，静态）；server.js（md5 `b3083b51`，restart dm-DMgeo，已执行补列 `plan_stops.thumb`）。

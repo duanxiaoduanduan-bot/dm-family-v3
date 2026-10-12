@@ -120,7 +120,8 @@ async function ensureFeatureStore(dbName, force) {
     lat DOUBLE PRECISION,
     stop_at TIMESTAMP,
     stop_task TEXT DEFAULT '',
-    stop_note TEXT DEFAULT ''
+    stop_note TEXT DEFAULT '',
+    thumb TEXT DEFAULT ''
   )`;
   const DDL_PLAN_STOPS_IDX = 'CREATE INDEX IF NOT EXISTS idx_plan_stops_plan ON plan_stops (plan_id, seq)';
   // 兼容旧表：补列（老库已建有旧结构 plans 表时）
@@ -132,6 +133,7 @@ async function ensureFeatureStore(dbName, force) {
     "ALTER TABLE plans ADD COLUMN IF NOT EXISTS task_note TEXT DEFAULT ''",
     'ALTER TABLE plans ADD COLUMN IF NOT EXISTS parent_id INTEGER',
     'ALTER TABLE plans ADD COLUMN IF NOT EXISTS stop_seq INTEGER',
+    "ALTER TABLE plan_stops ADD COLUMN IF NOT EXISTS thumb TEXT DEFAULT ''",
     // 自引用外键：老库补列时只有裸列、没有约束，删除父计划会留下孤儿子任务
     `DO $$ BEGIN
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plans_parent_fk') THEN
@@ -1165,10 +1167,10 @@ const server = http.createServer((req, res) => {
       const lng = (s.lng != null && !isNaN(parseFloat(s.lng))) ? parseFloat(s.lng) : null;
       const lat = (s.lat != null && !isNaN(parseFloat(s.lat))) ? parseFloat(s.lat) : null;
       await pool.query(
-        `INSERT INTO plan_stops (plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO plan_stops (plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note, thumb)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [planId, seq++, name, lng, lat, normPlanTime(s.stop_at),
-         String(s.stop_task || ''), String(s.stop_note || '')]
+         String(s.stop_task || ''), String(s.stop_note || ''), String(s.thumb || '')]
       );
     }
   }
@@ -1185,7 +1187,7 @@ const server = http.createServer((req, res) => {
       stops = opts.stops;
     } else {
       const sr = await pool.query(
-        `SELECT seq, stop_name, lng, lat, stop_at, stop_task, stop_note
+        `SELECT seq, stop_name, lng, lat, stop_at, stop_task, stop_note, thumb
          FROM plan_stops WHERE plan_id=$1 ORDER BY seq, id`, [parent.id]
       );
       stops = sr.rows;
@@ -1199,11 +1201,11 @@ const server = http.createServer((req, res) => {
         for (const s of stops) {
           if (!s) continue;
           await pool.query(
-            `INSERT INTO plan_stops (plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            `INSERT INTO plan_stops (plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note, thumb)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [parent.id, sq++, String(s.stop_name || ''), s.lng != null ? parseFloat(s.lng) : null,
              s.lat != null ? parseFloat(s.lat) : null, normPlanTime(s.stop_at),
-             String(s.stop_task || ''), String(s.stop_note || '')]
+             String(s.stop_task || ''), String(s.stop_note || ''), String(s.thumb || '')]
           );
         }
       }
@@ -1279,7 +1281,7 @@ const server = http.createServer((req, res) => {
         let stopsByPlan = {};
         if (ids.length) {
           const sr = await p.query(
-            `SELECT id, plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note
+            `SELECT id, plan_id, seq, stop_name, lng, lat, stop_at, stop_task, stop_note, thumb
              FROM plan_stops WHERE plan_id = ANY($1::int[])
              ORDER BY plan_id, seq, id`,
             [ids]
