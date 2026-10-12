@@ -119,8 +119,13 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;backgr
 .pc-thumb{width:34px;height:34px;object-fit:cover;border-radius:6px;flex-shrink:0;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04)}
 .pc-thumb-video{display:flex;align-items:center;justify-content:center;font-size:15px;color:#a29bfe}
 /* 节点行缩略图（媒体挂钩节点，照片即攻略缩略图） */
-.stop-thumb{width:30px;height:30px;object-fit:cover;border-radius:5px;flex-shrink:0;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04)}
+.stop-thumb{width:30px;height:30px;object-fit:cover;border-radius:5px;flex-shrink:0;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);cursor:zoom-in}
 .stop-thumb-video{display:flex;align-items:center;justify-content:center;font-size:14px;color:#a29bfe}
+/* 灯箱：点缩略图看大图 */
+.lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;align-items:center;justify-content:center;z-index:99999;cursor:zoom-out}
+.lb-overlay img{max-width:92vw;max-height:92vh;border-radius:8px;box-shadow:0 10px 50px rgba(0,0,0,.65)}
+.lb-close{position:absolute;top:16px;right:24px;font-size:30px;line-height:1;color:#fff;cursor:pointer;opacity:.75;user-select:none}
+.lb-close:hover{opacity:1}
 .path-detail{max-height:0;overflow:hidden;transition:max-height .3s ease;background:rgba(0,0,0,.18)}
 .path-card.open .path-detail{max-height:440px}
 .path-detail-inner{padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.04)}
@@ -906,6 +911,26 @@ function onHookChange(){
   renderStops();
   wrap.style.display=stops.length?'block':'none';
 }
+// 灯箱：点缩略图看大图（复用单个遮罩节点，点遮罩/✕ 关闭）
+function openLightbox(src){
+  if(!src)return;
+  var lb=document.getElementById('lbOverlay');
+  if(!lb){
+    lb=document.createElement('div');
+    lb.id='lbOverlay';lb.className='lb-overlay';
+    lb.innerHTML='<img class="lb-img" alt=""><span class="lb-close" title="关闭">✕</span>';
+    lb.addEventListener('click',function(e){
+      if(e.target===lb||e.target.className==='lb-close')closeLightbox();
+    });
+    document.body.appendChild(lb);
+  }
+  lb.querySelector('.lb-img').src=src;
+  lb.style.display='flex';
+}
+function closeLightbox(){
+  var lb=document.getElementById('lbOverlay');
+  if(lb)lb.style.display='none';
+}
 function renderStops(){
   var box=$('planStops');
   if(!_stopsSeed.length){box.innerHTML='';return}
@@ -915,7 +940,7 @@ function renderStops(){
     // 媒体节点：头部显示缩略图（照片可作攻略缩略图），视频显示图标
     var thumb='';
     if(s.thumb){
-      thumb='<img class="stop-thumb" src="'+esc(s.thumb)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+      thumb='<img class="stop-thumb" src="'+esc(s.thumb)+'" alt="" loading="lazy" onclick="openLightbox(this.src)" onerror="this.style.display=\'none\'">';
     }else if(s.mediaType==='video'){
       thumb='<span class="stop-thumb stop-thumb-video" title="视频">🎬</span>';
     }
@@ -1131,7 +1156,7 @@ async function loadPlans(){
           subs+='<div class="stop-line'+(k.done?' is-done':'')+(hasT?'':' is-open')+'">'+
             '<label class="stop-check"><input type="checkbox"'+(k.done?' checked':'')+' onchange="togglePlan('+k.id+',this.checked)"></label>'+
             '<span class="stop-badge">'+(i+1)+'</span>'+
-            (stopThumb[k.stop_seq]?'<img class="stop-thumb" src="'+esc(stopThumb[k.stop_seq])+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'')+
+            (stopThumb[k.stop_seq]?'<img class="stop-thumb" src="'+esc(stopThumb[k.stop_seq])+'" alt="" loading="lazy" onclick="openLightbox(this.src)" onerror="this.style.display=\'none\'">':'')+
             '<span class="stop-nm">'+esc(k.title)+'</span>'+
             '<span class="stop-bits">'+
               '<span class="stop-chip stop-when'+(hasT?'':' is-unset')+'" style="'+(hasT?('color:'+kst.color):'')+'">'+esc(kwhen)+'</span>'+
@@ -1154,7 +1179,7 @@ async function loadPlans(){
           if(s.stop_note)bits.push('<span class="stop-chip"><b>补充</b>'+esc(s.stop_note)+'</span>');
           subs+='<div class="stop-line'+(s.stop_at?'':' is-open')+'">'+
             '<span class="stop-badge">'+(i+1)+'</span>'+
-            (s.thumb?'<img class="stop-thumb" src="'+esc(s.thumb)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'')+
+            (s.thumb?'<img class="stop-thumb" src="'+esc(s.thumb)+'" alt="" loading="lazy" onclick="openLightbox(this.src)" onerror="this.style.display=\'none\'">':'')+
             '<span class="stop-nm">'+esc(nm)+'</span>'+
             '<span class="stop-bits">'+(bits.length?bits.join(''):'<span class="stop-empty">待标注</span>')+'</span>'+
           '</div>';

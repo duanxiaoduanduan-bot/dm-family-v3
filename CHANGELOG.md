@@ -1263,3 +1263,5 @@ Polygon 需要这层（环数组），LineString 不需要。多一层的 LineSt
 **验证**：POST 带 `thumb` 的计划 → GET 回读 `stops[0].thumb="/media/photoA.jpg"` 持久化成功，子任务正常生成；测试数据已清。
 
 **部署**：dashboard.html（md5 `f924befb`，静态）；server.js（md5 `b3083b51`，restart dm-DMgeo，已执行补列 `plan_stops.thumb`）。
+
+**补充**：缩略图加灯箱（点开看大图）——`openLightbox(this.src)` 复用单个遮罩节点，点遮罩/✕ 关闭；三处缩略图（编辑表单节点、计划子任务、未拆解途经点）均已挂 onclick。dashboard.html md5 `d9d272f0`。
