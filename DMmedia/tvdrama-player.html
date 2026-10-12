@@ -84,6 +84,18 @@ body.fullscreen .cp video{width:100%;height:100%;object-fit:contain;background:#
 /* 选集条置于播放栏上方，避免被遮挡 */
 body.fullscreen .ep-list{bottom:76px}
 
+/* ===== 搜索栏 ===== */
+.searchbar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:rgba(0,0,0,.2);border-bottom:1px solid rgba(255,255,255,.04);flex-shrink:0}
+.searchbar .sb-inner{display:flex;align-items:center;gap:8px;flex:1;max-width:440px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:6px 14px;transition:border-color .2s}
+.searchbar .sb-inner:focus-within{border-color:rgba(231,76,60,.55)}
+.searchbar .sb-ico{font-size:12px;opacity:.7}
+.searchbar input{flex:1;min-width:0;background:none;border:none;outline:none;color:#e0e0e0;font-size:13px;font-family:inherit}
+.searchbar input::placeholder{color:#666}
+.searchbar .clr{display:none;background:none;border:none;color:#888;cursor:pointer;font-size:13px;padding:0 2px;line-height:1}
+.searchbar .clr.show{display:block}
+.searchbar .clr:hover{color:#fff}
+.searchbar .sb-cnt{font-size:11px;color:#777;white-space:nowrap}
+
 @media(max-width:768px){
   .main{flex-direction:column;align-items:stretch;gap:12px;padding:10px}
   .side{width:100%;max-height:35vh}
@@ -108,6 +120,11 @@ body.fullscreen .ep-list{bottom:76px}
 </div>
 <input type="file" id="fi" multiple accept="video/*" style="display:none" onchange="addLocal(this.files)">
 <input type="file" id="fd" webkitdirectory multiple accept="video/*" style="display:none" onchange="addLocal(this.files)">
+</div>
+
+<div class="searchbar">
+  <div class="sb-inner"><span class="sb-ico">🔍</span><input id="q" placeholder="搜索剧名 / 集名…" oninput="onSearch(this.value)"><button class="clr" id="qclr" onclick="clearQ()">✕</button></div>
+  <span class="sb-cnt" id="qcnt"></span>
 </div>
 
 <div class="main">
@@ -282,9 +299,23 @@ function clearPos(k){try{var o=JSON.parse(localStorage.getItem(RESUME_KEY)||'nul
 var TV_STATE='dmmedia_tv_state';
 function saveTvState(){try{localStorage.setItem(TV_STATE,JSON.stringify({ci:ci,ei:ei}))}catch(e){}}
 function loadTvState(){try{var s=localStorage.getItem(TV_STATE);if(!s)return null;return JSON.parse(s)}catch(e){return null}}
-function up(){pl.innerHTML='';sc.textContent='('+sg.length+'部)';if(!sg.length){pl.innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px;">暂无</div>';return}
-for(var i=0;i<sg.length;i++){var s=sg[i];var r=document.createElement('div');r.className='sr'+(i===ci?' act':'');r.innerHTML='<div class="ix">'+(i+1)+'</div><div class="nf"><div class="nm">'+s.name+'</div><div class="ar">'+(s.episodes?s.episodes.length+'集':'')+'</div></div>';r.onclick=function(j){return function(){if(j===ci)return;selectSeries(j)}}(i);pl.appendChild(r)}}
-document.addEventListener('keydown',function(e){if(e.key===' '){e.preventDefault();togP()}if(e.key==='f'||e.key==='F'){toggleFS()}if(e.key==='ArrowUp'&&ei>0)playEp(ei-1);if(e.key==='ArrowDown'&&curSeries()&&ei<curSeries().episodes.length-1)playEp(ei+1);if(e.key==='m'||e.key==='M'){toggleMute()}});
+// ===== 名字搜索（剧名 / 集名） =====
+var q='';
+function tvResults(){var r=[];for(var i=0;i<sg.length;i++){var s=sg[i],nm=(s.name||'').toLowerCase();
+  if(nm.indexOf(q)>=0){r.push({si:i,ei:-1,label:s.name,sub:(s.episodes?s.episodes.length+'集':'')});continue}
+  if(s.episodes){for(var j=0;j<s.episodes.length;j++){if(((s.episodes[j].title||'')).toLowerCase().indexOf(q)>=0){r.push({si:i,ei:j,label:s.episodes[j].title,sub:(s.name||'')+' · 第'+(j+1)+'集'});break}}}}
+  return r}
+function onSearch(v){q=(v||'').trim().toLowerCase();$('qclr').classList.toggle('show',!!q);$('qcnt').textContent=q?('找到 '+tvResults().length+' 条'):'';up()}
+function clearQ(){$('q').value='';onSearch('')}
+function up(){pl.innerHTML='';
+ if(q){var res=tvResults();sc.textContent='匹配 '+res.length;
+  if(!res.length){pl.innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px;">无匹配</div>';return}
+  for(var n=0;n<res.length;n++){(function(o){var r=document.createElement('div');r.className='sr'+((o.si===ci&&(o.ei<0||o.ei===ei))?' act':'');r.innerHTML='<div class="ix">'+(o.ei>=0?(o.ei+1):'📺')+'</div><div class="nf"><div class="nm">'+o.label+'</div><div class="ar">'+o.sub+'</div></div>';r.onclick=function(){selectSeries(o.si,o.ei>=0?o.ei:undefined)};pl.appendChild(r)})(res[n])}
+  return}
+ sc.textContent='('+sg.length+'部)';
+ if(!sg.length){pl.innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px;">暂无</div>';return}
+ for(var i=0;i<sg.length;i++){var s=sg[i];var r=document.createElement('div');r.className='sr'+(i===ci?' act':'');r.innerHTML='<div class="ix">'+(i+1)+'</div><div class="nf"><div class="nm">'+s.name+'</div><div class="ar">'+(s.episodes?s.episodes.length+'集':'')+'</div></div>';r.onclick=function(j){return function(){if(j===ci)return;selectSeries(j)}}(i);pl.appendChild(r)}}
+document.addEventListener('keydown',function(e){var t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;if(e.key==='Escape'&&q){clearQ();return}if(e.key===' '){e.preventDefault();togP()}if(e.key==='f'||e.key==='F'){toggleFS()}if(e.key==='ArrowUp'&&ei>0)playEp(ei-1);if(e.key==='ArrowDown'&&curSeries()&&ei<curSeries().episodes.length-1)playEp(ei+1);if(e.key==='m'||e.key==='M'){toggleMute()}});
 loadList();up();
 </script>
 </body>

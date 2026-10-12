@@ -69,6 +69,18 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Helvetica Neue",
 .pb .spd:hover{color:#fff;border-color:rgba(0,184,148,.3)}
 .pb .spd.act{color:#00b894;border-color:rgba(0,184,148,.4);background:rgba(0,184,148,.1)}
 
+/* ===== 搜索栏 ===== */
+.searchbar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:rgba(0,0,0,.2);border-bottom:1px solid rgba(255,255,255,.04);flex-shrink:0}
+.searchbar .sb-inner{display:flex;align-items:center;gap:8px;flex:1;max-width:440px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:6px 14px;transition:border-color .2s}
+.searchbar .sb-inner:focus-within{border-color:rgba(0,184,148,.6)}
+.searchbar .sb-ico{font-size:12px;opacity:.7}
+.searchbar input{flex:1;min-width:0;background:none;border:none;outline:none;color:#e0e0e0;font-size:13px;font-family:inherit}
+.searchbar input::placeholder{color:#666}
+.searchbar .clr{display:none;background:none;border:none;color:#888;cursor:pointer;font-size:13px;padding:0 2px;line-height:1}
+.searchbar .clr.show{display:block}
+.searchbar .clr:hover{color:#fff}
+.searchbar .sb-cnt{font-size:11px;color:#777;white-space:nowrap}
+
 @media(max-width:768px){
   .main{flex-direction:column;align-items:stretch;gap:12px;padding:10px}
   .side{width:100%;max-height:40vh}
@@ -89,6 +101,10 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Helvetica Neue",
 </div>
 <input type="file" id="fi" multiple accept="audio/*" style="display:none" onchange="addLocal(this.files)">
 <input type="file" id="fd" webkitdirectory multiple accept="audio/*" style="display:none" onchange="addLocal(this.files)">
+</div>
+<div class="searchbar">
+  <div class="sb-inner"><span class="sb-ico">🔍</span><input id="q" placeholder="搜索书名 / 章节…" oninput="onSearch(this.value)"><button class="clr" id="qclr" onclick="clearQ()">✕</button></div>
+  <span class="sb-cnt" id="qcnt"></span>
 </div>
 <div class="main">
 <div class="side" id="sidebar">
@@ -241,7 +257,7 @@ function playS(i){
   es.style.display='none';coverIcon.style.display='block';infoPanel.style.display='block';progressPanel.style.display='block';
   infoTitle.textContent=s.title;infoAlbum.textContent=s.album||'';
   // 如果当前在专辑视图里，更新高亮
-  if(currentAlbum)showAlbum(currentAlbum);else showAlbums();
+  if(q)renderSearch();else if(currentAlbum)showAlbum(currentAlbum);else showAlbums();
 
   var _pos=loadPos(s.url),_lastSave=0;
   A.ontimeupdate=function(){
@@ -287,8 +303,25 @@ function clearPos(k){try{var o=JSON.parse(localStorage.getItem(RESUME_KEY)||'nul
 function resumeLast(){try{var s=localStorage.getItem(RESUME_KEY);if(!s)return false;var o=JSON.parse(s);if(!o||!o.k)return false;for(var i=0;i<sg.length;i++){if((sg[i].url||sg[i].file)===o.k){playS(i);return true}}}catch(e){}return false}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
-function up(){pl.innerHTML='';if(albums.length)showAlbums();else{pl.innerHTML='<div style="padding:24px;text-align:center;color:#555;font-size:12px">暂无内容</div>';sc.textContent=''}}
+// ===== 名字搜索（跨专辑扁平结果） =====
+var q='';
+function audioIdx(){var r=[];for(var i=0;i<sg.length;i++){var s=sg[i];if(!q||((s.title||'')+' '+(s.artist||'')+' '+(s.album||'')).toLowerCase().indexOf(q)>=0)r.push(i)}return r}
+function renderSearch(){
+  shTitle.textContent='🔍 搜索结果';backBtn.classList.remove('visible');
+  var res=audioIdx();pl.innerHTML='';sc.textContent='('+res.length+'条)';
+  if(!res.length){pl.innerHTML='<div style="padding:24px;text-align:center;color:#555;font-size:12px">无匹配</div>';return}
+  for(var n=0;n<res.length;n++){(function(idx){var s=sg[idx],dt=s.title,di=s.title.lastIndexOf(' - ');if(di>0)dt=s.title.slice(di+3);
+    var r=document.createElement('div');r.className='sr'+(idx===ci?' act':'');
+    r.innerHTML='<div class="ix">'+(n+1)+'</div><div class="nf"><div class="nm">'+esc(dt)+'</div><div class="ar">'+esc(s.album||s.artist||'')+'</div></div>';
+    r.onclick=function(){if(idx===ci)togP();else playS(idx)};pl.appendChild(r)})(res[n])}
+}
+function onSearch(v){q=(v||'').trim().toLowerCase();$('qclr').classList.toggle('show',!!q);$('qcnt').textContent=q?('找到 '+audioIdx().length+' 条'):'';up()}
+function clearQ(){$('q').value='';onSearch('')}
+
+function up(){pl.innerHTML='';if(q){renderSearch();return}if(albums.length)showAlbums();else{pl.innerHTML='<div style="padding:24px;text-align:center;color:#555;font-size:12px">暂无内容</div>';sc.textContent=''}}
 document.addEventListener('keydown',function(e){
+  var t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;
+  if(e.key==='Escape'&&q){clearQ();return}
   if(e.key===' '){e.preventDefault();togP()}
   if(e.key==='ArrowLeft'){e.preventDefault();pr()}
   if(e.key==='ArrowRight'){e.preventDefault();ff()}

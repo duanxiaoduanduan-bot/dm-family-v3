@@ -100,6 +100,18 @@ body.fullscreen .footer-bar{background:rgba(0,0,0,.92)}
 .tts-panel button:hover{background:var(--btn-hv);color:var(--text)}
 .tts-panel button.on{background:var(--ch-color);border-color:var(--ch-color);color:#fff}
 
+/* ===== 搜索栏 ===== */
+.searchbar{display:flex;align-items:center;gap:10px;padding:8px 20px;background:var(--hd-bg);border-bottom:1px solid var(--hd-bd);flex-shrink:0}
+.searchbar .sb-inner{display:flex;align-items:center;gap:8px;flex:1;max-width:440px;background:var(--btn-bg);border:1px solid var(--btn-bd);border-radius:16px;padding:6px 14px;transition:border-color .2s}
+.searchbar .sb-inner:focus-within{border-color:var(--ch-color)}
+.searchbar .sb-ico{font-size:12px;opacity:.7}
+.searchbar input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit}
+.searchbar input::placeholder{color:var(--text4)}
+.searchbar .clr{display:none;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:0 2px;line-height:1}
+.searchbar .clr.show{display:block}
+.searchbar .clr:hover{color:var(--text)}
+.searchbar .sb-cnt{font-size:11px;color:var(--text3);white-space:nowrap}
+
 @media(max-width:768px){
   .float-panel{width:260px}
   #readerCol .rb{padding:14px 16px 32px}
@@ -123,6 +135,11 @@ body.fullscreen .footer-bar{background:rgba(0,0,0,.92)}
 </div>
 <input type="file" id="fi" multiple accept=".txt,.pdf,.epub,.mp3,.wav,.flac,.ogg,.aac,.m4a" style="display:none" onchange="addLocal(this.files)">
 <input type="file" id="fd" webkitdirectory multiple accept=".txt,.pdf,.epub,.mp3,.wav,.flac,.ogg,.aac,.m4a" style="display:none" onchange="addLocal(this.files)">
+</div>
+
+<div class="searchbar">
+  <div class="sb-inner"><span class="sb-ico">🔍</span><input id="q" placeholder="搜索书名 / 作者…" oninput="onSearch(this.value)"><button class="clr" id="qclr" onclick="clearQ()">✕</button></div>
+  <span class="sb-cnt" id="qcnt"></span>
 </div>
 
 <!-- 朗读面板 -->
@@ -474,21 +491,32 @@ function ttsStop(){
 }
 
 // ===== 书架 =====
+// ===== 名字搜索（书名 / 作者） =====
+var q='';
+function bkIdx(){var r=[];for(var i=0;i<bk.length;i++){var b=bk[i];if(!q||(((b.title||b.name||'')+' '+(b.author||'')).toLowerCase().indexOf(q)>=0))r.push(i)}return r}
+function onSearch(v){q=(v||'').trim().toLowerCase();$('qclr').classList.toggle('show',!!q);$('qcnt').textContent=q?(bkIdx().length+' 条'):'';
+  if(q){shelfPanel.classList.add('open');overlay.classList.add('show')}
+  up()}
+function clearQ(){$('q').value='';q='';$('qclr').classList.remove('show');$('qcnt').textContent='';up()}
+
 function up(){
-  bl.innerHTML='';sc.textContent='('+bk.length+'本)';
-  if(!bk.length){bl.innerHTML='<div style="padding:30px;text-align:center;color:var(--text4);font-size:12px;">暂无</div>';return}
-  for(var i=0;i<bk.length;i++){
-    var b=bk[i],em={txt:'📝',pdf:'📄',audio:'🎧'},cl={txt:'txt',pdf:'pdf',audio:'audio'};
+  var list=bkIdx();
+  bl.innerHTML='';sc.textContent=q?('匹配 '+list.length+'/'+bk.length):('('+bk.length+'本)');
+  if(!list.length){bl.innerHTML='<div style="padding:30px;text-align:center;color:var(--text4);font-size:12px;">'+(q?'无匹配':'暂无')+'</div>';return}
+  for(var n=0;n<list.length;n++){
+    var i=list[n],b=bk[i],em={txt:'📝',pdf:'📄',audio:'🎧'},cl={txt:'txt',pdf:'pdf',audio:'audio'};
     var it=document.createElement('div');it.className='sr'+(i===ci?' act':'');
     var progHtml='',key=b.key||b.title||b.name,p=loadProgress(key);
     if(p&&p.ch>=0)progHtml='<div class="prog">📖 第'+(p.ch+1)+'章</div>';
     it.innerHTML='<div class="ix '+cl[b.type]+'">'+em[b.type]+'</div><div class="nf"><div class="nm">'+(b.title||b.name)+'</div><div class="ar">'+(b.author||'')+'</div>'+progHtml+'</div>';
-    it.onclick=function(j){return function(){openB(j);closePanel(shelfPanel)}}(i);
+    it.onclick=function(j){return function(){openB(j);closePanel(shelfPanel);clearQ()}}(i);
     bl.appendChild(it);
   }
 }
 
 document.addEventListener('keydown',function(e){
+  var t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;
+  if(e.key==='Escape'&&q){clearQ();return}
   if(e.key==='f'||e.key==='F'){e.preventDefault();toggleFS()}
   if(e.key==='ArrowLeft'){prevCh()}
   if(e.key==='ArrowRight'){nextCh()}
