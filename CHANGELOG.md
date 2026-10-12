@@ -1207,3 +1207,30 @@ INSERT / UPDATE 走同一入口，Point/Line/Polygon/Multi* 全覆盖；Z 只在
 | psql 回读 `ST_NDims / ST_Zmflag / ST_AsGeoJSON` | `2 / 0 / MultiPoint[[116.4,39.9]]`（Z 已剥）✅ |
 
 测试数据已清理（`remaining test rows: 0`）。**部署**：`server.js`（md5 `fbc6fa606e7b8a1041ce9ef9e0560af1`，restart dm-DMgeo）。
+
+---
+
+## 46. DMgeo · 「线保存失败」真正根因：LineString 坐标多套一层数组
+
+**现象**：断断反馈「轨迹/连线又不能存了」。第 45 节 ST_Force2D 兜底后不再报 Z 错误，但线保存后**刷新消失**。
+
+**真正根因**：`map-player.html` 的 `buildGeoJSON` 里 LineString 坐标多套了一层数组：
+
+```js
+// 错误（多一层 []，输出 [[[lng,lat],[lng,lat]]]）：
+coordinates:[p.coords.map(c=>[c[1],c[0]])]
+// 正确（输出 [[lng,lat],[lng,lat]]）：
+coordinates:p.coords.map(c=>[c[1],c[0]])
+```
+
+Polygon 需要这层（环数组），LineString 不需要。多一层的 LineString 被 `ST_GeomFromGeoJSON` 解析坏：
+- 第 44 节前：解析成带 Z 坐标 → 报「Geometry has Z dimension」；
+- 第 45 节加 ST_Force2D 后：Z 被强制降维，但坐标已解析坏 → `ST_MakeValid` 修成 `MultiPoint [0,0]`（坐标全丢，线消失）。
+
+**改动**：`map-player.html` buildGeoJSON 去掉 LineString 多余外层数组（1 行）。
+
+**误删事故与恢复**：排查期间用 `DELETE ... WHERE name LIKE '__%'` 清理测试数据，误把 `_` 当字面下划线（`_` 是单字符通配符），删了 20 行真实数据。用户前端 autoSave 自动回写恢复了大部分；唯一受损的「出发地→…→独流镇」路径（被存成 `[0,0]`）已从本地备份 `.backup/trip-features-20261011-233818.json` 恢复正确坐标（8 站点 LineString）。
+
+**教训**：PostgreSQL `LIKE` 里 `_` 是单字符通配符，字面下划线需 `ESCAPE` 或用 `=` 精确匹配。清理测试数据一律用 `name IN (...)` 精确匹配，禁止 `LIKE '__%'`。
+
+**部署**：map-player.html（md5 `dc1eefa0`）；server.js（md5 `fbc6fa60`）。

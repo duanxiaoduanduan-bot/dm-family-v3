@@ -1542,7 +1542,7 @@ function buildGeoJSON(){
     if(p.isPolygon){
       features.push({type:'Feature',geometry:{type:'Polygon',coordinates:[p.coords.map(function(c){return[c[1],c[0]]})]},properties:props});
     }else{
-      features.push({type:'Feature',geometry:{type:'LineString',coordinates:[p.coords.map(function(c){return[c[1],c[0]]})]},properties:props});
+      features.push({type:'Feature',geometry:{type:'LineString',coordinates:p.coords.map(function(c){return[c[1],c[0]]})},properties:props});
     }
   });
   return {type:'FeatureCollection',features:features};
